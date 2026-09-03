@@ -1,0 +1,37 @@
+@using UAPS.SDK.Client
+
+<RadzenDataGrid Data="@Schedule?.Assignments" TItem="Assignment"
+                AllowSorting="true" AllowFiltering="true"
+                FilterMode="FilterMode.Simple"
+                Style="height: 100%;">
+    <Columns>
+        <RadzenDataGridColumn TItem="Assignment" Property="OperationId" Title="Operation" Width="120px" />
+        <RadzenDataGridColumn TItem="Assignment" Property="ResourceId" Title="Resource" Width="100px" />
+        <RadzenDataGridColumn TItem="Assignment" Title="Start" Width="100px" TextAlign="TextAlign.Right">
+            <Template Context="a">@FormatTime(a.StartMs)</Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Assignment" Title="End" Width="100px" TextAlign="TextAlign.Right">
+            <Template Context="a">@FormatTime(a.EndMs)</Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Assignment" Title="Duration" Width="90px" TextAlign="TextAlign.Right">
+            <Template Context="a">@FormatDuration(a.DurationMs)</Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    [Parameter] public Schedule? Schedule { get; set; }
+
+    private string FormatTime(long ms)
+    {
+        var dto = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return dto.ToString("HH:mm:ss");
+    }
+
+    private string FormatDuration(long ms)
+    {
+        if (ms >= 60000)
+            return $"{ms / 60000}m {(ms % 60000) / 1000}s";
+        return $"{ms / 1000}s";
+    }
+}

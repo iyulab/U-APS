@@ -1,0 +1,285 @@
+@using UAPS.SDK.Analytics
+
+<RadzenStack Gap="0.75rem" Style="overflow-y: auto; max-height: calc(100vh - 300px);">
+    @if (Kpis != null)
+    {
+        @* Summary Section *@
+        <RadzenCard class="kpi-card">
+            <RadzenStack Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-color-base-600">Summary</RadzenText>
+
+                <RadzenRow Gap="0.5rem">
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric">
+                            <span class="kpi-label">Makespan</span>
+                            <span class="kpi-value">@($"{Kpis.Summary.TotalMakespanMinutes:F1}")<small>min</small></span>
+                        </div>
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric">
+                            <span class="kpi-label">Jobs</span>
+                            <span class="kpi-value">@Kpis.Summary.TotalJobCount</span>
+                        </div>
+                    </RadzenColumn>
+                </RadzenRow>
+
+                <RadzenRow Gap="0.5rem">
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric">
+                            <span class="kpi-label">Assignments</span>
+                            <span class="kpi-value">@Kpis.Summary.TotalAssignmentCount</span>
+                        </div>
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric">
+                            <span class="kpi-label">Violations</span>
+                            <span class="kpi-value @(Kpis.Summary.TotalViolationCount > 0 ? "error" : "success")">
+                                @Kpis.Summary.TotalViolationCount
+                            </span>
+                        </div>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenStack>
+        </RadzenCard>
+
+        @* Quality Score *@
+        <RadzenCard class="kpi-card">
+            <RadzenStack Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-color-base-600">Quality Score</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenProgressBarCircular Value="@Kpis.QualityMetrics.ScheduleQualityScore"
+                                                Max="100"
+                                                Size="ProgressBarCircularSize.Large"
+                                                ShowValue="true"
+                                                ProgressBarStyle="@GetQualityStyle(Kpis.QualityMetrics.ScheduleQualityScore)" />
+                    <span class="quality-label">@GetQualityLabel(Kpis.QualityMetrics.ScheduleQualityScore)</span>
+                </RadzenStack>
+            </RadzenStack>
+        </RadzenCard>
+
+        @* Due Date Performance *@
+        @if (Kpis.DueDatePerformance.TotalJobsWithDueDate > 0)
+        {
+            <RadzenCard class="kpi-card">
+                <RadzenStack Gap="0.5rem">
+                    <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-color-base-600">Due Date Performance</RadzenText>
+
+                    <div class="kpi-metric">
+                        <span class="kpi-label">On-Time Rate</span>
+                        <span class="kpi-value @(Kpis.DueDatePerformance.OnTimeRate >= 80 ? "success" : Kpis.DueDatePerformance.OnTimeRate >= 50 ? "warning" : "error")">
+                            @($"{Kpis.DueDatePerformance.OnTimeRate:F1}")<small>%</small>
+                        </span>
+                    </div>
+
+                    <RadzenProgressBar Value="@Kpis.DueDatePerformance.OnTimeRate" Max="100"
+                                        ProgressBarStyle="@(Kpis.DueDatePerformance.OnTimeRate >= 80 ? ProgressBarStyle.Success : Kpis.DueDatePerformance.OnTimeRate >= 50 ? ProgressBarStyle.Warning : ProgressBarStyle.Danger)"
+                                        ShowValue="false" />
+
+                    <RadzenRow Gap="0.25rem" class="rz-mt-2">
+                        <RadzenColumn Size="6">
+                            <small>On-Time: <strong class="success">@Kpis.DueDatePerformance.OnTimeJobCount</strong></small>
+                        </RadzenColumn>
+                        <RadzenColumn Size="6">
+                            <small>Late: <strong class="error">@Kpis.DueDatePerformance.LateJobCount</strong></small>
+                        </RadzenColumn>
+                    </RadzenRow>
+
+                    @if (Kpis.DueDatePerformance.LateJobCount > 0)
+                    {
+                        <div class="tardiness-info">
+                            <small>
+                                Avg Tardiness: @($"{Kpis.DueDatePerformance.AverageTardinessMinutes:F1}") min |
+                                Max: @($"{Kpis.DueDatePerformance.MaxTardinessMinutes:F1}") min
+                            </small>
+                        </div>
+                    }
+                </RadzenStack>
+            </RadzenCard>
+        }
+
+        @* Resource Utilization *@
+        @if (Kpis.ResourceUtilization.Count > 0)
+        {
+            <RadzenCard class="kpi-card">
+                <RadzenStack Gap="0.5rem">
+                    <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-color-base-600">Resource Utilization</RadzenText>
+
+                    @foreach (var util in Kpis.ResourceUtilization.Take(6))
+                    {
+                        <div class="utilization-row">
+                            <div class="util-label">
+                                <RadzenBadge Text="@(util.ResourceType == "Equipment" ? "E" : "W")"
+                                             BadgeStyle="@(util.ResourceType == "Equipment" ? BadgeStyle.Info : BadgeStyle.Warning)"
+                                             Style="padding: 0 4px; font-size: 9px;" />
+                                <span>@util.ResourceId</span>
+                            </div>
+                            <div class="util-bar-container">
+                                <RadzenProgressBar Value="@util.UtilizationPercent" Max="100"
+                                                    ShowValue="false"
+                                                    ProgressBarStyle="@GetUtilizationStyle(util.UtilizationPercent)"
+                                                    Style="height: 16px;" />
+                            </div>
+                            <span class="util-value">@($"{util.UtilizationPercent:F0}%")</span>
+                        </div>
+                    }
+
+                    @if (Kpis.ResourceUtilization.Count > 6)
+                    {
+                        <small class="rz-color-base-500">+@(Kpis.ResourceUtilization.Count - 6) more resources</small>
+                    }
+                </RadzenStack>
+            </RadzenCard>
+        }
+
+        @* Throughput *@
+        <RadzenCard class="kpi-card">
+            <RadzenStack Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-color-base-600">Throughput</RadzenText>
+
+                <RadzenRow Gap="0.25rem">
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric-small">
+                            <span class="kpi-label">Jobs/Hour</span>
+                            <span class="kpi-value-small">@($"{Kpis.ThroughputMetrics.JobsPerHour:F1}")</span>
+                        </div>
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <div class="kpi-metric-small">
+                            <span class="kpi-label">Units/Hour</span>
+                            <span class="kpi-value-small">@($"{Kpis.ThroughputMetrics.UnitsPerHour:F1}")</span>
+                        </div>
+                    </RadzenColumn>
+                </RadzenRow>
+
+                <div class="kpi-metric-small">
+                    <span class="kpi-label">Avg Flow Time</span>
+                    <span class="kpi-value-small">@($"{Kpis.ThroughputMetrics.AverageFlowTimeMinutes:F1}") min</span>
+                </div>
+            </RadzenStack>
+        </RadzenCard>
+    }
+</RadzenStack>
+
+<style>
+    .kpi-card {
+        padding: 12px !important;
+        background: var(--bg-card, #1e293b) !important;
+        border: 1px solid var(--border-color, #334155) !important;
+    }
+
+    .kpi-metric {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .kpi-metric-small {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+    }
+
+    .kpi-label {
+        color: var(--text-muted, #94a3b8);
+        font-size: 12px;
+    }
+
+    .kpi-value {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--accent, #00b4d8);
+    }
+
+    .kpi-value small {
+        font-size: 12px;
+        font-weight: normal;
+        margin-left: 2px;
+        color: var(--text-muted, #94a3b8);
+    }
+
+    .kpi-value-small {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary, #f1f5f9);
+    }
+
+    .kpi-value.success, .success {
+        color: #22c55e !important;
+    }
+
+    .kpi-value.warning, .warning {
+        color: #f59e0b !important;
+    }
+
+    .kpi-value.error, .error {
+        color: #ef4444 !important;
+    }
+
+    .quality-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-primary, #f1f5f9);
+    }
+
+    .utilization-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .util-label {
+        width: 80px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--text-secondary, #cbd5e1);
+    }
+
+    .util-bar-container {
+        flex: 1;
+    }
+
+    .util-value {
+        width: 40px;
+        text-align: right;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-primary, #f1f5f9);
+    }
+
+    .tardiness-info {
+        color: var(--text-muted, #94a3b8);
+        margin-top: 4px;
+    }
+</style>
+
+@code {
+    [Parameter] public KpiDashboard? Kpis { get; set; }
+
+    private ProgressBarStyle GetQualityStyle(double score)
+    {
+        if (score >= 80) return ProgressBarStyle.Success;
+        if (score >= 60) return ProgressBarStyle.Warning;
+        return ProgressBarStyle.Danger;
+    }
+
+    private string GetQualityLabel(double score)
+    {
+        if (score >= 90) return "Excellent";
+        if (score >= 80) return "Good";
+        if (score >= 60) return "Fair";
+        return "Needs Improvement";
+    }
+
+    private ProgressBarStyle GetUtilizationStyle(double percent)
+    {
+        if (percent >= 80) return ProgressBarStyle.Success;
+        if (percent >= 50) return ProgressBarStyle.Info;
+        return ProgressBarStyle.Warning;
+    }
+}

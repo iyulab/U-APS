@@ -1,0 +1,36 @@
+<Project>
+  <PropertyGroup>
+    <!-- Common Framework Settings -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>preview</LangVersion>
+
+    <!-- Product Version - Update this to trigger CI/CD release (release.yml
+         watches this file's UAPSVersion via a path-filtered push trigger).
+         Was previously in Directory.Packages.props, consumed here as
+         $(UAPSVersion) — but Directory.Packages.props (central package
+         management) imports AFTER Directory.Build.props in MSBuild's
+         evaluation order, so UAPSVersion was still undefined at this point
+         and Version silently fell back to the SDK default "1.0.0" no
+         matter what UAPSVersion said. Single-file definition removes the
+         cross-file ordering dependency entirely. -->
+    <UAPSVersion>1.0.1</UAPSVersion>
+    <Version>$(UAPSVersion)</Version>
+    <AssemblyVersion>$(UAPSVersion)</AssemblyVersion>
+    <FileVersion>$(UAPSVersion)</FileVersion>
+
+    <!-- Package Metadata -->
+    <Authors>iyulab team</Authors>
+    <Company>iyulab</Company>
+    <Product>U-APS Unified Advanced Production Scheduling</Product>
+    <Copyright>Copyright © 2025 U-APS</Copyright>
+    <RepositoryUrl>https://github.com/iyulab/U-APS</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Build Settings -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,336 @@
+@inject WorkbenchState State
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <button class="btn btn-sm btn-success" @onclick="AddMatrix">+ Add Matrix</button>
+        <button class="btn btn-sm" @onclick="GenerateFromProducts" disabled="@(!HasProducts)">
+            ⚡ Auto-Generate from Products
+        </button>
+        @if (GetMatrices().Any())
+        {
+            <span class="toolbar-divider"></span>
+            <button class="btn btn-sm btn-danger" @onclick="ClearAll">🗑️ Clear All</button>
+        }
+    </div>
+
+    @if (!GetMatrices().Any())
+    {
+        <div class="empty-panel">
+            <div class="empty-text">No setup matrices. Click "Add Matrix" or auto-generate.</div>
+        </div>
+    }
+    else
+    {
+        @foreach (var matrix in GetMatrices())
+        {
+            <div class="matrix-section">
+                <div class="matrix-header">
+                    <span class="matrix-resource">
+                        <span class="type-badge equipment">E</span>
+                        @(string.IsNullOrEmpty(matrix.ResourceId) ? "Default (All)" : matrix.ResourceId)
+                    </span>
+                    <span class="matrix-default">Default: @FormatMs(matrix.DefaultSetupMs)</span>
+                    <div class="matrix-actions">
+                        <button class="btn-icon" @onclick="() => EditMatrixHeader(matrix)" title="Edit">✎</button>
+                        <button class="btn-icon" @onclick="() => AddEntryToMatrix(matrix)" title="Add Entry">+</button>
+                        <button class="btn-icon danger" @onclick="() => DeleteMatrix(matrix)" title="Delete Matrix">×</button>
+                    </div>
+                </div>
+
+                @if (_editingMatrixHeader == matrix)
+                {
+                    <div class="matrix-edit-header">
+                        <label>
+                            <span>Resource:</span>
+                            <select @bind="_editResourceId" class="cell-input">
+                                <option value="">Default (All)</option>
+                                @foreach (var res in State.CurrentRequest.Resources.Where(r => r.Kind == ResourceKind.Equipment))
+                                {
+                                    <option value="@res.Id">@res.Id</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            <span>Default Setup:</span>
+                            <input type="number" @bind="_editDefaultSetupMs" class="cell-input" min="0" step="1000" />
+                        </label>
+                        <button class="btn btn-sm btn-success" @onclick="SaveMatrixHeader">Save</button>
+                        <button class="btn btn-sm" @onclick="CancelMatrixHeaderEdit">Cancel</button>
+                    </div>
+                }
+
+                <table class="data-table nested">
+                    <thead>
+                        <tr>
+                            <th style="width:140px">From Product</th>
+                            <th style="width:140px">To Product</th>
+                            <th style="width:100px">Setup Time</th>
+                            <th style="width:60px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!matrix.Entries.Any())
+                        {
+                            <tr>
+                                <td colspan="4" class="empty-row">No entries. Click + to add.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @for (int i = 0; i < matrix.Entries.Count; i++)
+                            {
+                                var entry = matrix.Entries[i];
+                                var index = i;
+                                var isEditing = _editingMatrix == matrix && _editingEntryIndex == index;
+
+                                <tr class="@(isEditing ? "editing" : "")">
+                                    @if (isEditing)
+                                    {
+                                        <td>
+                                            <select @bind="_editFromProduct" class="cell-input">
+                                                @foreach (var product in GetProducts())
+                                                {
+                                                    <option value="@product">@product</option>
+                                                }
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select @bind="_editToProduct" class="cell-input">
+                                                @foreach (var product in GetProducts())
+                                                {
+                                                    <option value="@product">@product</option>
+                                                }
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" @bind="_editSetupMs" class="cell-input" min="0" step="1000" />
+                                        </td>
+                                        <td>
+                                            <button class="btn-icon" @onclick="() => SaveEntry(matrix)" title="Save">✓</button>
+                                            <button class="btn-icon" @onclick="CancelEntryEdit" title="Cancel">✗</button>
+                                        </td>
+                                    }
+                                    else
+                                    {
+                                        <td @ondblclick="() => StartEntryEdit(matrix, index)">@entry.FromProduct</td>
+                                        <td @ondblclick="() => StartEntryEdit(matrix, index)">@entry.ToProduct</td>
+                                        <td @ondblclick="() => StartEntryEdit(matrix, index)" class="right">@FormatMs(entry.SetupMs)</td>
+                                        <td>
+                                            <button class="btn-icon" @onclick="() => StartEntryEdit(matrix, index)" title="Edit">✎</button>
+                                            <button class="btn-icon danger" @onclick="() => DeleteEntry(matrix, index)" title="Delete">×</button>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="matrix-summary">
+            <span>@GetMatrices().Count() matrices</span>
+            <span>|</span>
+            <span>@GetMatrices().Sum(m => m.Entries.Count) total entries</span>
+            <span>|</span>
+            <span>@GetProducts().Count() products</span>
+        </div>
+    }
+</div>
+
+@code {
+    // Matrix header editing
+    private SetupMatrix? _editingMatrixHeader;
+    private string _editResourceId = "";
+    private long _editDefaultSetupMs;
+
+    // Entry editing
+    private SetupMatrix? _editingMatrix;
+    private int _editingEntryIndex = -1;
+    private string _editFromProduct = "";
+    private string _editToProduct = "";
+    private long _editSetupMs;
+
+    private bool HasProducts => GetProducts().Any();
+
+    private IEnumerable<SetupMatrix> GetMatrices()
+    {
+        return State.CurrentRequest.SetupMatrices?.Matrices ?? Enumerable.Empty<SetupMatrix>();
+    }
+
+    private void EnsureSetupMatrices()
+    {
+        State.CurrentRequest.SetupMatrices ??= new SetupMatrixCollection();
+    }
+
+    private IEnumerable<string> GetProducts()
+    {
+        return State.CurrentRequest.Jobs
+            .Select(j => j.ProductName)
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct()!;
+    }
+
+    // ===== Matrix Header Operations =====
+
+    private void AddMatrix()
+    {
+        EnsureSetupMatrices();
+        var matrix = new SetupMatrix
+        {
+            ResourceId = "",
+            DefaultSetupMs = 300000, // 5 minutes default
+            Entries = []
+        };
+        State.CurrentRequest.SetupMatrices!.Matrices.Add(matrix);
+        State.NotifyStateChanged();
+        EditMatrixHeader(matrix);
+    }
+
+    private void EditMatrixHeader(SetupMatrix matrix)
+    {
+        _editingMatrixHeader = matrix;
+        _editResourceId = matrix.ResourceId;
+        _editDefaultSetupMs = matrix.DefaultSetupMs;
+        CancelEntryEdit();
+    }
+
+    private void SaveMatrixHeader()
+    {
+        if (_editingMatrixHeader != null)
+        {
+            _editingMatrixHeader.ResourceId = _editResourceId;
+            _editingMatrixHeader.DefaultSetupMs = _editDefaultSetupMs;
+            State.NotifyStateChanged();
+        }
+        _editingMatrixHeader = null;
+    }
+
+    private void CancelMatrixHeaderEdit()
+    {
+        _editingMatrixHeader = null;
+    }
+
+    private void DeleteMatrix(SetupMatrix matrix)
+    {
+        State.CurrentRequest.SetupMatrices?.Matrices.Remove(matrix);
+        if (_editingMatrixHeader == matrix) _editingMatrixHeader = null;
+        if (_editingMatrix == matrix) CancelEntryEdit();
+        State.NotifyStateChanged();
+    }
+
+    // ===== Entry Operations =====
+
+    private void AddEntryToMatrix(SetupMatrix matrix)
+    {
+        var products = GetProducts().ToList();
+        var entry = new SetupEntry(
+            products.FirstOrDefault() ?? "ProductA",
+            products.Skip(1).FirstOrDefault() ?? products.FirstOrDefault() ?? "ProductB",
+            300000 // 5 minutes default
+        );
+
+        matrix.Entries.Add(entry);
+        State.NotifyStateChanged();
+        StartEntryEdit(matrix, matrix.Entries.Count - 1);
+    }
+
+    private void StartEntryEdit(SetupMatrix matrix, int index)
+    {
+        CancelMatrixHeaderEdit();
+        _editingMatrix = matrix;
+        _editingEntryIndex = index;
+        var entry = matrix.Entries[index];
+        _editFromProduct = entry.FromProduct;
+        _editToProduct = entry.ToProduct;
+        _editSetupMs = entry.SetupMs;
+    }
+
+    private void SaveEntry(SetupMatrix matrix)
+    {
+        if (_editingMatrix == matrix && _editingEntryIndex >= 0 && _editingEntryIndex < matrix.Entries.Count)
+        {
+            // SetupEntry is a record, so we need to replace it
+            matrix.Entries[_editingEntryIndex] = new SetupEntry(_editFromProduct, _editToProduct, _editSetupMs);
+            State.NotifyStateChanged();
+        }
+        CancelEntryEdit();
+    }
+
+    private void CancelEntryEdit()
+    {
+        _editingMatrix = null;
+        _editingEntryIndex = -1;
+    }
+
+    private void DeleteEntry(SetupMatrix matrix, int index)
+    {
+        if (index >= 0 && index < matrix.Entries.Count)
+        {
+            matrix.Entries.RemoveAt(index);
+            if (_editingMatrix == matrix && _editingEntryIndex == index) CancelEntryEdit();
+            State.NotifyStateChanged();
+        }
+    }
+
+    // ===== Bulk Operations =====
+
+    private void GenerateFromProducts()
+    {
+        var products = GetProducts().ToList();
+        if (products.Count < 2) return;
+
+        EnsureSetupMatrices();
+
+        // Create or get default matrix
+        var defaultMatrix = State.CurrentRequest.SetupMatrices!.Matrices
+            .FirstOrDefault(m => string.IsNullOrEmpty(m.ResourceId));
+
+        if (defaultMatrix == null)
+        {
+            defaultMatrix = new SetupMatrix
+            {
+                ResourceId = "",
+                DefaultSetupMs = 300000,
+                Entries = []
+            };
+            State.CurrentRequest.SetupMatrices.Matrices.Add(defaultMatrix);
+        }
+
+        // Generate entries for all product pairs
+        foreach (var from in products)
+        {
+            foreach (var to in products)
+            {
+                if (from == to) continue;
+
+                // Check if entry already exists
+                var exists = defaultMatrix.Entries.Any(e =>
+                    e.FromProduct == from && e.ToProduct == to);
+
+                if (!exists)
+                {
+                    defaultMatrix.Entries.Add(new SetupEntry(from, to, 300000));
+                }
+            }
+        }
+        State.NotifyStateChanged();
+    }
+
+    private void ClearAll()
+    {
+        State.CurrentRequest.SetupMatrices?.Matrices.Clear();
+        CancelMatrixHeaderEdit();
+        CancelEntryEdit();
+        State.NotifyStateChanged();
+    }
+
+    private string FormatMs(long ms)
+    {
+        if (ms >= 3600000)
+            return $"{ms / 3600000}h {(ms % 3600000) / 60000}m";
+        if (ms >= 60000)
+            return $"{ms / 60000}m";
+        return $"{ms / 1000}s";
+    }
+}

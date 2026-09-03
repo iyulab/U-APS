@@ -1,0 +1,212 @@
+@page "/results"
+@inject WorkbenchState State
+@inject NavigationManager Navigation
+@inject NotificationService NotificationService
+
+<div class="results-container">
+    @* Header with back button *@
+    <div class="results-header">
+        <button class="btn btn-back" @onclick="GoBack">
+            <span>←</span> 데이터 편집
+        </button>
+        <h2>스케줄링 결과</h2>
+        <div class="header-info">
+            <span class="rule-badge">@State.DispatchingConfig.PrimaryRule</span>
+        </div>
+    </div>
+
+    @if (State.CurrentResult == null)
+    {
+        <div class="no-results">
+            <span class="empty-icon">📊</span>
+            <span>시뮬레이션 결과가 없습니다</span>
+            <button class="btn btn-primary" @onclick="GoBack">데이터 편집으로 이동</button>
+        </div>
+    }
+    else if (!State.CurrentResult.Success)
+    {
+        <div class="error-results">
+            <span class="error-icon">❌</span>
+            <span class="error-title">시뮬레이션 실패</span>
+            <span class="error-message">@State.CurrentResult.Error</span>
+            <button class="btn" @onclick="GoBack">← 돌아가기</button>
+        </div>
+    }
+    else
+    {
+        @* KPI Display - Comparison or Single *@
+        @if (State.HasComparison)
+        {
+            <div class="kpi-comparison">
+                <div class="kpi-row header">
+                    <div class="kpi-cell label"></div>
+                    <div class="kpi-cell as-is">이전 (@(State.PreviousRule ?? "N/A"))</div>
+                    <div class="kpi-cell to-be">현재 (@State.CurrentRule)</div>
+                    <div class="kpi-cell diff">변화</div>
+                </div>
+                <div class="kpi-row">
+                    <div class="kpi-cell label">Makespan</div>
+                    <div class="kpi-cell as-is">@FormatDuration(State.PreviousResult?.Schedule?.MakespanMs ?? 0)</div>
+                    <div class="kpi-cell to-be">@FormatDuration(State.CurrentResult?.Schedule?.MakespanMs ?? 0)</div>
+                    <div class="kpi-cell diff @GetImprovementClass(GetMakespanImprovement())">
+                        @GetImprovementText(GetMakespanImprovement())
+                    </div>
+                </div>
+                <div class="kpi-row">
+                    <div class="kpi-cell label">Avg Utilization</div>
+                    <div class="kpi-cell as-is">@(GetPreviousUtilization().ToString("F1"))%</div>
+                    <div class="kpi-cell to-be">@(GetCurrentUtilization().ToString("F1"))%</div>
+                    <div class="kpi-cell diff @GetImprovementClass(GetUtilizationImprovement())">
+                        @GetImprovementText(GetUtilizationImprovement())
+                    </div>
+                </div>
+                <div class="kpi-row">
+                    <div class="kpi-cell label">Tardy Jobs</div>
+                    <div class="kpi-cell as-is">@GetPreviousLateJobCount()</div>
+                    <div class="kpi-cell to-be">@GetCurrentLateJobCount()</div>
+                    <div class="kpi-cell diff @GetImprovementClass(GetTardyImprovement())">
+                        @GetTardyImprovementText()
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="kpi-single">
+                <div class="kpi-card">
+                    <span class="kpi-label">Makespan</span>
+                    <span class="kpi-value">@FormatDuration(State.CurrentResult?.Schedule?.MakespanMs ?? 0)</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Avg Utilization</span>
+                    <span class="kpi-value">@(GetCurrentUtilization().ToString("F1"))%</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Tardy Jobs</span>
+                    <span class="kpi-value">@GetCurrentLateJobCount()</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Rule</span>
+                    <span class="kpi-value">@State.CurrentRule</span>
+                </div>
+            </div>
+        }
+
+        @* Gantt Charts *@
+        <div class="gantt-panels @(State.HasComparison ? "dual" : "single")">
+            @if (State.HasComparison)
+            {
+                @* Previous Result Gantt *@
+                <div class="gantt-panel previous">
+                    <div class="gantt-panel-header">
+                        <span class="gantt-title">📊 이전 결과 (@(State.PreviousRule ?? "N/A"))</span>
+                        <span class="gantt-makespan">@FormatDuration(State.PreviousResult?.Schedule?.MakespanMs ?? 0)</span>
+                    </div>
+                    <div class="gantt-panel-content">
+                        <GanttChart Schedule="@State.PreviousResult?.Schedule"
+                                    Jobs="@State.CurrentRequest.Jobs"
+                                    Resources="@State.CurrentRequest.Resources" />
+                    </div>
+                </div>
+            }
+
+            @* Current Result Gantt *@
+            <div class="gantt-panel current">
+                <div class="gantt-panel-header">
+                    <span class="gantt-title">📈 현재 결과 (@State.CurrentRule)</span>
+                    <span class="gantt-makespan">@FormatDuration(State.CurrentResult?.Schedule?.MakespanMs ?? 0)</span>
+                </div>
+                <div class="gantt-panel-content">
+                    <GanttChart Schedule="@State.CurrentResult?.Schedule"
+                                Jobs="@State.CurrentRequest.Jobs"
+                                Resources="@State.CurrentRequest.Resources" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // If no results, allow page to render with "no results" message
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private string FormatDuration(long ms)
+    {
+        var ts = TimeSpan.FromMilliseconds(ms);
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1)
+            return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";
+        return $"{ts.TotalSeconds:F1}s";
+    }
+
+    private double GetCurrentUtilization()
+    {
+        if (State.CurrentKpis?.ResourceUtilization == null || !State.CurrentKpis.ResourceUtilization.Any())
+            return 0;
+        return State.CurrentKpis.ResourceUtilization.Average(r => r.UtilizationPercent);
+    }
+
+    private double GetPreviousUtilization()
+    {
+        if (State.PreviousKpis?.ResourceUtilization == null || !State.PreviousKpis.ResourceUtilization.Any())
+            return 0;
+        return State.PreviousKpis.ResourceUtilization.Average(r => r.UtilizationPercent);
+    }
+
+    private int GetCurrentLateJobCount() => State.CurrentKpis?.DueDatePerformance?.LateJobCount ?? 0;
+    private int GetPreviousLateJobCount() => State.PreviousKpis?.DueDatePerformance?.LateJobCount ?? 0;
+
+    private double GetMakespanImprovement()
+    {
+        if (!State.HasComparison) return 0;
+        var previous = State.PreviousResult?.Schedule?.MakespanMs ?? 0;
+        var current = State.CurrentResult?.Schedule?.MakespanMs ?? 0;
+        if (previous == 0) return 0;
+        return (previous - current) / (double)previous * 100;
+    }
+
+    private double GetUtilizationImprovement()
+    {
+        if (!State.HasComparison) return 0;
+        return GetCurrentUtilization() - GetPreviousUtilization();
+    }
+
+    private double GetTardyImprovement()
+    {
+        if (!State.HasComparison) return 0;
+        return GetPreviousLateJobCount() - GetCurrentLateJobCount();
+    }
+
+    private string GetImprovementClass(double improvement) => improvement switch
+    {
+        > 0 => "improved",
+        < 0 => "degraded",
+        _ => "neutral"
+    };
+
+    private string GetImprovementText(double improvement) => improvement switch
+    {
+        > 0 => $"+{improvement:F1}%",
+        < 0 => $"{improvement:F1}%",
+        _ => "-"
+    };
+
+    private string GetTardyImprovementText()
+    {
+        var diff = GetTardyImprovement();
+        return diff switch
+        {
+            > 0 => $"-{diff:F0}",
+            < 0 => $"+{Math.Abs(diff):F0}",
+            _ => "-"
+        };
+    }
+}

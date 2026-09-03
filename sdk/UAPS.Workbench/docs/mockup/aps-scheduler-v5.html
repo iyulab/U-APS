@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U-APS Scheduler v5 - Undo/Redo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-light: #dbeafe;
+            --success: #10b981;
+            --success-light: #d1fae5;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --selected: #fef08a;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 0 16px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+        
+        .logo { font-size: 16px; font-weight: 700; color: var(--primary); }
+        
+        /* Undo/Redo Controls */
+        .history-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 12px;
+            border-left: 1px solid var(--gray-200);
+            border-right: 1px solid var(--gray-200);
+        }
+        
+        .history-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--gray-100);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        
+        .history-btn:hover:not(:disabled) { background: var(--gray-200); }
+        .history-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .history-btn:active:not(:disabled) { transform: scale(0.95); }
+        
+        .history-info {
+            font-size: 11px;
+            color: var(--gray-500);
+            padding: 0 8px;
+            min-width: 80px;
+            text-align: center;
+        }
+        
+        .history-dropdown {
+            position: relative;
+        }
+        
+        .history-dropdown-btn {
+            padding: 4px 8px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .history-dropdown-btn:hover { background: var(--gray-50); }
+        
+        .history-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 4px;
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            min-width: 280px;
+            max-height: 300px;
+            overflow: auto;
+            z-index: 100;
+            display: none;
+        }
+        
+        .history-list.show { display: block; }
+        
+        .history-list-header {
+            padding: 10px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .history-item {
+            padding: 10px 12px;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-100);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .history-item:hover { background: var(--gray-50); }
+        .history-item.current { background: var(--selected); }
+        .history-item.undone { opacity: 0.5; }
+        
+        .history-item-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        
+        .history-item-icon.add { background: var(--success-light); }
+        .history-item-icon.edit { background: var(--warning-light); }
+        .history-item-icon.delete { background: var(--danger-light); }
+        .history-item-icon.move { background: var(--primary-light); }
+        
+        .history-item-text { flex: 1; }
+        .history-item-time { font-size: 10px; color: var(--gray-400); }
+        
+        /* Main Tabs */
+        .main-tabs {
+            display: flex;
+            gap: 2px;
+            margin-left: auto;
+        }
+        
+        .main-tab {
+            padding: 8px 20px;
+            border: none;
+            background: var(--gray-100);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+            border-radius: 6px 6px 0 0;
+            transition: all 0.15s;
+        }
+        
+        .main-tab:hover { background: var(--gray-200); }
+        .main-tab.active { background: var(--primary); color: white; }
+        
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: 16px;
+        }
+        
+        .btn {
+            padding: 6px 12px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn:hover { background: var(--gray-50); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        
+        /* Selection Sync Indicator */
+        .sync-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: var(--selected);
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .tab-content {
+            height: 100%;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .tab-content.active { display: flex; }
+        
+        /* Toolbar */
+        .toolbar {
+            padding: 10px 16px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .toolbar-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .sub-tabs { display: flex; gap: 4px; }
+        
+        .sub-tab {
+            padding: 6px 12px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .sub-tab.active {
+            background: var(--gray-800);
+            color: white;
+            border-color: var(--gray-800);
+        }
+        
+        /* Selection Bar */
+        .selection-bar {
+            padding: 8px 16px;
+            background: var(--primary);
+            color: white;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+        
+        .selection-bar.show { display: flex; }
+        
+        .selection-info { display: flex; align-items: center; gap: 12px; }
+        .selection-actions { display: flex; gap: 6px; }
+        
+        .sel-btn {
+            padding: 5px 10px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        
+        .sel-btn:hover { background: rgba(255,255,255,0.2); }
+        .sel-btn.danger { background: var(--danger); border-color: var(--danger); }
+        
+        /* Table */
+        .table-container { flex: 1; overflow: auto; }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        .data-table th {
+            background: var(--gray-100);
+            padding: 12px 14px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-600);
+            border-bottom: 1px solid var(--gray-200);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        
+        .data-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--gray-100);
+            cursor: pointer;
+        }
+        
+        .data-table tr:hover { background: var(--gray-50); }
+        .data-table tr.selected { background: var(--selected) !important; }
+        .data-table tr.new { background: var(--success-light); }
+        .data-table tr.changed { background: var(--warning-light); }
+        
+        .badge {
+            display: inline-flex;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: var(--success-light); color: #065f46; }
+        .badge-warning { background: var(--warning-light); color: #92400e; }
+        .badge-danger { background: var(--danger-light); color: #991b1b; }
+        .badge-info { background: var(--primary-light); color: #1e40af; }
+        
+        /* Gantt */
+        .gantt-container { flex: 1; overflow: auto; }
+        
+        .gantt-grid {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            min-width: 1400px;
+        }
+        
+        .gantt-header-row { display: contents; }
+        
+        .gantt-header-label {
+            background: var(--gray-100);
+            padding: 12px 14px;
+            font-weight: 600;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-200);
+            border-right: 1px solid var(--gray-200);
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        
+        .gantt-header-timeline {
+            background: var(--gray-100);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+        }
+        
+        .gantt-hour {
+            width: 80px;
+            flex-shrink: 0;
+            padding: 12px 0;
+            text-align: center;
+            font-size: 11px;
+            color: var(--gray-500);
+            border-right: 1px solid var(--gray-200);
+        }
+        
+        .gantt-row { display: contents; }
+        
+        .gantt-row-label {
+            padding: 0 14px;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-100);
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            min-height: 44px;
+        }
+        
+        .gantt-row-label.group { background: var(--gray-50); font-weight: 600; }
+        
+        .gantt-row-bars {
+            position: relative;
+            border-bottom: 1px solid var(--gray-100);
+            min-height: 44px;
+            background: repeating-linear-gradient(90deg, transparent, transparent 79px, var(--gray-100) 79px, var(--gray-100) 80px);
+        }
+        
+        .gantt-bar {
+            position: absolute;
+            height: 28px;
+            top: 8px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 10px;
+            color: white;
+            font-weight: 500;
+            cursor: grab;
+            transition: box-shadow 0.15s;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        
+        .gantt-bar:hover { z-index: 20; box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+        .gantt-bar.selected { z-index: 25; box-shadow: 0 0 0 3px var(--primary), 0 4px 12px rgba(0,0,0,0.25); }
+        
+        .gantt-bar .resize-handle {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 8px;
+            cursor: ew-resize;
+            background: rgba(255,255,255,0.2);
+            opacity: 0;
+        }
+        
+        .gantt-bar:hover .resize-handle,
+        .gantt-bar.selected .resize-handle { opacity: 1; }
+        
+        .gantt-bar .resize-left { left: 0; border-radius: 5px 0 0 5px; }
+        .gantt-bar .resize-right { right: 0; border-radius: 0 5px 5px 0; }
+        
+        .gantt-bar.task { background: #3b82f6; }
+        .gantt-bar.task-a { background: #3b82f6; }
+        .gantt-bar.task-b { background: #10b981; }
+        .gantt-bar.setup { background: #94a3b8; }
+        .gantt-bar.changed { background: linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%, #f59e0b 75%, #fbbf24 75%); background-size: 8px 8px; }
+        .gantt-bar.new { background: #10b981; }
+        .gantt-bar.down { background: linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%, #ef4444 75%, #fca5a5 75%); background-size: 8px 8px; cursor: not-allowed; }
+        
+        .gantt-legend {
+            padding: 10px 16px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+        }
+        
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-color { width: 16px; height: 12px; border-radius: 2px; }
+        
+        /* Context Menu */
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 6px 0;
+            min-width: 200px;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .context-menu.show { display: block; }
+        
+        .context-item {
+            padding: 10px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .context-item:hover { background: var(--gray-100); }
+        .context-item.danger { color: var(--danger); }
+        .context-item .shortcut { margin-left: auto; font-size: 11px; color: var(--gray-400); }
+        
+        .context-divider { height: 1px; background: var(--gray-200); margin: 6px 0; }
+        
+        /* Status Bar */
+        .status-bar {
+            background: var(--gray-800);
+            color: white;
+            padding: 6px 16px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .status-item { display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+        
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--gray-800);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .toast.show { display: flex; }
+        .toast.undo { background: var(--warning); color: var(--gray-800); }
+        .toast.redo { background: var(--primary); }
+        
+        .toast-action {
+            padding: 4px 10px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 4px;
+            color: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .toast-action:hover { background: rgba(255,255,255,0.3); }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">U-APS</div>
+        
+        <!-- Undo/Redo Controls -->
+        <div class="history-controls">
+            <button class="history-btn" id="undoBtn" onclick="undo()" title="Undo (Ctrl+Z)">↩</button>
+            <button class="history-btn" id="redoBtn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↪</button>
+            <div class="history-info" id="historyInfo">3 changes</div>
+            <div class="history-dropdown">
+                <button class="history-dropdown-btn" onclick="toggleHistoryList()">
+                    History ▾
+                </button>
+                <div class="history-list" id="historyList">
+                    <div class="history-list-header">
+                        <span>변경 이력</span>
+                        <span style="font-weight: normal; color: var(--gray-500);">Ctrl+Z / Ctrl+Y</span>
+                    </div>
+                    <div class="history-item current" onclick="jumpToHistory(3)">
+                        <div class="history-item-icon move">↔</div>
+                        <div class="history-item-text">OP-001-2 시간 변경 (09:15)</div>
+                        <div class="history-item-time">방금</div>
+                    </div>
+                    <div class="history-item" onclick="jumpToHistory(2)">
+                        <div class="history-item-icon add">+</div>
+                        <div class="history-item-text">OP-004-1 추가</div>
+                        <div class="history-item-time">2분 전</div>
+                    </div>
+                    <div class="history-item" onclick="jumpToHistory(1)">
+                        <div class="history-item-icon edit">✎</div>
+                        <div class="history-item-text">EQP-001 Down 설정</div>
+                        <div class="history-item-time">5분 전</div>
+                    </div>
+                    <div class="history-item" onclick="jumpToHistory(0)">
+                        <div class="history-item-icon">📥</div>
+                        <div class="history-item-text">Initial Load</div>
+                        <div class="history-item-time">10분 전</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Selection Sync -->
+        <div class="sync-indicator" id="syncIndicator" style="display: none;">
+            🔗 <strong id="syncTarget">OP-001-2</strong> 선택됨
+        </div>
+        
+        <!-- Main Tabs -->
+        <div class="main-tabs">
+            <button class="main-tab" onclick="showTab('dashboard')">📊 Dashboard</button>
+            <button class="main-tab active" onclick="showTab('table')">📋 Table</button>
+            <button class="main-tab" onclick="showTab('gantt')">📈 Gantt</button>
+        </div>
+        
+        <div class="header-actions">
+            <button class="btn btn-primary" onclick="runOptimize()">▶ 최적화</button>
+            <button class="btn btn-success" onclick="applySchedule()">✓ 확정</button>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        
+        <!-- Dashboard Tab -->
+        <div class="tab-content" id="tab-dashboard">
+            <div style="padding: 40px; text-align: center; color: var(--gray-500);">
+                📊 Dashboard (KPI, 변경사항 요약)
+            </div>
+        </div>
+        
+        <!-- Table Tab -->
+        <div class="tab-content active" id="tab-table">
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <div class="sub-tabs">
+                        <button class="sub-tab active">📦 Productions (4)</button>
+                        <button class="sub-tab">⚙️ Tasks (8)</button>
+                        <button class="sub-tab">🔧 Machines (3)</button>
+                        <button class="sub-tab">👤 Workers (3)</button>
+                    </div>
+                </div>
+                <div class="toolbar-group">
+                    <button class="btn" onclick="addItem()">+ 추가</button>
+                    <button class="btn">📥 Import</button>
+                    <button class="btn">📤 Export</button>
+                </div>
+            </div>
+            
+            <div class="selection-bar" id="tableSelectionBar">
+                <div class="selection-info">
+                    📌 <strong id="tableSelectedName">OP-001-2</strong> |
+                    시작: <strong>09:15</strong> |
+                    종료: <strong>10:30</strong>
+                </div>
+                <div class="selection-actions">
+                    <button class="sel-btn" onclick="addNextTask()">+ 후속공정</button>
+                    <button class="sel-btn" onclick="editTask()">✏️ 수정</button>
+                    <button class="sel-btn danger" onclick="deleteTask()">🗑️ 삭제</button>
+                    <button class="sel-btn" onclick="clearSelection()">✕</button>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table class="data-table" id="taskTable">
+                    <thead>
+                        <tr>
+                            <th>Task ID</th>
+                            <th>Production</th>
+                            <th>공정</th>
+                            <th>설비</th>
+                            <th>시작</th>
+                            <th>종료</th>
+                            <th>Duration</th>
+                            <th>상태</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr data-id="OP-001-1" onclick="selectTask('OP-001-1')">
+                            <td><strong>OP-001-1</strong></td>
+                            <td>PO-001</td>
+                            <td>Cutting</td>
+                            <td>EQP-001</td>
+                            <td>08:05</td>
+                            <td>09:05</td>
+                            <td>1h 0m</td>
+                            <td><span class="badge badge-success">완료</span></td>
+                        </tr>
+                        <tr data-id="OP-001-2" onclick="selectTask('OP-001-2')" class="selected changed">
+                            <td><strong>OP-001-2</strong></td>
+                            <td>PO-001</td>
+                            <td>Drilling</td>
+                            <td>EQP-002</td>
+                            <td>09:15</td>
+                            <td>10:30</td>
+                            <td>1h 15m</td>
+                            <td><span class="badge badge-warning">변경</span></td>
+                        </tr>
+                        <tr data-id="OP-001-3" onclick="selectTask('OP-001-3')">
+                            <td><strong>OP-001-3</strong></td>
+                            <td>PO-001</td>
+                            <td>Assembly</td>
+                            <td>EQP-003</td>
+                            <td>10:45</td>
+                            <td>11:30</td>
+                            <td>45m</td>
+                            <td><span class="badge badge-info">대기</span></td>
+                        </tr>
+                        <tr data-id="OP-002-1" onclick="selectTask('OP-002-1')">
+                            <td><strong>OP-002-1</strong></td>
+                            <td>PO-002</td>
+                            <td>Cutting</td>
+                            <td>EQP-001</td>
+                            <td>14:00</td>
+                            <td>14:50</td>
+                            <td>50m</td>
+                            <td><span class="badge badge-info">대기</span></td>
+                        </tr>
+                        <tr data-id="OP-004-1" onclick="selectTask('OP-004-1')" class="new">
+                            <td><strong>OP-004-1</strong> <span class="badge badge-success">NEW</span></td>
+                            <td>PO-004</td>
+                            <td>Cutting</td>
+                            <td>EQP-002</td>
+                            <td>12:00</td>
+                            <td>13:30</td>
+                            <td>1h 30m</td>
+                            <td><span class="badge badge-danger">긴급</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Gantt Tab -->
+        <div class="tab-content" id="tab-gantt">
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <button class="sub-tab active">Machine View</button>
+                    <button class="sub-tab">Production View</button>
+                    <button class="sub-tab">Worker View</button>
+                </div>
+                <div class="toolbar-group">
+                    <button class="btn">◀</button>
+                    <button class="btn">Today</button>
+                    <button class="btn">▶</button>
+                    <select class="btn"><option>Hour</option><option>Day</option></select>
+                    <button class="btn">🔍 Fit</button>
+                </div>
+            </div>
+            
+            <div class="selection-bar" id="ganttSelectionBar">
+                <div class="selection-info">
+                    📌 <strong id="ganttSelectedName">OP-001-2</strong> |
+                    드래그: 시간변경 | 엣지: 길이조절 | 우클릭: 메뉴
+                </div>
+                <div class="selection-actions">
+                    <button class="sel-btn" onclick="addNextTask()">+ 후속공정</button>
+                    <button class="sel-btn" onclick="editTask()">✏️ 수정</button>
+                    <button class="sel-btn danger" onclick="deleteTask()">🗑️ 삭제</button>
+                    <button class="sel-btn" onclick="clearSelection()">✕</button>
+                </div>
+            </div>
+            
+            <div class="gantt-container">
+                <div class="gantt-grid">
+                    <div class="gantt-header-row">
+                        <div class="gantt-header-label">Machine</div>
+                        <div class="gantt-header-timeline">
+                            <div class="gantt-hour">08:00</div>
+                            <div class="gantt-hour">09:00</div>
+                            <div class="gantt-hour">10:00</div>
+                            <div class="gantt-hour">11:00</div>
+                            <div class="gantt-hour">12:00</div>
+                            <div class="gantt-hour">13:00</div>
+                            <div class="gantt-hour">14:00</div>
+                            <div class="gantt-hour">15:00</div>
+                            <div class="gantt-hour">16:00</div>
+                            <div class="gantt-hour">17:00</div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">⚙️ EQP-001 (CNC)</div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar task-a" style="left: 5px; width: 80px;" data-id="OP-001-1"
+                                 onclick="selectTask('OP-001-1')" oncontextmenu="showContextMenu(event, 'OP-001-1')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-001-1
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                            <div class="gantt-bar down" style="left: 160px; width: 320px;">
+                                ⚠ DOWN
+                            </div>
+                            <div class="gantt-bar task-b" style="left: 480px; width: 65px;" data-id="OP-002-1"
+                                 onclick="selectTask('OP-002-1')" oncontextmenu="showContextMenu(event, 'OP-002-1')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-002-1
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">⚙️ EQP-002 (CNC)</div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar task-a" style="left: 8px; width: 80px;" data-id="OP-003-1"
+                                 onclick="selectTask('OP-003-1')" oncontextmenu="showContextMenu(event, 'OP-003-1')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-003-1
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                            <div class="gantt-bar changed selected" style="left: 95px; width: 95px;" data-id="OP-001-2"
+                                 onclick="selectTask('OP-001-2')" oncontextmenu="showContextMenu(event, 'OP-001-2')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-001-2 ↔
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                            <div class="gantt-bar new" style="left: 320px; width: 120px;" data-id="OP-004-1"
+                                 onclick="selectTask('OP-004-1')" oncontextmenu="showContextMenu(event, 'OP-004-1')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-004-1 ★
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">⚙️ EQP-003 (Assy)</div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar task-a" style="left: 220px; width: 60px;" data-id="OP-001-3"
+                                 onclick="selectTask('OP-001-3')" oncontextmenu="showContextMenu(event, 'OP-001-3')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-001-3
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                            <div class="gantt-bar task-b" style="left: 450px; width: 60px;" data-id="OP-002-2"
+                                 onclick="selectTask('OP-002-2')" oncontextmenu="showContextMenu(event, 'OP-002-2')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-002-2
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                            <div class="gantt-bar new" style="left: 520px; width: 70px;" data-id="OP-004-2"
+                                 onclick="selectTask('OP-004-2')" oncontextmenu="showContextMenu(event, 'OP-004-2')">
+                                <span class="resize-handle resize-left"></span>
+                                OP-004-2
+                                <span class="resize-handle resize-right"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="gantt-legend">
+                <div class="legend-item"><div class="legend-color" style="background: #3b82f6;"></div> PO-001/003</div>
+                <div class="legend-item"><div class="legend-color" style="background: #10b981;"></div> PO-002/004</div>
+                <div class="legend-item"><div class="legend-color" style="background: #94a3b8;"></div> Setup</div>
+                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%); background-size: 6px 6px;"></div> Changed</div>
+                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%); background-size: 6px 6px;"></div> Down</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-item" onclick="editTask()">✏️ 수정 <span class="shortcut">Enter</span></div>
+        <div class="context-item" onclick="addNextTask()">➕ 후속 공정 추가</div>
+        <div class="context-item" onclick="addPrevTask()">⬆️ 선행 공정 추가</div>
+        <div class="context-divider"></div>
+        <div class="context-item" onclick="duplicateTask()">📋 복제 <span class="shortcut">Ctrl+D</span></div>
+        <div class="context-item" onclick="moveTask()">↔️ 설비 변경</div>
+        <div class="context-divider"></div>
+        <div class="context-item danger" onclick="deleteTask()">🗑️ 삭제 <span class="shortcut">Del</span></div>
+    </div>
+    
+    <!-- Toast for Undo/Redo -->
+    <div class="toast" id="toast">
+        <span id="toastIcon">↩</span>
+        <span id="toastText">OP-001-2 시간 변경 취소됨</span>
+        <button class="toast-action" id="toastAction" onclick="undoRedo()">Redo</button>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot"></div>
+            Engine Connected | SPT
+        </div>
+        <div class="status-item">
+            Ctrl+Z: Undo | Ctrl+Y: Redo | Del: Delete
+        </div>
+        <div class="status-item">
+            Changes: 3 | Makespan: 5h 15m
+        </div>
+    </div>
+    
+    <script>
+        let selectedTaskId = 'OP-001-2';
+        let historyIndex = 3;
+        const historyStack = [
+            { action: 'load', desc: 'Initial Load' },
+            { action: 'edit', desc: 'EQP-001 Down 설정' },
+            { action: 'add', desc: 'OP-004-1 추가' },
+            { action: 'move', desc: 'OP-001-2 시간 변경 (09:15)' }
+        ];
+        
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+            
+            // Sync selection display
+            updateSelectionBars();
+        }
+        
+        // Selection sync across tabs
+        function selectTask(taskId) {
+            selectedTaskId = taskId;
+            
+            // Update table
+            document.querySelectorAll('.data-table tr').forEach(r => r.classList.remove('selected'));
+            const tableRow = document.querySelector(`.data-table tr[data-id="${taskId}"]`);
+            if (tableRow) tableRow.classList.add('selected');
+            
+            // Update gantt
+            document.querySelectorAll('.gantt-bar').forEach(b => b.classList.remove('selected'));
+            const ganttBar = document.querySelector(`.gantt-bar[data-id="${taskId}"]`);
+            if (ganttBar) ganttBar.classList.add('selected');
+            
+            // Update sync indicator
+            document.getElementById('syncIndicator').style.display = 'flex';
+            document.getElementById('syncTarget').textContent = taskId;
+            
+            // Update selection bars
+            updateSelectionBars();
+            
+            hideContextMenu();
+        }
+        
+        function updateSelectionBars() {
+            const show = selectedTaskId != null;
+            document.getElementById('tableSelectionBar').classList.toggle('show', show);
+            document.getElementById('ganttSelectionBar').classList.toggle('show', show);
+            
+            if (show) {
+                document.getElementById('tableSelectedName').textContent = selectedTaskId;
+                document.getElementById('ganttSelectedName').textContent = selectedTaskId;
+            }
+        }
+        
+        function clearSelection() {
+            selectedTaskId = null;
+            document.querySelectorAll('.data-table tr').forEach(r => r.classList.remove('selected'));
+            document.querySelectorAll('.gantt-bar').forEach(b => b.classList.remove('selected'));
+            document.getElementById('syncIndicator').style.display = 'none';
+            updateSelectionBars();
+        }
+        
+        // Undo/Redo
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                updateHistoryUI();
+                showToast('undo', historyStack[historyIndex + 1].desc + ' 취소됨');
+            }
+        }
+        
+        function redo() {
+            if (historyIndex < historyStack.length - 1) {
+                historyIndex++;
+                updateHistoryUI();
+                showToast('redo', historyStack[historyIndex].desc + ' 다시 실행');
+            }
+        }
+        
+        function jumpToHistory(index) {
+            historyIndex = index;
+            updateHistoryUI();
+            toggleHistoryList();
+            showToast('jump', `"${historyStack[index].desc}" 상태로 이동`);
+        }
+        
+        function updateHistoryUI() {
+            // Update buttons
+            document.getElementById('undoBtn').disabled = historyIndex <= 0;
+            document.getElementById('redoBtn').disabled = historyIndex >= historyStack.length - 1;
+            document.getElementById('historyInfo').textContent = `${historyIndex}/${historyStack.length - 1} changes`;
+            
+            // Update list
+            document.querySelectorAll('.history-item').forEach((item, idx) => {
+                const realIdx = historyStack.length - 1 - idx;
+                item.classList.remove('current', 'undone');
+                if (realIdx === historyIndex) {
+                    item.classList.add('current');
+                } else if (realIdx > historyIndex) {
+                    item.classList.add('undone');
+                }
+            });
+        }
+        
+        function toggleHistoryList() {
+            document.getElementById('historyList').classList.toggle('show');
+        }
+        
+        function showToast(type, text) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const textEl = document.getElementById('toastText');
+            const action = document.getElementById('toastAction');
+            
+            toast.className = 'toast show ' + type;
+            textEl.textContent = text;
+            
+            if (type === 'undo') {
+                icon.textContent = '↩';
+                action.textContent = 'Redo';
+                action.onclick = redo;
+            } else if (type === 'redo') {
+                icon.textContent = '↪';
+                action.textContent = 'Undo';
+                action.onclick = undo;
+            } else {
+                icon.textContent = '📍';
+                action.style.display = 'none';
+            }
+            
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+        
+        function recordAction(action, desc) {
+            // Remove any redo history
+            historyStack.splice(historyIndex + 1);
+            // Add new action
+            historyStack.push({ action, desc });
+            historyIndex = historyStack.length - 1;
+            updateHistoryUI();
+        }
+        
+        // Context menu
+        function showContextMenu(event, taskId) {
+            event.preventDefault();
+            selectTask(taskId);
+            
+            const menu = document.getElementById('contextMenu');
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            menu.classList.add('show');
+        }
+        
+        function hideContextMenu() {
+            document.getElementById('contextMenu').classList.remove('show');
+        }
+        
+        // Actions
+        function addItem() {
+            alert('새 항목 추가');
+            recordAction('add', '새 항목 추가');
+        }
+        
+        function addNextTask() {
+            alert(`"${selectedTaskId}" 후속 공정 추가`);
+            recordAction('add', `${selectedTaskId} 후속공정 추가`);
+            hideContextMenu();
+        }
+        
+        function addPrevTask() {
+            alert(`"${selectedTaskId}" 선행 공정 추가`);
+            recordAction('add', `${selectedTaskId} 선행공정 추가`);
+            hideContextMenu();
+        }
+        
+        function editTask() {
+            alert(`"${selectedTaskId}" 수정`);
+            recordAction('edit', `${selectedTaskId} 수정`);
+            hideContextMenu();
+        }
+        
+        function deleteTask() {
+            if (confirm(`"${selectedTaskId}" 삭제?`)) {
+                recordAction('delete', `${selectedTaskId} 삭제`);
+                clearSelection();
+            }
+            hideContextMenu();
+        }
+        
+        function duplicateTask() {
+            alert(`"${selectedTaskId}" 복제`);
+            recordAction('add', `${selectedTaskId} 복제`);
+            hideContextMenu();
+        }
+        
+        function moveTask() {
+            alert(`"${selectedTaskId}" 설비 변경`);
+            recordAction('move', `${selectedTaskId} 설비 변경`);
+            hideContextMenu();
+        }
+        
+        function runOptimize() { alert('최적화 실행'); }
+        function applySchedule() { if(confirm('확정?')) alert('확정됨'); }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+            if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
+            if (e.key === 'Delete' && selectedTaskId) { deleteTask(); }
+            if (e.key === 'Escape') { clearSelection(); hideContextMenu(); }
+        });
+        
+        // Click outside handlers
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu')) hideContextMenu();
+            if (!e.target.closest('.history-dropdown')) {
+                document.getElementById('historyList').classList.remove('show');
+            }
+        });
+        
+        // Initialize
+        updateSelectionBars();
+        updateHistoryUI();
+    </script>
+</body>
+</html>

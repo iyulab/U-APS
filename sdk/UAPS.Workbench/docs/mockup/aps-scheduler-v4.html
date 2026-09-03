@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U-APS Scheduler v4 - Table/Gantt Sync</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-light: #dbeafe;
+            --success: #10b981;
+            --success-light: #d1fae5;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --selected: #fef08a;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 0 20px;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .logo { font-size: 18px; font-weight: 700; color: var(--primary); }
+        
+        .main-tabs { display: flex; gap: 4px; }
+        
+        .main-tab {
+            padding: 10px 20px;
+            border: none;
+            background: var(--gray-100);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+            border-radius: 6px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .main-tab:hover { background: var(--gray-200); }
+        .main-tab.active { background: var(--primary); color: white; }
+        
+        .header-actions { display: flex; gap: 8px; align-items: center; }
+        
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s;
+        }
+        
+        .btn:hover { background: var(--gray-50); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-warning { background: var(--warning); color: white; border-color: var(--warning); }
+        .btn-danger { background: var(--danger); color: white; border-color: var(--danger); }
+        .btn-sm { padding: 5px 10px; font-size: 11px; }
+        
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .tab-content {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .tab-content.active { display: flex; }
+        
+        /* ===================== */
+        /* TABLE + GANTT SYNC    */
+        /* ===================== */
+        .sync-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .sync-toolbar {
+            padding: 10px 16px;
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .sync-tabs { display: flex; gap: 4px; }
+        
+        .sync-tab {
+            padding: 6px 14px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .sync-tab.active {
+            background: var(--gray-800);
+            color: white;
+            border-color: var(--gray-800);
+        }
+        
+        .sync-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Split View */
+        .split-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Table Section */
+        .table-section {
+            height: 45%;
+            min-height: 200px;
+            border-bottom: 3px solid var(--gray-300);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .section-header {
+            padding: 8px 16px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .table-scroll {
+            flex: 1;
+            overflow: auto;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        .data-table th {
+            background: var(--gray-100);
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-600);
+            border-bottom: 1px solid var(--gray-200);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        
+        .data-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--gray-100);
+            cursor: pointer;
+        }
+        
+        .data-table tr:hover { background: var(--gray-50); }
+        .data-table tr.selected { background: var(--selected) !important; }
+        .data-table tr.new { background: var(--success-light); }
+        .data-table tr.changed { background: var(--warning-light); }
+        
+        /* Gantt Section */
+        .gantt-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .gantt-scroll {
+            flex: 1;
+            overflow: auto;
+        }
+        
+        .gantt-grid {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            min-width: 1200px;
+        }
+        
+        .gantt-header-row { display: contents; }
+        
+        .gantt-header-label {
+            background: var(--gray-100);
+            padding: 10px 14px;
+            font-weight: 600;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-200);
+            border-right: 1px solid var(--gray-200);
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        
+        .gantt-header-timeline {
+            background: var(--gray-100);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+        }
+        
+        .gantt-hour {
+            width: 80px;
+            flex-shrink: 0;
+            padding: 10px 0;
+            text-align: center;
+            font-size: 11px;
+            color: var(--gray-500);
+            border-right: 1px solid var(--gray-200);
+        }
+        
+        .gantt-row { display: contents; }
+        
+        .gantt-row-label {
+            padding: 0 14px;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-100);
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            min-height: 40px;
+            cursor: pointer;
+        }
+        
+        .gantt-row-label:hover { background: var(--gray-50); }
+        .gantt-row-label.selected { background: var(--selected); }
+        .gantt-row-label.group { background: var(--gray-50); font-weight: 600; }
+        
+        .gantt-row-bars {
+            position: relative;
+            border-bottom: 1px solid var(--gray-100);
+            min-height: 40px;
+            background: repeating-linear-gradient(
+                90deg,
+                transparent,
+                transparent 79px,
+                var(--gray-100) 79px,
+                var(--gray-100) 80px
+            );
+        }
+        
+        /* Gantt Bars - Interactive */
+        .gantt-bar {
+            position: absolute;
+            height: 26px;
+            top: 7px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 10px;
+            color: white;
+            font-weight: 500;
+            cursor: grab;
+            transition: box-shadow 0.15s, transform 0.15s;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        
+        .gantt-bar:hover {
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .gantt-bar.selected {
+            z-index: 25;
+            box-shadow: 0 0 0 3px var(--primary), 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .gantt-bar.dragging {
+            cursor: grabbing;
+            opacity: 0.8;
+            z-index: 100;
+        }
+        
+        /* Resize Handles */
+        .gantt-bar .resize-left,
+        .gantt-bar .resize-right {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 8px;
+            cursor: ew-resize;
+            background: rgba(255,255,255,0.3);
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        
+        .gantt-bar:hover .resize-left,
+        .gantt-bar:hover .resize-right,
+        .gantt-bar.selected .resize-left,
+        .gantt-bar.selected .resize-right {
+            opacity: 1;
+        }
+        
+        .gantt-bar .resize-left { left: 0; border-radius: 4px 0 0 4px; }
+        .gantt-bar .resize-right { right: 0; border-radius: 0 4px 4px 0; }
+        
+        /* Bar Colors */
+        .gantt-bar.task { background: #3b82f6; }
+        .gantt-bar.task-a { background: #3b82f6; }
+        .gantt-bar.task-b { background: #10b981; }
+        .gantt-bar.task-c { background: #8b5cf6; }
+        .gantt-bar.setup { background: #94a3b8; }
+        .gantt-bar.changed { 
+            background: linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%, #f59e0b 75%, #fbbf24 75%);
+            background-size: 8px 8px;
+        }
+        .gantt-bar.new { background: #10b981; }
+        .gantt-bar.down {
+            background: linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%, #ef4444 75%, #fca5a5 75%);
+            background-size: 8px 8px;
+            cursor: not-allowed;
+        }
+        
+        /* Context Menu */
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 6px 0;
+            min-width: 180px;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .context-menu.show { display: block; }
+        
+        .context-item {
+            padding: 10px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .context-item:hover { background: var(--gray-100); }
+        .context-item.danger { color: var(--danger); }
+        .context-item.disabled { opacity: 0.4; pointer-events: none; }
+        
+        .context-divider {
+            height: 1px;
+            background: var(--gray-200);
+            margin: 6px 0;
+        }
+        
+        /* Selection Info Bar */
+        .selection-bar {
+            padding: 10px 16px;
+            background: var(--primary);
+            color: white;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .selection-bar.show { display: flex; }
+        
+        .selection-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+        }
+        
+        .selection-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Tooltip */
+        .tooltip {
+            position: fixed;
+            background: var(--gray-800);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 1000;
+            pointer-events: none;
+            display: none;
+            max-width: 250px;
+        }
+        
+        .tooltip.show { display: block; }
+        
+        .tooltip-title { font-weight: 600; margin-bottom: 4px; }
+        .tooltip-row { display: flex; justify-content: space-between; gap: 16px; }
+        .tooltip-label { color: var(--gray-400); }
+        
+        /* Legend */
+        .gantt-legend {
+            padding: 10px 16px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+        }
+        
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-color { width: 16px; height: 12px; border-radius: 2px; }
+        
+        /* Status Bar */
+        .status-bar {
+            background: var(--gray-800);
+            color: white;
+            padding: 6px 16px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .status-item { display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+        
+        /* Splitter */
+        .splitter {
+            height: 6px;
+            background: var(--gray-200);
+            cursor: ns-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .splitter::after {
+            content: '⋯';
+            color: var(--gray-400);
+            font-size: 14px;
+        }
+        
+        .splitter:hover { background: var(--gray-300); }
+        
+        .hidden { display: none !important; }
+        
+        .badge {
+            display: inline-flex;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: var(--success-light); color: #065f46; }
+        .badge-warning { background: var(--warning-light); color: #92400e; }
+        .badge-danger { background: var(--danger-light); color: #991b1b; }
+        .badge-info { background: var(--primary-light); color: #1e40af; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">U-APS</div>
+        
+        <div class="main-tabs">
+            <button class="main-tab" onclick="showTab('dashboard')">📊 Dashboard</button>
+            <button class="main-tab active" onclick="showTab('schedule')">📋 Schedule</button>
+        </div>
+        
+        <div class="header-actions">
+            <span style="font-size: 12px; color: var(--gray-500);">변경: 2건</span>
+            <button class="btn btn-primary" onclick="runOptimize()">▶ 최적화</button>
+            <button class="btn btn-success" onclick="applySchedule()">✓ 확정</button>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Schedule Tab (Table + Gantt Sync) -->
+        <div class="tab-content active" id="tab-schedule">
+            <div class="sync-container">
+                <div class="sync-toolbar">
+                    <div class="sync-tabs">
+                        <button class="sync-tab active">📦 Productions</button>
+                        <button class="sync-tab">⚙️ Process Tasks</button>
+                        <button class="sync-tab">🔧 Machines</button>
+                        <button class="sync-tab">👤 Workers</button>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-sm" onclick="addTask()">+ 공정 추가</button>
+                        <button class="btn btn-sm">📥 Import</button>
+                        <button class="btn btn-sm">📤 Export</button>
+                    </div>
+                </div>
+                
+                <!-- Selection Bar -->
+                <div class="selection-bar" id="selectionBar">
+                    <div class="selection-info">
+                        <span>📌 <strong id="selectedName">OP-001-2</strong> 선택됨</span>
+                        <span>|</span>
+                        <span>시작: <strong id="selectedStart">09:15</strong></span>
+                        <span>종료: <strong id="selectedEnd">10:30</strong></span>
+                        <span>Duration: <strong id="selectedDur">1h 15m</strong></span>
+                    </div>
+                    <div class="selection-actions">
+                        <button class="btn btn-sm" onclick="addNextTask()">+ 후속 공정</button>
+                        <button class="btn btn-sm btn-warning" onclick="editTask()">✏️ 수정</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteTask()">🗑️ 삭제</button>
+                        <button class="btn btn-sm" onclick="clearSelection()">✕ 선택해제</button>
+                    </div>
+                </div>
+                
+                <div class="sync-body">
+                    <div class="split-view">
+                        <!-- Table Section -->
+                        <div class="table-section">
+                            <div class="section-header">
+                                <span>📋 Process Tasks (Table)</span>
+                                <span style="font-size: 11px; color: var(--gray-500);">테이블 클릭 → Gantt 동기화</span>
+                            </div>
+                            <div class="table-scroll">
+                                <table class="data-table" id="taskTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Task ID</th>
+                                            <th>Production</th>
+                                            <th>공정</th>
+                                            <th>설비</th>
+                                            <th>시작</th>
+                                            <th>종료</th>
+                                            <th>Duration</th>
+                                            <th>상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr data-id="OP-001-1" onclick="selectTask('OP-001-1')">
+                                            <td><strong>OP-001-1</strong></td>
+                                            <td>PO-001</td>
+                                            <td>Cutting</td>
+                                            <td>EQP-001</td>
+                                            <td>08:05</td>
+                                            <td>09:05</td>
+                                            <td>1h 0m</td>
+                                            <td><span class="badge badge-success">완료</span></td>
+                                        </tr>
+                                        <tr data-id="OP-001-2" onclick="selectTask('OP-001-2')" class="selected">
+                                            <td><strong>OP-001-2</strong></td>
+                                            <td>PO-001</td>
+                                            <td>Drilling</td>
+                                            <td>EQP-002</td>
+                                            <td>09:15</td>
+                                            <td>10:30</td>
+                                            <td>1h 15m</td>
+                                            <td><span class="badge badge-warning">변경</span></td>
+                                        </tr>
+                                        <tr data-id="OP-001-3" onclick="selectTask('OP-001-3')">
+                                            <td><strong>OP-001-3</strong></td>
+                                            <td>PO-001</td>
+                                            <td>Assembly</td>
+                                            <td>EQP-003</td>
+                                            <td>10:45</td>
+                                            <td>11:30</td>
+                                            <td>45m</td>
+                                            <td><span class="badge badge-info">대기</span></td>
+                                        </tr>
+                                        <tr data-id="OP-002-1" onclick="selectTask('OP-002-1')">
+                                            <td><strong>OP-002-1</strong></td>
+                                            <td>PO-002</td>
+                                            <td>Cutting</td>
+                                            <td>EQP-001</td>
+                                            <td>14:00</td>
+                                            <td>14:50</td>
+                                            <td>50m</td>
+                                            <td><span class="badge badge-info">대기</span></td>
+                                        </tr>
+                                        <tr data-id="OP-003-1" onclick="selectTask('OP-003-1')">
+                                            <td><strong>OP-003-1</strong></td>
+                                            <td>PO-003</td>
+                                            <td>Cutting</td>
+                                            <td>EQP-002</td>
+                                            <td>08:10</td>
+                                            <td>09:10</td>
+                                            <td>1h 0m</td>
+                                            <td><span class="badge badge-success">완료</span></td>
+                                        </tr>
+                                        <tr data-id="OP-004-1" onclick="selectTask('OP-004-1')" class="new">
+                                            <td><strong>OP-004-1</strong> <span class="badge badge-success">NEW</span></td>
+                                            <td>PO-004</td>
+                                            <td>Cutting</td>
+                                            <td>EQP-002</td>
+                                            <td>12:00</td>
+                                            <td>13:30</td>
+                                            <td>1h 30m</td>
+                                            <td><span class="badge badge-danger">긴급</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Splitter -->
+                        <div class="splitter" id="splitter"></div>
+                        
+                        <!-- Gantt Section -->
+                        <div class="gantt-section">
+                            <div class="section-header">
+                                <span>📈 Gantt Chart</span>
+                                <span style="font-size: 11px; color: var(--gray-500);">드래그: 시간 변경 | 엣지 드래그: 길이 조절 | 우클릭: 메뉴</span>
+                            </div>
+                            <div class="gantt-scroll">
+                                <div class="gantt-grid">
+                                    <div class="gantt-header-row">
+                                        <div class="gantt-header-label">Machine</div>
+                                        <div class="gantt-header-timeline">
+                                            <div class="gantt-hour">08:00</div>
+                                            <div class="gantt-hour">09:00</div>
+                                            <div class="gantt-hour">10:00</div>
+                                            <div class="gantt-hour">11:00</div>
+                                            <div class="gantt-hour">12:00</div>
+                                            <div class="gantt-hour">13:00</div>
+                                            <div class="gantt-hour">14:00</div>
+                                            <div class="gantt-hour">15:00</div>
+                                            <div class="gantt-hour">16:00</div>
+                                            <div class="gantt-hour">17:00</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="gantt-row">
+                                        <div class="gantt-row-label" onclick="selectRow('EQP-001')">
+                                            ⚙️ EQP-001 (CNC)
+                                        </div>
+                                        <div class="gantt-row-bars">
+                                            <div class="gantt-bar setup" style="left: 0px; width: 20px;" data-id="setup-1">
+                                                S
+                                            </div>
+                                            <div class="gantt-bar task-a" style="left: 20px; width: 80px;" 
+                                                 data-id="OP-001-1" 
+                                                 onclick="selectTask('OP-001-1')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-001-1')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-001-1 Cutting
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar down" style="left: 160px; width: 320px;" data-id="down-1">
+                                                ⚠ Machine Down (10:00 - 14:00)
+                                            </div>
+                                            <div class="gantt-bar task-b" style="left: 480px; width: 70px;"
+                                                 data-id="OP-002-1"
+                                                 onclick="selectTask('OP-002-1')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-002-1')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-002-1
+                                                <span class="resize-right"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="gantt-row">
+                                        <div class="gantt-row-label" onclick="selectRow('EQP-002')">
+                                            ⚙️ EQP-002 (CNC)
+                                        </div>
+                                        <div class="gantt-row-bars">
+                                            <div class="gantt-bar task-a" style="left: 10px; width: 80px;"
+                                                 data-id="OP-003-1"
+                                                 onclick="selectTask('OP-003-1')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-003-1')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-003-1 Cutting
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar changed selected" style="left: 95px; width: 95px;"
+                                                 data-id="OP-001-2"
+                                                 onclick="selectTask('OP-001-2')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-001-2')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-001-2 Drill ↔
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar new" style="left: 320px; width: 120px;"
+                                                 data-id="OP-004-1"
+                                                 onclick="selectTask('OP-004-1')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-004-1')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-004-1 ★ NEW
+                                                <span class="resize-right"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="gantt-row">
+                                        <div class="gantt-row-label" onclick="selectRow('EQP-003')">
+                                            ⚙️ EQP-003 (Assy)
+                                        </div>
+                                        <div class="gantt-row-bars">
+                                            <div class="gantt-bar task-a" style="left: 220px; width: 60px;"
+                                                 data-id="OP-001-3"
+                                                 onclick="selectTask('OP-001-3')"
+                                                 oncontextmenu="showContextMenu(event, 'OP-001-3')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-001-3 Assy
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar task-a" style="left: 300px; width: 50px;"
+                                                 data-id="OP-003-2"
+                                                 onclick="selectTask('OP-003-2')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-003-2
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar task-b" style="left: 450px; width: 60px;"
+                                                 data-id="OP-002-2"
+                                                 onclick="selectTask('OP-002-2')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-002-2
+                                                <span class="resize-right"></span>
+                                            </div>
+                                            <div class="gantt-bar new" style="left: 520px; width: 70px;"
+                                                 data-id="OP-004-2"
+                                                 onclick="selectTask('OP-004-2')"
+                                                 draggable="true">
+                                                <span class="resize-left"></span>
+                                                OP-004-2 ★
+                                                <span class="resize-right"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="gantt-legend">
+                                <div class="legend-item"><div class="legend-color" style="background: #3b82f6;"></div> PO-001/003</div>
+                                <div class="legend-item"><div class="legend-color" style="background: #10b981;"></div> PO-002/004</div>
+                                <div class="legend-item"><div class="legend-color" style="background: #94a3b8;"></div> Setup</div>
+                                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%); background-size: 6px 6px;"></div> Changed</div>
+                                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%); background-size: 6px 6px;"></div> Down</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Dashboard Tab -->
+        <div class="tab-content" id="tab-dashboard">
+            <div style="padding: 40px; text-align: center; color: var(--gray-500);">
+                📊 Dashboard 내용 (KPI, 변경사항 등)
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-item" onclick="editTask()">✏️ 수정</div>
+        <div class="context-item" onclick="addNextTask()">➕ 후속 공정 추가</div>
+        <div class="context-item" onclick="addPrevTask()">⬆️ 선행 공정 추가</div>
+        <div class="context-divider"></div>
+        <div class="context-item" onclick="duplicateTask()">📋 복제</div>
+        <div class="context-item" onclick="moveTask()">↔️ 다른 설비로 이동</div>
+        <div class="context-divider"></div>
+        <div class="context-item danger" onclick="deleteTask()">🗑️ 삭제</div>
+    </div>
+    
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip">
+        <div class="tooltip-title">OP-001-2</div>
+        <div class="tooltip-row"><span class="tooltip-label">Production:</span> PO-001</div>
+        <div class="tooltip-row"><span class="tooltip-label">공정:</span> Drilling</div>
+        <div class="tooltip-row"><span class="tooltip-label">시간:</span> 09:15 - 10:30</div>
+        <div class="tooltip-row"><span class="tooltip-label">Duration:</span> 1h 15m</div>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot"></div>
+            Engine Connected | SPT Rule
+        </div>
+        <div class="status-item">
+            선택: OP-001-2 | 드래그로 시간 조정
+        </div>
+        <div class="status-item">
+            Makespan: 5h 15m | Tasks: 8
+        </div>
+    </div>
+    
+    <script>
+        let selectedTaskId = 'OP-001-2';
+        
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        function selectTask(taskId) {
+            selectedTaskId = taskId;
+            
+            // Clear all selections
+            document.querySelectorAll('.data-table tr').forEach(r => r.classList.remove('selected'));
+            document.querySelectorAll('.gantt-bar').forEach(b => b.classList.remove('selected'));
+            document.querySelectorAll('.gantt-row-label').forEach(l => l.classList.remove('selected'));
+            
+            // Select in table
+            const tableRow = document.querySelector(`tr[data-id="${taskId}"]`);
+            if (tableRow) {
+                tableRow.classList.add('selected');
+                tableRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            
+            // Select in gantt
+            const ganttBar = document.querySelector(`.gantt-bar[data-id="${taskId}"]`);
+            if (ganttBar) {
+                ganttBar.classList.add('selected');
+                ganttBar.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+            
+            // Update selection bar
+            document.getElementById('selectionBar').classList.add('show');
+            document.getElementById('selectedName').textContent = taskId;
+            
+            // Hide context menu
+            hideContextMenu();
+        }
+        
+        function clearSelection() {
+            selectedTaskId = null;
+            document.querySelectorAll('.data-table tr').forEach(r => r.classList.remove('selected'));
+            document.querySelectorAll('.gantt-bar').forEach(b => b.classList.remove('selected'));
+            document.getElementById('selectionBar').classList.remove('show');
+        }
+        
+        function showContextMenu(event, taskId) {
+            event.preventDefault();
+            selectTask(taskId);
+            
+            const menu = document.getElementById('contextMenu');
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            menu.classList.add('show');
+        }
+        
+        function hideContextMenu() {
+            document.getElementById('contextMenu').classList.remove('show');
+        }
+        
+        function addTask() {
+            alert('새 공정 추가 다이얼로그');
+        }
+        
+        function addNextTask() {
+            alert(`"${selectedTaskId}" 후속 공정 추가\n\n새 공정이 이 공정 완료 후 시작됩니다.`);
+            hideContextMenu();
+        }
+        
+        function addPrevTask() {
+            alert(`"${selectedTaskId}" 선행 공정 추가`);
+            hideContextMenu();
+        }
+        
+        function editTask() {
+            alert(`"${selectedTaskId}" 수정 다이얼로그\n\n- 시작/종료 시간\n- Duration\n- 설비 변경\n- 우선순위`);
+            hideContextMenu();
+        }
+        
+        function deleteTask() {
+            if (confirm(`"${selectedTaskId}" 공정을 삭제하시겠습니까?`)) {
+                alert('삭제됨');
+                clearSelection();
+            }
+            hideContextMenu();
+        }
+        
+        function duplicateTask() {
+            alert(`"${selectedTaskId}" 복제`);
+            hideContextMenu();
+        }
+        
+        function moveTask() {
+            alert(`"${selectedTaskId}" 다른 설비로 이동\n\n가능한 설비:\n- EQP-001\n- EQP-002`);
+            hideContextMenu();
+        }
+        
+        function runOptimize() {
+            alert('🔄 최적화 실행\n\n변경사항 적용 → 재스케줄링');
+        }
+        
+        function applySchedule() {
+            if (confirm('현재 스케줄을 확정하시겠습니까?')) {
+                alert('✓ 스케줄 확정됨');
+            }
+        }
+        
+        // Close context menu on click outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu')) {
+                hideContextMenu();
+            }
+        });
+        
+        // Drag simulation
+        document.querySelectorAll('.gantt-bar[draggable="true"]').forEach(bar => {
+            bar.addEventListener('dragstart', (e) => {
+                bar.classList.add('dragging');
+            });
+            
+            bar.addEventListener('dragend', (e) => {
+                bar.classList.remove('dragging');
+                alert(`"${bar.dataset.id}" 시간 변경됨\n(실제 구현시 드래그 위치로 시간 계산)`);
+            });
+        });
+        
+        // Tooltip on hover
+        document.querySelectorAll('.gantt-bar').forEach(bar => {
+            bar.addEventListener('mouseenter', (e) => {
+                if (bar.dataset.id && !bar.dataset.id.startsWith('setup') && !bar.dataset.id.startsWith('down')) {
+                    const tooltip = document.getElementById('tooltip');
+                    tooltip.querySelector('.tooltip-title').textContent = bar.dataset.id;
+                    tooltip.style.left = (e.clientX + 10) + 'px';
+                    tooltip.style.top = (e.clientY + 10) + 'px';
+                    tooltip.classList.add('show');
+                }
+            });
+            
+            bar.addEventListener('mouseleave', () => {
+                document.getElementById('tooltip').classList.remove('show');
+            });
+        });
+    </script>
+</body>
+</html>

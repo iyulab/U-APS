@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U-APS Scheduler v2</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-light: #dbeafe;
+            --success: #10b981;
+            --success-light: #d1fae5;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--gray-800);
+            color: white;
+            padding: 0 16px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .logo {
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .logo-icon {
+            background: var(--primary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        /* Mode Selector */
+        .mode-selector {
+            display: flex;
+            background: var(--gray-700);
+            border-radius: 6px;
+            padding: 3px;
+        }
+        
+        .mode-btn {
+            padding: 6px 16px;
+            border: none;
+            background: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .mode-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .mode-btn:hover:not(.active) {
+            color: white;
+        }
+        
+        .mode-btn.changes {
+            position: relative;
+        }
+        
+        .mode-btn.changes::after {
+            content: '2';
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: var(--danger);
+            color: white;
+            font-size: 10px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Main Layout */
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        /* Left Panel - Table View */
+        .left-panel {
+            width: 400px;
+            background: white;
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        
+        .panel-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+            background: var(--gray-50);
+        }
+        
+        .panel-tab {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-500);
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .panel-tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background: white;
+        }
+        
+        .panel-content {
+            flex: 1;
+            overflow: auto;
+        }
+        
+        /* Sub Tabs */
+        .sub-tabs {
+            display: flex;
+            padding: 8px;
+            gap: 4px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .sub-tab {
+            padding: 6px 12px;
+            border: 1px solid var(--gray-200);
+            background: white;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            color: var(--gray-600);
+        }
+        
+        .sub-tab.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .sub-tab .count {
+            background: var(--gray-200);
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 4px;
+            font-size: 10px;
+        }
+        
+        .sub-tab.active .count {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        .data-table th {
+            background: var(--gray-50);
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-600);
+            border-bottom: 1px solid var(--gray-200);
+            position: sticky;
+            top: 0;
+        }
+        
+        .data-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        
+        .data-table tr:hover {
+            background: var(--gray-50);
+        }
+        
+        .data-table tr.selected {
+            background: var(--primary-light);
+        }
+        
+        .data-table tr.changed {
+            background: var(--warning-light);
+        }
+        
+        .data-table tr.new {
+            background: var(--success-light);
+        }
+        
+        .data-table tr.deleted {
+            background: var(--danger-light);
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+        
+        /* Center Panel - Gantt */
+        .center-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .gantt-toolbar {
+            padding: 8px 12px;
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .gantt-title {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .gantt-controls {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn {
+            padding: 6px 12px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .btn:hover { background: var(--gray-50); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-warning { background: var(--warning); color: white; border-color: var(--warning); }
+        
+        /* Gantt Container */
+        .gantt-container {
+            flex: 1;
+            overflow: auto;
+            background: white;
+        }
+        
+        .gantt-grid {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            min-width: 1200px;
+        }
+        
+        .gantt-header-row {
+            display: contents;
+        }
+        
+        .gantt-header-label {
+            background: var(--gray-100);
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-200);
+            border-right: 1px solid var(--gray-200);
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        
+        .gantt-header-timeline {
+            background: var(--gray-100);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+        }
+        
+        .gantt-hour {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--gray-500);
+            border-right: 1px solid var(--gray-200);
+        }
+        
+        .gantt-row {
+            display: contents;
+        }
+        
+        .gantt-row-label {
+            padding: 0 12px;
+            font-size: 12px;
+            border-bottom: 1px solid var(--gray-100);
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            min-height: 36px;
+        }
+        
+        .gantt-row-label.group {
+            background: var(--gray-50);
+            font-weight: 600;
+        }
+        
+        .gantt-row-label .icon {
+            font-size: 14px;
+        }
+        
+        .gantt-row-bars {
+            position: relative;
+            border-bottom: 1px solid var(--gray-100);
+            min-height: 36px;
+        }
+        
+        .gantt-bar {
+            position: absolute;
+            height: 24px;
+            top: 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 10px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        
+        .gantt-bar:hover {
+            filter: brightness(1.1);
+            z-index: 10;
+        }
+        
+        .gantt-bar.process { background: #3b82f6; }
+        .gantt-bar.setup { background: #94a3b8; }
+        .gantt-bar.wait { background: #e5e7eb; border: 1px dashed #9ca3af; color: #6b7280; }
+        .gantt-bar.changed { 
+            background: repeating-linear-gradient(45deg, #f59e0b, #f59e0b 5px, #fbbf24 5px, #fbbf24 10px);
+        }
+        .gantt-bar.new { 
+            background: #10b981;
+            box-shadow: 0 0 0 2px #34d399;
+        }
+        .gantt-bar.deleted {
+            background: #ef4444;
+            opacity: 0.5;
+            text-decoration: line-through;
+        }
+        .gantt-bar.down {
+            background: repeating-linear-gradient(45deg, #ef4444, #ef4444 5px, #fca5a5 5px, #fca5a5 10px);
+        }
+        
+        .gantt-bar.baseline {
+            opacity: 0.3;
+            top: 22px;
+            height: 8px;
+            border-radius: 2px;
+        }
+        
+        /* Right Panel - Dashboard/Changes */
+        .right-panel {
+            width: 320px;
+            background: white;
+            border-left: 1px solid var(--gray-200);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        
+        .right-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--gray-200);
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .right-content {
+            flex: 1;
+            overflow: auto;
+            padding: 12px;
+        }
+        
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        
+        .kpi-card {
+            background: var(--gray-50);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+        
+        .kpi-card.highlight { background: var(--primary-light); }
+        .kpi-card.warning { background: var(--warning-light); }
+        .kpi-card.success { background: var(--success-light); }
+        
+        .kpi-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .kpi-label {
+            font-size: 11px;
+            color: var(--gray-500);
+            margin-top: 2px;
+        }
+        
+        .kpi-change {
+            font-size: 10px;
+            margin-top: 4px;
+            font-weight: 500;
+        }
+        
+        .kpi-change.positive { color: var(--success); }
+        .kpi-change.negative { color: var(--danger); }
+        
+        /* Change Cards */
+        .change-section {
+            margin-bottom: 16px;
+        }
+        
+        .change-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-600);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .change-card {
+            background: var(--gray-50);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            border-left: 3px solid var(--gray-300);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .change-card:hover {
+            background: var(--gray-100);
+        }
+        
+        .change-card.new { border-left-color: var(--success); background: var(--success-light); }
+        .change-card.modified { border-left-color: var(--warning); background: var(--warning-light); }
+        .change-card.deleted { border-left-color: var(--danger); background: var(--danger-light); }
+        
+        .change-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .change-card-title {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .change-card-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: white;
+        }
+        
+        .change-card-desc {
+            font-size: 11px;
+            color: var(--gray-600);
+            margin-top: 4px;
+        }
+        
+        .change-card-remove {
+            float: right;
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .change-card-remove:hover { color: var(--danger); }
+        
+        /* Quick Actions */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: 16px;
+        }
+        
+        .quick-action {
+            padding: 10px;
+            border: 1px solid var(--gray-200);
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        
+        .quick-action:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+        
+        .quick-action-icon {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+        
+        .quick-action-label {
+            font-size: 11px;
+            color: var(--gray-600);
+        }
+        
+        /* Compare Mode */
+        .compare-header {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .compare-btn {
+            flex: 1;
+            padding: 8px;
+            border: 2px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .compare-btn.active {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+        
+        .compare-btn.baseline { border-color: var(--gray-400); }
+        .compare-btn.baseline.active { background: var(--gray-200); }
+        
+        .compare-btn.proposed { border-color: var(--primary); }
+        .compare-btn.proposed.active { background: var(--primary-light); }
+        
+        /* Status Bar */
+        .status-bar {
+            background: var(--gray-800);
+            color: white;
+            padding: 6px 16px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+        
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 12px;
+            padding: 8px 12px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+            font-size: 11px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .legend-color {
+            width: 14px;
+            height: 10px;
+            border-radius: 2px;
+        }
+        
+        /* Floating Buttons */
+        .floating-buttons {
+            position: fixed;
+            bottom: 60px;
+            right: 340px;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .floating-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .floating-btn.optimize {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .floating-btn.apply {
+            background: var(--success);
+            color: white;
+        }
+        
+        /* Hidden */
+        .hidden { display: none !important; }
+        
+        /* Badge */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: var(--success-light); color: #065f46; }
+        .badge-warning { background: var(--warning-light); color: #92400e; }
+        .badge-danger { background: var(--danger-light); color: #991b1b; }
+        .badge-info { background: var(--primary-light); color: #1e40af; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <span class="logo-icon">APS</span>
+            U-APS Production Scheduler
+        </div>
+        
+        <div class="mode-selector">
+            <button class="mode-btn active" onclick="setMode('schedule')">
+                📊 스케줄러
+            </button>
+            <button class="mode-btn changes" onclick="setMode('changes')">
+                ⚡ 변경사항
+            </button>
+            <button class="mode-btn" onclick="setMode('compare')">
+                🔄 비교
+            </button>
+        </div>
+        
+        <div style="display: flex; gap: 8px;">
+            <button class="btn">📁 불러오기</button>
+            <button class="btn">💾 저장</button>
+            <button class="btn">⚙️</button>
+        </div>
+    </header>
+    
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Left Panel: Table View -->
+        <div class="left-panel">
+            <div class="panel-tabs">
+                <button class="panel-tab active" onclick="setTab('data')">📦 Data</button>
+                <button class="panel-tab" onclick="setTab('resource')">🔧 Resource</button>
+                <button class="panel-tab" onclick="setTab('master')">📋 Master</button>
+            </div>
+            
+            <!-- Data Tab -->
+            <div class="panel-content" id="tab-data">
+                <div class="sub-tabs">
+                    <button class="sub-tab active">Products <span class="count">3</span></button>
+                    <button class="sub-tab">Productions <span class="count">4</span></button>
+                    <button class="sub-tab">Process <span class="count">8</span></button>
+                    <button class="sub-tab">Tasks <span class="count">12</span></button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Product ID</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="selected">
+                            <td><strong>PRD-A</strong></td>
+                            <td>Product-A</td>
+                            <td>Standard</td>
+                        </tr>
+                        <tr>
+                            <td><strong>PRD-B</strong></td>
+                            <td>Product-B</td>
+                            <td>Standard</td>
+                        </tr>
+                        <tr class="new">
+                            <td><strong>PRD-C</strong> <span class="badge badge-success">NEW</span></td>
+                            <td>Product-C</td>
+                            <td>Express</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div style="padding: 8px; border-top: 1px solid var(--gray-200);">
+                    <div class="sub-tabs">
+                        <button class="sub-tab active">Productions <span class="count">4</span></button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Production</th>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Due</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>PO-001</strong></td>
+                                <td>PRD-A</td>
+                                <td>10</td>
+                                <td>12/31</td>
+                                <td><span class="badge badge-success">OK</span></td>
+                            </tr>
+                            <tr class="changed">
+                                <td><strong>PO-002</strong></td>
+                                <td>PRD-B</td>
+                                <td><s>5</s> → 8</td>
+                                <td>12/25</td>
+                                <td><span class="badge badge-warning">변경</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>PO-003</strong></td>
+                                <td>PRD-A</td>
+                                <td>8</td>
+                                <td>12/28</td>
+                                <td><span class="badge badge-success">OK</span></td>
+                            </tr>
+                            <tr class="new">
+                                <td><strong>PO-004</strong> <span class="badge badge-success">NEW</span></td>
+                                <td>PRD-C</td>
+                                <td>15</td>
+                                <td>12/24</td>
+                                <td><span class="badge badge-danger">긴급</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Resource Tab -->
+            <div class="panel-content hidden" id="tab-resource">
+                <div class="sub-tabs">
+                    <button class="sub-tab active">Machines <span class="count">3</span></button>
+                    <button class="sub-tab">Workers <span class="count">3</span></button>
+                    <button class="sub-tab">Calendar <span class="count">5</span></button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Machine</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Avail</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="changed">
+                            <td><strong>EQP-001</strong></td>
+                            <td>CNC</td>
+                            <td><span class="badge badge-danger">DOWN</span></td>
+                            <td>10:00-14:00</td>
+                        </tr>
+                        <tr>
+                            <td><strong>EQP-002</strong></td>
+                            <td>CNC</td>
+                            <td><span class="badge badge-success">OK</span></td>
+                            <td>100%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>EQP-003</strong></td>
+                            <td>Assembly</td>
+                            <td><span class="badge badge-success">OK</span></td>
+                            <td>100%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Master Tab -->
+            <div class="panel-content hidden" id="tab-master">
+                <div class="sub-tabs">
+                    <button class="sub-tab active">Master Process <span class="count">6</span></button>
+                    <button class="sub-tab">Workplaces <span class="count">2</span></button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Process</th>
+                            <th>Product</th>
+                            <th>Machine</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cutting</td>
+                            <td>PRD-A</td>
+                            <td>EQP-001,002</td>
+                            <td>10m</td>
+                        </tr>
+                        <tr>
+                            <td>Drilling</td>
+                            <td>PRD-A</td>
+                            <td>EQP-001</td>
+                            <td>7.5m</td>
+                        </tr>
+                        <tr>
+                            <td>Assembly</td>
+                            <td>PRD-A</td>
+                            <td>EQP-003</td>
+                            <td>5m</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Center Panel: Gantt -->
+        <div class="center-panel">
+            <div class="gantt-toolbar">
+                <div class="gantt-title">📊 Gantt Chart - Production Schedule</div>
+                <div class="gantt-controls">
+                    <button class="btn">◀</button>
+                    <button class="btn">Today</button>
+                    <button class="btn">▶</button>
+                    <select class="btn" style="border: 1px solid var(--gray-300);">
+                        <option>Hour</option>
+                        <option>Day</option>
+                        <option>Week</option>
+                    </select>
+                    <button class="btn">🔍 Zoom</button>
+                </div>
+            </div>
+            
+            <!-- Compare Mode Header -->
+            <div class="compare-header" id="compare-header">
+                <button class="compare-btn baseline active">
+                    📊 Baseline (현재)
+                </button>
+                <button class="compare-btn proposed">
+                    🔄 Proposed (최적화)
+                </button>
+                <button class="compare-btn">
+                    ↔️ 오버레이
+                </button>
+            </div>
+            
+            <div class="gantt-container">
+                <div class="gantt-grid">
+                    <!-- Header -->
+                    <div class="gantt-header-row">
+                        <div class="gantt-header-label">Resource / Time</div>
+                        <div class="gantt-header-timeline">
+                            <div class="gantt-hour">08:00</div>
+                            <div class="gantt-hour">09:00</div>
+                            <div class="gantt-hour">10:00</div>
+                            <div class="gantt-hour">11:00</div>
+                            <div class="gantt-hour">12:00</div>
+                            <div class="gantt-hour">13:00</div>
+                            <div class="gantt-hour">14:00</div>
+                            <div class="gantt-hour">15:00</div>
+                            <div class="gantt-hour">16:00</div>
+                            <div class="gantt-hour">17:00</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Product Group: PRD-A -->
+                    <div class="gantt-row">
+                        <div class="gantt-row-label group">
+                            <span class="icon">📦</span> PRD-A (PO-001, PO-003)
+                        </div>
+                        <div class="gantt-row-bars" style="background: var(--gray-50);"></div>
+                    </div>
+                    
+                    <!-- EQP-001 -->
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">🔧</span> EQP-001
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar setup" style="left: 0%; width: 4%;" title="Setup">S</div>
+                            <div class="gantt-bar process" style="left: 4%; width: 12%;" title="PO-001 Cutting">PO-001 Cutting</div>
+                            <div class="gantt-bar down" style="left: 25%; width: 40%;" title="Machine Down">⚠ DOWN (10:00-14:00)</div>
+                            <div class="gantt-bar process" style="left: 75%; width: 10%;" title="PO-002">PO-002</div>
+                        </div>
+                    </div>
+                    
+                    <!-- EQP-002 -->
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">🔧</span> EQP-002
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar setup" style="left: 5%; width: 3%;">S</div>
+                            <div class="gantt-bar process" style="left: 8%; width: 15%;">PO-003 Cutting</div>
+                            <div class="gantt-bar changed" style="left: 25%; width: 18%;">PO-001 Drilling ↔</div>
+                            <div class="gantt-bar new" style="left: 50%; width: 20%;">PO-004 Cutting ★</div>
+                        </div>
+                    </div>
+                    
+                    <!-- EQP-003 -->
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">🔧</span> EQP-003
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process" style="left: 25%; width: 8%; background: #3b82f6;">PO-001 Assy</div>
+                            <div class="gantt-bar process" style="left: 45%; width: 6%; background: #8b5cf6;">PO-003 Assy</div>
+                            <div class="gantt-bar changed" style="left: 55%; width: 8%;">PO-002 Assy</div>
+                            <div class="gantt-bar new" style="left: 75%; width: 10%;">PO-004 Assy ★</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Workers -->
+                    <div class="gantt-row">
+                        <div class="gantt-row-label group">
+                            <span class="icon">👷</span> Workers
+                        </div>
+                        <div class="gantt-row-bars" style="background: var(--gray-50);"></div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">👤</span> WRK-001
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process" style="left: 4%; width: 35%; background: #6366f1; opacity: 0.7;"></div>
+                            <div class="gantt-bar process" style="left: 50%; width: 35%; background: #6366f1; opacity: 0.7;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">👤</span> WRK-002
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process" style="left: 25%; width: 25%; background: #6366f1; opacity: 0.7;"></div>
+                            <div class="gantt-bar process" style="left: 55%; width: 30%; background: #6366f1; opacity: 0.7;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background: #3b82f6;"></div> Process</div>
+                <div class="legend-item"><div class="legend-color" style="background: #94a3b8;"></div> Setup</div>
+                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(45deg, #f59e0b, #f59e0b 2px, #fbbf24 2px, #fbbf24 4px);"></div> Changed</div>
+                <div class="legend-item"><div class="legend-color" style="background: #10b981;"></div> New</div>
+                <div class="legend-item"><div class="legend-color" style="background: repeating-linear-gradient(45deg, #ef4444, #ef4444 2px, #fca5a5 2px, #fca5a5 4px);"></div> Down</div>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Dashboard / Changes -->
+        <div class="right-panel">
+            <!-- Dashboard View -->
+            <div id="panel-dashboard">
+                <div class="right-header">
+                    📊 Dashboard
+                    <span class="badge badge-info">Updated</span>
+                </div>
+                <div class="right-content">
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-value">5h 15m</div>
+                            <div class="kpi-label">Makespan</div>
+                            <div class="kpi-change negative">▲ +45m (from 4h 30m)</div>
+                        </div>
+                        <div class="kpi-card success">
+                            <div class="kpi-value">100%</div>
+                            <div class="kpi-label">납기 준수</div>
+                            <div class="kpi-change positive">▲ +14.3%</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-value">68.1%</div>
+                            <div class="kpi-label">설비 가동률</div>
+                            <div class="kpi-change negative">▼ -4.2%</div>
+                        </div>
+                        <div class="kpi-card highlight">
+                            <div class="kpi-value">4</div>
+                            <div class="kpi-label">처리 Jobs</div>
+                            <div class="kpi-change positive">+1 신규</div>
+                        </div>
+                    </div>
+                    
+                    <div class="change-section">
+                        <div class="change-section-title">⚡ 적용된 변경사항 (2)</div>
+                        
+                        <div class="change-card modified">
+                            <button class="change-card-remove">×</button>
+                            <div class="change-card-header">
+                                <span class="change-card-title">🔧 설비 고장</span>
+                                <span class="change-card-badge">Resource</span>
+                            </div>
+                            <div class="change-card-desc">
+                                EQP-001 | 10:00 - 14:00 (4시간)<br>
+                                → 3개 공정 재배치됨
+                            </div>
+                        </div>
+                        
+                        <div class="change-card new">
+                            <button class="change-card-remove">×</button>
+                            <div class="change-card-header">
+                                <span class="change-card-title">📦 긴급 주문</span>
+                                <span class="change-card-badge">Demand</span>
+                            </div>
+                            <div class="change-card-desc">
+                                PO-004 (PRD-C) | 수량: 15<br>
+                                납기: 12/24 (긴급)
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="change-section">
+                        <div class="change-section-title">➕ 변경 추가</div>
+                        <div class="quick-actions">
+                            <div class="quick-action" onclick="addChange('order')">
+                                <div class="quick-action-icon">📦</div>
+                                <div class="quick-action-label">주문 추가</div>
+                            </div>
+                            <div class="quick-action" onclick="addChange('machine')">
+                                <div class="quick-action-icon">🔧</div>
+                                <div class="quick-action-label">설비 변경</div>
+                            </div>
+                            <div class="quick-action" onclick="addChange('worker')">
+                                <div class="quick-action-icon">👤</div>
+                                <div class="quick-action-label">인력 변경</div>
+                            </div>
+                            <div class="quick-action" onclick="addChange('calendar')">
+                                <div class="quick-action-icon">📅</div>
+                                <div class="quick-action-label">일정 변경</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Changes Panel (Alternative) -->
+            <div id="panel-changes" class="hidden">
+                <div class="right-header">
+                    ⚡ 변경사항 정의
+                    <button class="btn" style="font-size: 11px;">모두 삭제</button>
+                </div>
+                <div class="right-content">
+                    <!-- Similar content -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Floating Action Buttons -->
+    <div class="floating-buttons">
+        <button class="floating-btn optimize" onclick="runOptimize()">
+            ▶ 최적화 실행
+        </button>
+        <button class="floating-btn apply" onclick="applySchedule()">
+            ✓ 스케줄 확정
+        </button>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot"></div>
+            Engine Connected | Algorithm: Dispatching (SPT)
+        </div>
+        <div class="status-item">
+            변경사항: 2개 | 영향 공정: 5개
+        </div>
+        <div class="status-item">
+            Last Update: 2026-01-16 14:35:22
+        </div>
+    </div>
+    
+    <script>
+        function setMode(mode) {
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Toggle compare header
+            document.getElementById('compare-header').style.display = 
+                mode === 'compare' ? 'flex' : 'none';
+        }
+        
+        function setTab(tab) {
+            document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.querySelectorAll('.panel-content').forEach(c => c.classList.add('hidden'));
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+        }
+        
+        function addChange(type) {
+            alert('변경 추가 다이얼로그: ' + type);
+        }
+        
+        function runOptimize() {
+            alert('🔄 최적화 실행 중...\n\n변경사항 2개 적용\n→ 재스케줄링 완료!');
+        }
+        
+        function applySchedule() {
+            if (confirm('현재 스케줄을 확정하시겠습니까?\n\n이 스케줄이 새로운 Baseline이 됩니다.')) {
+                alert('✓ 스케줄이 확정되었습니다.');
+            }
+        }
+        
+        // Initialize
+        document.getElementById('compare-header').style.display = 'none';
+    </script>
+</body>
+</html>

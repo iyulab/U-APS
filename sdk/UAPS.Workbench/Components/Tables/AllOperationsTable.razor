@@ -1,0 +1,455 @@
+@inject WorkbenchState State
+@inject NotificationService NotificationService
+@implements IDisposable
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <span class="toolbar-info">All operations across @State.CurrentRequest.Jobs.Count jobs</span>
+        @if (!string.IsNullOrEmpty(SelectedOperationId))
+        {
+            <span class="selected-info">
+                <span class="sync-icon">🔗</span> <strong>@SelectedOperationId</strong> selected
+            </span>
+        }
+    </div>
+
+    <div style="overflow: auto; flex: 1;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 80px;">Job</th>
+                    <th style="width: 90px;">Op ID</th>
+                    <th style="width: 40px;" class="center">Seq</th>
+                    <th style="width: 70px;" class="right">Setup</th>
+                    <th style="width: 70px;" class="right">Process</th>
+                    <th style="width: 70px;" class="right">Wait</th>
+                    <th>Resources</th>
+                    <th style="width: 60px;" class="center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (AllOperations.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="empty-row">
+                            No operations. Add jobs with operations first.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in AllOperations)
+                    {
+                        var isEditing = _editingItem?.Operation == item.Operation;
+                        var isSelected = item.Operation.Id == SelectedOperationId;
+                        <tr class="@(isEditing ? "editing" : "") @(isSelected ? "selected" : "")"
+                            @onclick="() => HandleRowClick(item.Operation.Id)">
+                            @if (isEditing)
+                            {
+                                <td><span class="job-badge">@item.Job.Id</span></td>
+                                <td><input type="text" @bind="_editOpId" class="cell-input" @onclick:stopPropagation="true" /></td>
+                                <td><input type="number" @bind="_editSeq" class="cell-input" min="1" style="width:40px;" @onclick:stopPropagation="true" /></td>
+                                <td><input type="number" @bind="_editSetupMin" class="cell-input" min="0" style="width:60px;" @onclick:stopPropagation="true" /></td>
+                                <td><input type="number" @bind="_editProcessMin" class="cell-input" min="0" style="width:60px;" @onclick:stopPropagation="true" /></td>
+                                <td><input type="number" @bind="_editWaitMin" class="cell-input" min="0" style="width:60px;" @onclick:stopPropagation="true" /></td>
+                                <td>
+                                    <button class="btn-link" @onclick="ToggleResourceEditor" @onclick:stopPropagation="true">
+                                        @GetResourceSummary(item.Operation)
+                                    </button>
+                                </td>
+                                <td class="center">
+                                    <button class="btn-icon" @onclick="SaveEdit" @onclick:stopPropagation="true" title="Save">✓</button>
+                                    <button class="btn-icon" @onclick="CancelEdit" @onclick:stopPropagation="true" title="Cancel">✗</button>
+                                </td>
+                            }
+                            else
+                            {
+                                <td>
+                                    <span class="job-badge">@item.Job.Id</span>
+                                </td>
+                                <td @ondblclick="() => StartEdit(item)" @ondblclick:stopPropagation="true">
+                                    <span class="op-id @(isSelected ? "highlight" : "")">@item.Operation.Id</span>
+                                </td>
+                                <td @ondblclick="() => StartEdit(item)" @ondblclick:stopPropagation="true" class="center">@item.Operation.Sequence</td>
+                                <td @ondblclick="() => StartEdit(item)" @ondblclick:stopPropagation="true" class="right">@FormatMin(item.Operation.Time.SetupMs)</td>
+                                <td @ondblclick="() => StartEdit(item)" @ondblclick:stopPropagation="true" class="right">@FormatMin(item.Operation.Time.ProcessMs)</td>
+                                <td @ondblclick="() => StartEdit(item)" @ondblclick:stopPropagation="true" class="right">@FormatMin(item.Operation.Time.WaitMs)</td>
+                                <td>
+                                    <span class="capability-list">@GetResourceSummary(item.Operation)</span>
+                                </td>
+                                <td class="center">
+                                    <button class="btn-icon" title="Edit" @onclick="() => StartEdit(item)" @onclick:stopPropagation="true">✏️</button>
+                                    <button class="btn-icon danger" title="Delete" @onclick="() => DeleteOperation(item)" @onclick:stopPropagation="true">×</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* Resource Editor (inline) *@
+    @if (_showResourceEditor && _editingItem != null)
+    {
+        <div class="sub-table-section">
+            <div class="sub-table-header">
+                <span>Resources for @_editingItem.Operation.Id</span>
+                <div>
+                    <button class="btn btn-sm" @onclick="AddRequirement">➕ Add Requirement</button>
+                    <button class="btn-icon" @onclick="() => _showResourceEditor = false">×</button>
+                </div>
+            </div>
+            <table class="data-table compact nested">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Type</th>
+                        <th>Candidates</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!_editingItem.Operation.RequiredResources.Any())
+                    {
+                        <tr>
+                            <td colspan="3" class="empty-row">No resource requirements (any resource can be used)</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @for (int i = 0; i < _editingItem.Operation.RequiredResources.Count; i++)
+                        {
+                            var req = _editingItem.Operation.RequiredResources[i];
+                            var index = i;
+                            <tr>
+                                <td>
+                                    <select class="cell-input" value="@req.ResourceType.ToString()"
+                                            @onchange="e => UpdateResourceType(index, e)">
+                                        <option value="Equipment">Equipment</option>
+                                        <option value="Worker">Worker</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="candidate-chips">
+                                        @foreach (var candidate in req.Candidates)
+                                        {
+                                            <span class="chip">
+                                                @candidate
+                                                <button class="chip-remove" @onclick="() => RemoveCandidate(index, candidate)">×</button>
+                                            </span>
+                                        }
+                                        <select class="cell-input" style="width: 100px;" @onchange="e => AddCandidate(index, e)">
+                                            <option value="">+ Add</option>
+                                            @foreach (var res in GetAvailableResources(req.ResourceType).Where(r => !req.Candidates.Contains(r.Id)))
+                                            {
+                                                <option value="@res.Id">@res.Id</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </td>
+                                <td>
+                                    <button class="btn-icon danger" @onclick="() => RemoveRequirement(index)">×</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<style>
+    .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .selected-info {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: rgba(0, 180, 216, 0.15);
+        border-radius: 4px;
+        font-size: var(--fs-sm, 11px);
+        color: var(--accent, #00b4d8);
+    }
+
+    .sync-icon {
+        font-size: 12px;
+    }
+
+    .op-id {
+        font-family: var(--font-mono, 'Consolas', monospace);
+        color: var(--text-1, #cbd5e1);
+    }
+
+    .op-id.highlight {
+        color: var(--accent, #00b4d8);
+        font-weight: 600;
+    }
+
+    .data-table tr.selected td {
+        background: rgba(0, 180, 216, 0.15) !important;
+    }
+
+    .data-table tr.selected .op-id {
+        color: var(--accent, #00b4d8);
+        font-weight: 600;
+    }
+
+    .data-table tr:hover:not(.selected):not(.editing) td {
+        background: var(--bg-hover, #2a3342);
+        cursor: pointer;
+    }
+</style>
+
+@code {
+    [Parameter] public string? SelectedOperationId { get; set; }
+    [Parameter] public EventCallback<string> OnOperationSelected { get; set; }
+
+    private record OperationItem(Job Job, Operation Operation);
+
+    private List<OperationItem> AllOperations => State.CurrentRequest.Jobs
+        .SelectMany(j => j.Operations.Select(op => new OperationItem(j, op)))
+        .OrderBy(x => x.Job.Id)
+        .ThenBy(x => x.Operation.Sequence)
+        .ToList();
+
+    private OperationItem? _editingItem;
+    private bool _showResourceEditor;
+
+    // Edit fields (times in minutes for user-friendly input)
+    private string _editOpId = "";
+    private int _editSeq;
+    private double _editSetupMin;
+    private double _editProcessMin;
+    private double _editWaitMin;
+
+    protected override void OnInitialized()
+    {
+        State.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnStateChanged -= StateHasChanged;
+    }
+
+    private async Task HandleRowClick(string operationId)
+    {
+        if (SelectedOperationId == operationId)
+        {
+            // Toggle off if already selected
+            await OnOperationSelected.InvokeAsync(null!);
+        }
+        else
+        {
+            await OnOperationSelected.InvokeAsync(operationId);
+        }
+    }
+
+    private void StartEdit(OperationItem item)
+    {
+        _editingItem = item;
+        _editOpId = item.Operation.Id;
+        _editSeq = item.Operation.Sequence;
+        _editSetupMin = item.Operation.Time.SetupMs / 60000.0;
+        _editProcessMin = item.Operation.Time.ProcessMs / 60000.0;
+        _editWaitMin = item.Operation.Time.WaitMs / 60000.0;
+        _showResourceEditor = false;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingItem != null)
+        {
+            var oldOpId = _editingItem.Operation.Id;
+            var oldTime = _editingItem.Operation.Time;
+
+            // Record undo action
+            State.RecordAction(
+                $"{oldOpId} 수정",
+                UndoActionType.Edit,
+                () =>
+                {
+                    _editingItem.Operation.Id = oldOpId;
+                    _editingItem.Operation.Sequence = _editSeq;
+                    _editingItem.Operation.Time = oldTime;
+                    State.NotifyStateChanged();
+                },
+                () =>
+                {
+                    _editingItem.Operation.Id = _editOpId;
+                    _editingItem.Operation.Sequence = _editSeq;
+                    _editingItem.Operation.Time = new OperationTime(
+                        (long)(_editSetupMin * 60000),
+                        (long)(_editProcessMin * 60000),
+                        (long)(_editWaitMin * 60000));
+                    State.NotifyStateChanged();
+                }
+            );
+
+            _editingItem.Operation.Id = _editOpId;
+            _editingItem.Operation.Sequence = _editSeq;
+            _editingItem.Operation.Time = new OperationTime(
+                (long)(_editSetupMin * 60000),
+                (long)(_editProcessMin * 60000),
+                (long)(_editWaitMin * 60000));
+            State.NotifyStateChanged();
+        }
+        _editingItem = null;
+        _showResourceEditor = false;
+    }
+
+    private void CancelEdit()
+    {
+        _editingItem = null;
+        _showResourceEditor = false;
+    }
+
+    private void DeleteOperation(OperationItem item)
+    {
+        var job = item.Job;
+        var op = item.Operation;
+
+        // Record undo action
+        State.RecordAction(
+            $"{op.Id} 삭제",
+            UndoActionType.Delete,
+            () => { job.Operations.Add(op); State.NotifyStateChanged(); },
+            () => { job.Operations.Remove(op); State.NotifyStateChanged(); }
+        );
+
+        job.Operations.Remove(op);
+        if (_editingItem?.Operation == op)
+        {
+            _editingItem = null;
+            _showResourceEditor = false;
+        }
+        State.NotifyStateChanged();
+        NotificationService.Notify(NotificationSeverity.Info, "Deleted", $"Operation {op.Id}");
+    }
+
+    private void ToggleResourceEditor()
+    {
+        _showResourceEditor = !_showResourceEditor;
+    }
+
+    private string GetResourceSummary(Operation op)
+    {
+        if (!op.RequiredResources.Any())
+            return "(any)";
+
+        var candidates = op.RequiredResources
+            .SelectMany(r => r.Candidates)
+            .Take(3)
+            .ToList();
+
+        if (candidates.Count == 0)
+            return "(any)";
+
+        var result = string.Join(", ", candidates);
+        var total = op.RequiredResources.Sum(r => r.Candidates.Count);
+        if (total > 3)
+            result += $" +{total - 3}";
+
+        return result;
+    }
+
+    private string FormatMin(long ms)
+    {
+        if (ms >= 3600000)
+            return $"{ms / 3600000}h {(ms % 3600000) / 60000}m";
+        if (ms >= 60000)
+            return $"{ms / 60000}m";
+        if (ms >= 1000)
+            return $"{ms / 1000}s";
+        return "-";
+    }
+
+    // Resource editing methods
+    private IEnumerable<Resource> GetAvailableResources(ResourceType resourceType)
+    {
+        var kind = resourceType == ResourceType.Worker ? ResourceKind.Worker : ResourceKind.Equipment;
+        return State.CurrentRequest.Resources.Where(r => r.Kind == kind);
+    }
+
+    private void AddRequirement()
+    {
+        if (_editingItem == null) return;
+        _editingItem.Operation.RequiredResources.Add(new ResourceRequirement
+        {
+            ResourceType = ResourceType.Equipment,
+            Quantity = 1,
+            Candidates = [],
+            LoadFactor = 1.0
+        });
+        State.NotifyStateChanged();
+    }
+
+    private void RemoveRequirement(int index)
+    {
+        if (_editingItem == null || index >= _editingItem.Operation.RequiredResources.Count) return;
+        _editingItem.Operation.RequiredResources.RemoveAt(index);
+        State.NotifyStateChanged();
+    }
+
+    private void UpdateResourceType(int index, ChangeEventArgs e)
+    {
+        if (_editingItem == null || index >= _editingItem.Operation.RequiredResources.Count) return;
+
+        var value = e.Value?.ToString();
+        var newType = value == "Worker" ? ResourceType.Worker : ResourceType.Equipment;
+        var oldReq = _editingItem.Operation.RequiredResources[index];
+
+        _editingItem.Operation.RequiredResources[index] = new ResourceRequirement
+        {
+            ResourceType = newType,
+            Quantity = oldReq.Quantity,
+            Candidates = [],
+            LoadFactor = oldReq.LoadFactor
+        };
+        State.NotifyStateChanged();
+    }
+
+    private void AddCandidate(int index, ChangeEventArgs e)
+    {
+        if (_editingItem == null || index >= _editingItem.Operation.RequiredResources.Count) return;
+
+        var value = e.Value?.ToString();
+        if (string.IsNullOrEmpty(value)) return;
+
+        var oldReq = _editingItem.Operation.RequiredResources[index];
+        if (oldReq.Candidates.Contains(value)) return;
+
+        var newCandidates = oldReq.Candidates.ToList();
+        newCandidates.Add(value);
+        _editingItem.Operation.RequiredResources[index] = new ResourceRequirement
+        {
+            ResourceType = oldReq.ResourceType,
+            Quantity = oldReq.Quantity,
+            Candidates = newCandidates,
+            LoadFactor = oldReq.LoadFactor
+        };
+        State.NotifyStateChanged();
+    }
+
+    private void RemoveCandidate(int index, string candidate)
+    {
+        if (_editingItem == null || index >= _editingItem.Operation.RequiredResources.Count) return;
+
+        var oldReq = _editingItem.Operation.RequiredResources[index];
+        var newCandidates = oldReq.Candidates.Where(c => c != candidate).ToList();
+        _editingItem.Operation.RequiredResources[index] = new ResourceRequirement
+        {
+            ResourceType = oldReq.ResourceType,
+            Quantity = oldReq.Quantity,
+            Candidates = newCandidates,
+            LoadFactor = oldReq.LoadFactor
+        };
+        State.NotifyStateChanged();
+    }
+}

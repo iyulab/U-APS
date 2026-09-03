@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>UAPS.SDK</RootNamespace>
+    <AssemblyName>UAPS.SDK</AssemblyName>
+    <Description>U-APS Scheduling SDK</Description>
+    <PackageId>UAPS.SDK</PackageId>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,349 @@
+name: Release UAPS Packages
+
+on:
+  push:
+    paths:
+      - 'sdk/Directory.Build.props'
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release even without version change'
+        required: false
+        default: 'false'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  extract-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      should_release: ${{ steps.check_release.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from Directory.Build.props
+        id: get_version
+        shell: pwsh
+        run: |
+          $xml = [xml](Get-Content 'sdk/Directory.Build.props')
+          $version = $xml.Project.PropertyGroup.UAPSVersion
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "Extracted version: $version"
+
+      - name: Check if release is needed
+        id: check_release
+        run: |
+          if [ "${{ github.event.inputs.force_release }}" == "true" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "Force release requested"
+          else
+            VERSION="${{ steps.get_version.outputs.version }}"
+            HTTP=$(curl -s -o /dev/null -w '%{http_code}' "https://api.nuget.org/v3-flatcontainer/uaps.sdk/${VERSION}/uaps.sdk.nuspec")
+            if [ "$HTTP" = "200" ]; then
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "UAPS.SDK ${VERSION} already on nuget.org — skipping"
+            else
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "UAPS.SDK ${VERSION} not on nuget.org (HTTP ${HTTP}) — will release"
+            fi
+          fi
+
+  # Build native libraries for all platforms
+  build-native:
+    needs: extract-version
+    if: needs.extract-version.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rid: win-x64
+            ext: dll
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            rid: linux-x64
+            ext: so
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            rid: osx-x64
+            ext: dylib
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            rid: osx-arm64
+            ext: dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-v1
+
+      - name: Build Rust Engine
+        working-directory: engine
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare native library
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            cp engine/target/${{ matrix.target }}/release/uaps_engine.dll artifacts/uaps_engine-${{ matrix.rid }}.dll
+          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            cp engine/target/${{ matrix.target }}/release/libuaps_engine.so artifacts/uaps_engine-${{ matrix.rid }}.so
+          else
+            cp engine/target/${{ matrix.target }}/release/libuaps_engine.dylib artifacts/uaps_engine-${{ matrix.rid }}.dylib
+          fi
+
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: artifacts/
+          retention-days: 1
+
+  # Build and test .NET SDK
+  build-dotnet:
+    needs: [extract-version, build-native]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download native library for tests
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-x64
+          path: sdk/UAPS.SDK.Tests/bin/Release/net10.0/
+
+      - name: Rename native library for tests
+        run: |
+          mv sdk/UAPS.SDK.Tests/bin/Release/net10.0/uaps_engine-linux-x64.so sdk/UAPS.SDK.Tests/bin/Release/net10.0/libuaps_engine.so
+
+      - name: Restore dependencies
+        working-directory: sdk
+        run: dotnet restore -p:EnableWindowsTargeting=true
+
+      - name: Build SDK
+        working-directory: sdk
+        run: dotnet build -c Release --no-restore -p:EnableWindowsTargeting=true
+
+      - name: Run tests
+        working-directory: sdk
+        run: dotnet test -c Release --no-build --verbosity normal
+
+      - name: Pack SDK
+        working-directory: sdk/UAPS.SDK
+        run: dotnet pack -c Release --no-build -o ../../artifacts/nuget
+
+      - name: Pack CLI as dotnet tool
+        working-directory: sdk/UAPS.CLI
+        run: dotnet pack -c Release --no-build -o ../../artifacts/nuget
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/nuget/*.nupkg
+          retention-days: 1
+
+  # Build CLI bundles for each platform
+  build-cli:
+    needs: [extract-version, build-native]
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive: zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            archive: tar.gz
+          - os: macos-latest
+            rid: osx-x64
+            archive: tar.gz
+          - os: macos-latest
+            rid: osx-arm64
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Download native library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: native/
+
+      - name: Publish CLI
+        working-directory: sdk/UAPS.CLI
+        run: |
+          dotnet publish -c Release -r ${{ matrix.rid }} --self-contained -o ../../publish/${{ matrix.rid }}
+
+      - name: Copy native library to publish
+        shell: bash
+        run: |
+          cp native/* publish/${{ matrix.rid }}/
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+          Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath artifacts/uaps-cli-${{ matrix.rid }}.zip
+
+      - name: Create archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p artifacts
+          tar -czf artifacts/uaps-cli-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
+
+      - name: Upload CLI bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.rid }}
+          path: artifacts/
+          retention-days: 1
+
+  # Create GitHub release on U-APS-releases (public repo)
+  create-release:
+    needs: [extract-version, build-native, build-dotnet, build-cli]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          # Native libraries
+          cp artifacts/native-*/* release/
+          # CLI bundles
+          cp artifacts/cli-*/* release/
+          # NuGet packages
+          cp artifacts/nuget-packages/* release/
+          ls -la release/
+
+      - name: Create GitHub Release on U-APS-releases
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: iyulab/U-APS-releases
+          token: ${{ secrets.GH_PAT }}
+          tag_name: v${{ needs.extract-version.outputs.version }}
+          name: Release v${{ needs.extract-version.outputs.version }}
+          body: |
+            ## UAPS v${{ needs.extract-version.outputs.version }}
+
+            ### Installation
+
+            #### CLI (dotnet tool - Recommended)
+            ```bash
+            dotnet tool install -g UAPS.CLI
+            ```
+
+            #### CLI (Quick Install - Self-contained)
+            ```bash
+            # Windows (PowerShell)
+            irm https://raw.githubusercontent.com/iyulab/U-APS-releases/main/install.ps1 | iex
+
+            # Linux/macOS
+            curl -fsSL https://raw.githubusercontent.com/iyulab/U-APS-releases/main/install.sh | bash
+            ```
+
+            #### SDK (NuGet)
+            ```bash
+            dotnet add package UAPS.SDK --version ${{ needs.extract-version.outputs.version }}
+            ```
+
+            ### Manual Download
+
+            #### Native Libraries
+            - `uaps_engine-win-x64.dll` - Windows x64
+            - `uaps_engine-linux-x64.so` - Linux x64
+            - `uaps_engine-osx-x64.dylib` - macOS x64
+            - `uaps_engine-osx-arm64.dylib` - macOS ARM64
+
+            #### CLI Bundles
+            - `uaps-cli-win-x64.zip` - Windows x64
+            - `uaps-cli-linux-x64.tar.gz` - Linux x64
+            - `uaps-cli-osx-x64.tar.gz` - macOS x64
+            - `uaps-cli-osx-arm64.tar.gz` - macOS ARM64
+
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(needs.extract-version.outputs.version, '-') }}
+
+  # Publish to NuGet and GitHub Packages
+  publish-nuget:
+    needs: [extract-version, build-dotnet, create-release]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.force_release == 'true'
+    permissions:
+      packages: write
+    steps:
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: packages
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish to NuGet.org
+        run: |
+          for package in packages/*.nupkg; do
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+      - name: Publish to GitHub Packages
+        run: |
+          for package in packages/*.nupkg; do
+            dotnet nuget push "$package" \
+              --api-key ${{ secrets.GITHUB_TOKEN }} \
+              --source https://nuget.pkg.github.com/iyulab/index.json \
+              --skip-duplicate
+          done

@@ -1,0 +1,238 @@
+@inject WorkbenchState State
+@inject DialogService DialogService
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <button class="btn btn-sm btn-success" @onclick="AddJob">+ Add Job</button>
+        <button class="btn btn-sm" @onclick="AddBulkJobs">+ Add Multiple</button>
+        @if (_selectedJob != null)
+        {
+            <span class="toolbar-divider"></span>
+            <button class="btn btn-sm" @onclick="DuplicateJob">📋 Duplicate</button>
+            <button class="btn btn-sm btn-danger" @onclick="DeleteSelected">🗑️ Delete</button>
+        }
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width:30px"></th>
+                <th style="width:100px">ID</th>
+                <th style="width:120px">Product</th>
+                <th style="width:60px">Prio</th>
+                <th style="width:60px">Qty</th>
+                <th style="width:140px">Due Date</th>
+                <th style="width:50px">Ops</th>
+                <th style="width:80px"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (State.CurrentRequest.Jobs.Count == 0)
+            {
+                <tr>
+                    <td colspan="8" class="empty-row">No jobs. Click "Add Job" to create one.</td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var job in State.CurrentRequest.Jobs)
+                {
+                    var isSelected = _selectedJob == job;
+                    var isEditing = _editingJob == job;
+
+                    <tr class="@(isSelected ? "selected" : "") @(isEditing ? "editing" : "")"
+                        @onclick="() => SelectJob(job)">
+                        <td>
+                            <input type="checkbox" checked="@isSelected"
+                                   @onclick:stopPropagation="true"
+                                   @onchange="() => SelectJob(job)" />
+                        </td>
+                        @if (isEditing)
+                        {
+                            <td><input type="text" @bind="_editId" class="cell-input" /></td>
+                            <td><input type="text" @bind="_editProduct" class="cell-input" /></td>
+                            <td><input type="number" @bind="_editPriority" class="cell-input" min="1" max="999" /></td>
+                            <td><input type="number" @bind="_editQty" class="cell-input" min="1" /></td>
+                            <td><input type="datetime-local" @bind="_editDueDate" class="cell-input" /></td>
+                            <td>@job.Operations.Count</td>
+                            <td>
+                                <button class="btn-icon" @onclick="SaveEdit" @onclick:stopPropagation="true" title="Save">✓</button>
+                                <button class="btn-icon" @onclick="CancelEdit" @onclick:stopPropagation="true" title="Cancel">✗</button>
+                            </td>
+                        }
+                        else
+                        {
+                            <td @ondblclick="() => StartEdit(job)">@job.Id</td>
+                            <td @ondblclick="() => StartEdit(job)">@job.ProductName</td>
+                            <td @ondblclick="() => StartEdit(job)" class="center">@job.Priority</td>
+                            <td @ondblclick="() => StartEdit(job)" class="center">@job.Quantity</td>
+                            <td @ondblclick="() => StartEdit(job)">@(job.DueDate?.ToString("MM/dd HH:mm") ?? "-")</td>
+                            <td class="center">
+                                <button class="btn-link" @onclick="() => OpenOperations(job)" @onclick:stopPropagation="true">
+                                    @job.Operations.Count ops
+                                </button>
+                            </td>
+                            <td>
+                                <button class="btn-icon" @onclick="() => StartEdit(job)" @onclick:stopPropagation="true" title="Edit">✎</button>
+                                <button class="btn-icon danger" @onclick="() => DeleteJob(job)" @onclick:stopPropagation="true" title="Delete">×</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+
+    @if (_selectedJob != null && _showOperations)
+    {
+        <div class="sub-table-section">
+            <div class="sub-table-header">
+                <span>Operations for @_selectedJob.Id</span>
+                <button class="btn btn-sm btn-success" @onclick="AddOperation">+ Add Op</button>
+                <button class="btn-icon" @onclick="() => _showOperations = false">×</button>
+            </div>
+            <OperationsTable Job="@_selectedJob" />
+        </div>
+    }
+</div>
+
+@code {
+    private Job? _selectedJob;
+    private Job? _editingJob;
+    private bool _showOperations;
+
+    // Edit fields
+    private string _editId = "";
+    private string _editProduct = "";
+    private int _editPriority;
+    private int _editQty;
+    private DateTime? _editDueDate;
+
+    private void SelectJob(Job job)
+    {
+        _selectedJob = _selectedJob == job ? null : job;
+    }
+
+    private void StartEdit(Job job)
+    {
+        _editingJob = job;
+        _editId = job.Id;
+        _editProduct = job.ProductName ?? "";
+        _editPriority = job.Priority;
+        _editQty = job.Quantity;
+        _editDueDate = job.DueDate;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingJob != null)
+        {
+            _editingJob.Id = _editId;
+            _editingJob.ProductName = _editProduct;
+            _editingJob.Priority = _editPriority;
+            _editingJob.Quantity = _editQty;
+            _editingJob.DueDate = _editDueDate;
+            State.NotifyStateChanged();
+        }
+        _editingJob = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingJob = null;
+    }
+
+    private void AddJob()
+    {
+        var newId = $"JOB-{State.CurrentRequest.Jobs.Count + 1:D3}";
+        var job = Job.Create(newId)
+            .WithPriority(100)
+            .WithQuantity(1);
+        job.ProductName = "New Product";
+
+        State.CurrentRequest.Jobs.Add(job);
+        State.NotifyStateChanged();
+        _selectedJob = job;
+        StartEdit(job);
+    }
+
+    private async Task AddBulkJobs()
+    {
+        // Simple bulk add - 5 jobs at once
+        var startIdx = State.CurrentRequest.Jobs.Count + 1;
+        for (int i = 0; i < 5; i++)
+        {
+            var job = Job.Create($"JOB-{startIdx + i:D3}")
+                .WithPriority(100)
+                .WithQuantity(1);
+            job.ProductName = $"Product-{startIdx + i}";
+            State.CurrentRequest.Jobs.Add(job);
+        }
+        State.NotifyStateChanged();
+    }
+
+    private void DuplicateJob()
+    {
+        if (_selectedJob == null) return;
+
+        var newId = $"JOB-{State.CurrentRequest.Jobs.Count + 1:D3}";
+        var job = Job.Create(newId)
+            .WithPriority(_selectedJob.Priority)
+            .WithQuantity(_selectedJob.Quantity);
+        job.ProductName = _selectedJob.ProductName;
+        job.DueDate = _selectedJob.DueDate;
+
+        // Copy operations
+        foreach (var op in _selectedJob.Operations)
+        {
+            var newOp = Operation.Create($"{newId}-OP{job.Operations.Count + 1}", newId, op.Sequence)
+                .WithTime(op.Time.SetupMs, op.Time.ProcessMs, op.Time.WaitMs);
+            foreach (var req in op.RequiredResources)
+            {
+                newOp.RequiredResources.Add(new ResourceRequirement
+                {
+                    ResourceType = req.ResourceType,
+                    Candidates = new List<string>(req.Candidates)
+                });
+            }
+            job.Operations.Add(newOp);
+        }
+
+        State.CurrentRequest.Jobs.Add(job);
+        State.NotifyStateChanged();
+        _selectedJob = job;
+    }
+
+    private void DeleteJob(Job job)
+    {
+        State.CurrentRequest.Jobs.Remove(job);
+        if (_selectedJob == job) _selectedJob = null;
+        if (_editingJob == job) _editingJob = null;
+        State.NotifyStateChanged();
+    }
+
+    private void DeleteSelected()
+    {
+        if (_selectedJob != null)
+        {
+            DeleteJob(_selectedJob);
+        }
+    }
+
+    private void OpenOperations(Job job)
+    {
+        _selectedJob = job;
+        _showOperations = true;
+    }
+
+    private void AddOperation()
+    {
+        if (_selectedJob == null) return;
+
+        var opId = $"{_selectedJob.Id}-OP{_selectedJob.Operations.Count + 1}";
+        var op = Operation.Create(opId, _selectedJob.Id, _selectedJob.Operations.Count + 1)
+            .WithTime(0, 60000, 0);
+        _selectedJob.Operations.Add(op);
+        State.NotifyStateChanged();
+    }
+}

@@ -1,0 +1,680 @@
+@page "/"
+@inject WorkbenchState State
+@inject SchedulingService Scheduler
+@inject FileService FileService
+@inject NotificationService NotificationService
+@implements IDisposable
+
+<div class="app-container" @onkeydown="HandleKeyDown" tabindex="0">
+    @* Header with Undo/Redo and Tabs *@
+    <div class="app-header">
+        <div class="header-left">
+            <div class="app-logo">U-APS</div>
+
+            @* Undo/Redo Controls *@
+            <div class="history-controls">
+                <button class="history-btn" @onclick="HandleUndo" disabled="@(!State.CanUndo)" title="Undo (Ctrl+Z)">
+                    <span>↩</span>
+                </button>
+                <button class="history-btn" @onclick="HandleRedo" disabled="@(!State.CanRedo)" title="Redo (Ctrl+Y)">
+                    <span>↪</span>
+                </button>
+                <span class="history-info">@State.HistoryPosition changes</span>
+                <div class="history-dropdown">
+                    <button class="history-dropdown-btn" @onclick="() => _showHistory = !_showHistory">
+                        History ▾
+                    </button>
+                    @if (_showHistory)
+                    {
+                        <div class="history-list">
+                            <div class="history-list-header">
+                                <span>변경 이력</span>
+                                <span class="shortcut-hint">Ctrl+Z / Ctrl+Y</span>
+                            </div>
+                            @if (State.UndoHistory.Count == 0 && State.RedoHistory.Count == 0)
+                            {
+                                <div class="history-empty">변경 이력이 없습니다</div>
+                            }
+                            else
+                            {
+                                @foreach (var (action, idx) in State.RedoHistory.Reverse().Select((a, i) => (a, i)))
+                                {
+                                    <div class="history-item undone" @onclick="() => JumpToHistoryItem(State.HistoryPosition + idx + 1)">
+                                        <div class="history-item-icon @GetActionIconClass(action.ActionType)">@GetActionIcon(action.ActionType)</div>
+                                        <div class="history-item-text">@action.Description</div>
+                                        <div class="history-item-time">@FormatTimestamp(action.Timestamp)</div>
+                                    </div>
+                                }
+                                @foreach (var (action, idx) in State.UndoHistory.Reverse().Select((a, i) => (a, i)))
+                                {
+                                    <div class="history-item @(idx == 0 ? "current" : "")" @onclick="() => JumpToHistoryItem(State.HistoryPosition - idx)">
+                                        <div class="history-item-icon @GetActionIconClass(action.ActionType)">@GetActionIcon(action.ActionType)</div>
+                                        <div class="history-item-text">@action.Description</div>
+                                        <div class="history-item-time">@FormatTimestamp(action.Timestamp)</div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* Selection Sync Indicator *@
+            @if (!string.IsNullOrEmpty(State.SelectedOperationId))
+            {
+                <div class="sync-indicator">
+                    <span class="sync-icon">🔗</span>
+                    <strong>@State.SelectedOperationId</strong> 선택됨
+                </div>
+            }
+        </div>
+
+        @* Main Tabs *@
+        <div class="main-tabs">
+            <button class="main-tab @(_activeTab == TabType.Dashboard ? "active" : "")" @onclick="() => _activeTab = TabType.Dashboard">
+                <span class="tab-icon">📊</span> Dashboard
+            </button>
+            <button class="main-tab @(_activeTab == TabType.Table ? "active" : "")" @onclick="() => _activeTab = TabType.Table">
+                <span class="tab-icon">📋</span> Table
+            </button>
+            <button class="main-tab @(_activeTab == TabType.Gantt ? "active" : "")" @onclick="() => _activeTab = TabType.Gantt">
+                <span class="tab-icon">📈</span> Gantt
+            </button>
+        </div>
+
+        @* Header Actions *@
+        <div class="header-actions">
+            <div class="dropdown">
+                <button class="btn btn-sm" @onclick="() => _showMenu = !_showMenu">
+                    <span>📁</span> 파일 ▾
+                </button>
+                @if (_showMenu)
+                {
+                    <div class="dropdown-menu">
+                        <button @onclick="ImportJson">📂 Import JSON</button>
+                        <button @onclick="ExportJson" disabled="@(!HasData)">💾 Export JSON</button>
+                        <div class="dropdown-divider"></div>
+                        <button @onclick='() => LoadSample("manufacturing-basic")'>📋 Manufacturing Basic</button>
+                        <div class="dropdown-divider"></div>
+                        <button @onclick="ClearAll" class="danger">🗑️ Clear All</button>
+                    </div>
+                }
+            </div>
+            <button class="btn btn-primary" @onclick="RunSimulation" disabled="@(!CanSimulate || _isRunning)">
+                @if (_isRunning)
+                {
+                    <span>⏳</span><span>Running...</span>
+                }
+                else
+                {
+                    <span>▶</span><span>최적화</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    @* Selection Bar *@
+    @if (!string.IsNullOrEmpty(State.SelectedOperationId))
+    {
+        <div class="selection-bar">
+            <div class="selection-info">
+                <span class="selection-icon">📌</span>
+                <strong>@State.SelectedOperationId</strong>
+                @if (_selectedOperation != null)
+                {
+                    <span class="divider">|</span>
+                    <span>Job: @_selectedJob?.Id</span>
+                    <span class="divider">|</span>
+                    <span>Resource: @string.Join(", ", _selectedOperation.RequiredResources.SelectMany(r => r.Candidates))</span>
+                }
+            </div>
+            <div class="selection-actions">
+                <button class="sel-btn" @onclick="EditSelectedOperation">✏️ 수정</button>
+                <button class="sel-btn danger" @onclick="DeleteSelectedOperation">🗑️ 삭제</button>
+                <button class="sel-btn" @onclick="() => State.ClearSelection()">✕</button>
+            </div>
+        </div>
+    }
+
+    @* Main Content *@
+    <div class="main-content">
+        @switch (_activeTab)
+        {
+            case TabType.Dashboard:
+                <div class="tab-panel">
+                    @if (State.CurrentResult?.Schedule != null)
+                    {
+                        <div class="dashboard-grid">
+                            <div class="kpi-cards">
+                                <div class="kpi-card primary">
+                                    <span class="kpi-label">Makespan</span>
+                                    <span class="kpi-value">@FormatDuration(State.CurrentResult.Schedule.MakespanMs)</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="kpi-label">Operations</span>
+                                    <span class="kpi-value">@State.CurrentResult.Schedule.Assignments.Count</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="kpi-label">Resources</span>
+                                    <span class="kpi-value">@State.CurrentResult.Schedule.Assignments.Select(a => a.ResourceId).Distinct().Count()</span>
+                                </div>
+                                <div class="kpi-card">
+                                    <span class="kpi-label">Utilization</span>
+                                    <span class="kpi-value">@(GetUtilization().ToString("F1"))%</span>
+                                </div>
+                                @if (State.CurrentKpis?.DueDatePerformance?.LateJobCount > 0)
+                                {
+                                    <div class="kpi-card warning">
+                                        <span class="kpi-label">Late Jobs</span>
+                                        <span class="kpi-value">@State.CurrentKpis.DueDatePerformance.LateJobCount</span>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="dashboard-section">
+                                <h3>Rule: @State.CurrentRule</h3>
+                                @if (State.HasComparison)
+                                {
+                                    <div class="comparison-summary">
+                                        <span>이전: @FormatDuration(State.PreviousResult?.Schedule?.MakespanMs ?? 0)</span>
+                                        <span class="arrow">→</span>
+                                        <span class="improved">현재: @FormatDuration(State.CurrentResult.Schedule.MakespanMs)</span>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="dashboard-gantt">
+                                <GanttChart Schedule="@State.CurrentResult.Schedule"
+                                            Jobs="@State.CurrentRequest.Jobs"
+                                            Resources="@State.CurrentRequest.Resources"
+                                            SelectedOperationId="@State.SelectedOperationId"
+                                            OnOperationSelected="HandleOperationSelected" />
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div class="empty-icon">📊</div>
+                            <h3>Dashboard</h3>
+                            <p>데이터를 로드하고 최적화를 실행하세요</p>
+                            <div class="empty-actions">
+                                <button class="btn" @onclick='() => LoadSample("manufacturing-basic")'>📋 샘플 로드</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                break;
+
+            case TabType.Table:
+                <div class="tab-panel table-panel">
+                    <div class="table-toolbar">
+                        <div class="sub-tabs">
+                            @foreach (var (tab, index) in _dataTabs.Select((t, i) => (t, i)))
+                            {
+                                <button class="sub-tab @(_tableSubTab == index ? "active" : "")" @onclick="() => _tableSubTab = index">
+                                    <span class="tab-icon">@tab.Icon</span>
+                                    <span class="tab-name">@tab.Name</span>
+                                    <span class="tab-count">@tab.Count()</span>
+                                </button>
+                            }
+                        </div>
+                        <div class="toolbar-actions">
+                            <button class="btn btn-sm">+ 추가</button>
+                            <button class="btn btn-sm">📥 Import</button>
+                            <button class="btn btn-sm">📤 Export</button>
+                        </div>
+                    </div>
+                    <div class="table-content">
+                        @switch (_tableSubTab)
+                        {
+                            case 0: <JobsTable /> break;
+                            case 1: <AllOperationsTable OnOperationSelected="HandleOperationSelected" SelectedOperationId="@State.SelectedOperationId" /> break;
+                            case 2: <ResourcesTable /> break;
+                            case 3: <SetupMatrixTable /> break;
+                            case 4: <MaterialsTable /> break;
+                            case 5: <CalendarsTable /> break;
+                            case 6: <SettingsPanel /> break;
+                        }
+                    </div>
+                </div>
+                break;
+
+            case TabType.Gantt:
+                <div class="tab-panel gantt-panel">
+                    @if (State.CurrentResult?.Schedule != null)
+                    {
+                        <div class="gantt-toolbar">
+                            <div class="view-tabs">
+                                <button class="view-tab active">Machine View</button>
+                                <button class="view-tab">Job View</button>
+                            </div>
+                            <div class="gantt-info">
+                                <span class="rule-badge">@State.CurrentRule</span>
+                                <span class="makespan">Makespan: @FormatDuration(State.CurrentResult.Schedule.MakespanMs)</span>
+                            </div>
+                        </div>
+                        <div class="gantt-view">
+                            <GanttChart Schedule="@State.CurrentResult.Schedule"
+                                        Jobs="@State.CurrentRequest.Jobs"
+                                        Resources="@State.CurrentRequest.Resources"
+                                        SelectedOperationId="@State.SelectedOperationId"
+                                        OnOperationSelected="HandleOperationSelected" />
+                        </div>
+                        <div class="gantt-legend">
+                            <div class="legend-item"><div class="legend-color job1"></div> Jobs</div>
+                            <div class="legend-item"><div class="legend-color setup"></div> Setup</div>
+                            <div class="legend-item"><div class="legend-color selected"></div> Selected</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div class="empty-icon">📈</div>
+                            <h3>Gantt Chart</h3>
+                            <p>최적화를 실행하면 간트 차트가 표시됩니다</p>
+                        </div>
+                    }
+                </div>
+                break;
+        }
+    </div>
+
+    @* Status Bar *@
+    <div class="status-bar">
+        <div class="status-left">
+            <span class="status-dot @(State.CurrentResult != null ? "ok" : "")"></span>
+            <span>@(State.CurrentResult != null ? "Schedule Ready" : "No Schedule") | @State.DispatchingConfig.PrimaryRule</span>
+        </div>
+        <div class="status-center">
+            <span class="shortcut">Ctrl+Z: Undo</span>
+            <span class="shortcut">Ctrl+Y: Redo</span>
+            <span class="shortcut">Del: Delete</span>
+        </div>
+        <div class="status-right">
+            <span>Jobs: @State.CurrentRequest.Jobs.Count</span>
+            <span>Resources: @State.CurrentRequest.Resources.Count</span>
+            @if (State.HasUnsavedChanges)
+            {
+                <span class="unsaved">● Unsaved</span>
+            }
+        </div>
+    </div>
+</div>
+
+@* Toast Notification *@
+@if (_showToast)
+{
+    <div class="toast @_toastType">
+        <span class="toast-icon">@_toastIcon</span>
+        <span class="toast-text">@_toastMessage</span>
+        @if (_toastType == "undo")
+        {
+            <button class="toast-action" @onclick="HandleRedo">Redo</button>
+        }
+        else if (_toastType == "redo")
+        {
+            <button class="toast-action" @onclick="HandleUndo">Undo</button>
+        }
+    </div>
+}
+
+@code {
+    private enum TabType { Dashboard, Table, Gantt }
+
+    private TabType _activeTab = TabType.Table;
+    private int _tableSubTab = 0;
+    private bool _showMenu = false;
+    private bool _showHistory = false;
+    private bool _isRunning = false;
+
+    // Toast state
+    private bool _showToast = false;
+    private string _toastMessage = "";
+    private string _toastType = "";
+    private string _toastIcon = "";
+
+    // Selected operation details
+    private Job? _selectedJob;
+    private Operation? _selectedOperation;
+
+    private record DataTab(string Name, string Icon, Func<int> Count);
+
+    private DataTab[] _dataTabs => [
+        new("Jobs", "📦", () => State.CurrentRequest.Jobs.Count),
+        new("Operations", "⚙️", () => TotalOperations),
+        new("Resources", "🔧", () => State.CurrentRequest.Resources.Count),
+        new("Setup", "🔄", () => State.CurrentRequest.SetupMatrices?.Matrices.Count ?? 0),
+        new("Materials", "📦", () => State.CurrentRequest.MaterialManager?.Materials.Count ?? 0),
+        new("Calendars", "📅", () => State.CurrentRequest.Calendars.Count),
+        new("Settings", "⚙️", () => 0)
+    ];
+
+    private bool HasData => State.CurrentRequest.Jobs.Count > 0 || State.CurrentRequest.Resources.Count > 0;
+    private bool CanSimulate => State.CurrentRequest.Jobs.Count > 0 && State.CurrentRequest.Resources.Count > 0;
+    private int TotalOperations => State.CurrentRequest.Jobs.Sum(j => j.Operations.Count);
+
+    protected override void OnInitialized()
+    {
+        State.OnStateChanged += StateHasChanged;
+        State.OnSelectionChanged += HandleSelectionChanged;
+        State.OnUndoRedoChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnStateChanged -= StateHasChanged;
+        State.OnSelectionChanged -= HandleSelectionChanged;
+        State.OnUndoRedoChanged -= StateHasChanged;
+    }
+
+    private void HandleSelectionChanged(string? operationId)
+    {
+        UpdateSelectedOperationDetails();
+        StateHasChanged();
+    }
+
+    private void UpdateSelectedOperationDetails()
+    {
+        _selectedOperation = null;
+        _selectedJob = null;
+
+        if (string.IsNullOrEmpty(State.SelectedOperationId)) return;
+
+        foreach (var job in State.CurrentRequest.Jobs)
+        {
+            var op = job.Operations.FirstOrDefault(o => o.Id == State.SelectedOperationId);
+            if (op != null)
+            {
+                _selectedOperation = op;
+                _selectedJob = job;
+                break;
+            }
+        }
+    }
+
+    private void HandleOperationSelected(string operationId)
+    {
+        State.SelectOperation(operationId);
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && e.Key == "z")
+        {
+            HandleUndo();
+        }
+        else if (e.CtrlKey && e.Key == "y")
+        {
+            HandleRedo();
+        }
+        else if (e.Key == "Delete" && !string.IsNullOrEmpty(State.SelectedOperationId))
+        {
+            DeleteSelectedOperation();
+        }
+        else if (e.Key == "Escape")
+        {
+            State.ClearSelection();
+            _showMenu = false;
+            _showHistory = false;
+        }
+    }
+
+    private void HandleUndo()
+    {
+        var action = State.Undo();
+        if (action != null)
+        {
+            ShowToast("undo", $"↩ {action.Description} 취소됨");
+        }
+    }
+
+    private void HandleRedo()
+    {
+        var action = State.Redo();
+        if (action != null)
+        {
+            ShowToast("redo", $"↪ {action.Description} 다시 실행");
+        }
+    }
+
+    private void JumpToHistoryItem(int position)
+    {
+        State.JumpToHistory(position);
+        _showHistory = false;
+    }
+
+    private async void ShowToast(string type, string message)
+    {
+        _toastType = type;
+        _toastMessage = message;
+        _toastIcon = type == "undo" ? "↩" : "↪";
+        _showToast = true;
+        StateHasChanged();
+
+        await Task.Delay(3000);
+        _showToast = false;
+        StateHasChanged();
+    }
+
+    private string GetActionIcon(UndoActionType type) => type switch
+    {
+        UndoActionType.Add => "+",
+        UndoActionType.Edit => "✎",
+        UndoActionType.Delete => "−",
+        UndoActionType.Move => "↔",
+        UndoActionType.Load => "📥",
+        _ => "•"
+    };
+
+    private string GetActionIconClass(UndoActionType type) => type switch
+    {
+        UndoActionType.Add => "add",
+        UndoActionType.Edit => "edit",
+        UndoActionType.Delete => "delete",
+        UndoActionType.Move => "move",
+        UndoActionType.Load => "load",
+        _ => ""
+    };
+
+    private string FormatTimestamp(DateTime timestamp)
+    {
+        var diff = DateTime.Now - timestamp;
+        if (diff.TotalMinutes < 1) return "방금";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}분 전";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}시간 전";
+        return timestamp.ToString("MM/dd HH:mm");
+    }
+
+    private void EditSelectedOperation()
+    {
+        // TODO: Open edit dialog
+        NotificationService.Notify(NotificationSeverity.Info, "Edit", $"Editing {State.SelectedOperationId}");
+    }
+
+    private void DeleteSelectedOperation()
+    {
+        if (string.IsNullOrEmpty(State.SelectedOperationId) || _selectedJob == null || _selectedOperation == null)
+            return;
+
+        var opId = State.SelectedOperationId;
+        var job = _selectedJob;
+        var op = _selectedOperation;
+
+        // Record undo action
+        State.RecordAction(
+            $"{opId} 삭제",
+            UndoActionType.Delete,
+            () => { job.Operations.Add(op); State.NotifyStateChanged(); },
+            () => { job.Operations.Remove(op); State.NotifyStateChanged(); }
+        );
+
+        // Execute delete
+        job.Operations.Remove(op);
+        State.ClearSelection();
+        State.NotifyStateChanged();
+
+        NotificationService.Notify(NotificationSeverity.Warning, "Deleted", opId);
+    }
+
+    private async Task RunSimulation()
+    {
+        _isRunning = true;
+        _showMenu = false;
+        StateHasChanged();
+
+        try
+        {
+            if (State.CurrentResult != null)
+            {
+                State.PreviousResult = State.CurrentResult;
+                State.PreviousKpis = State.CurrentKpis;
+                State.PreviousRule = State.CurrentRule;
+            }
+
+            State.CurrentRequest.DispatchingConfig = State.DispatchingConfig;
+            var result = await Task.Run(() => Scheduler.Execute(State.CurrentRequest));
+            State.CurrentResult = result;
+            State.CurrentRule = State.DispatchingConfig.PrimaryRule;
+
+            if (result.Success && result.Schedule != null)
+            {
+                State.CurrentKpis = Scheduler.CalculateKpis(
+                    result.Schedule,
+                    State.CurrentRequest.Jobs,
+                    State.CurrentRequest.Resources);
+
+                _activeTab = TabType.Dashboard;
+                NotificationService.Notify(NotificationSeverity.Success, "완료",
+                    $"Makespan: {FormatDuration(result.Schedule.MakespanMs)}");
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "실패", result.Error ?? "Unknown error");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "오류", ex.Message);
+        }
+        finally
+        {
+            _isRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ImportJson()
+    {
+        _showMenu = false;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            Title = "Import Schedule Data"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                var request = await FileService.ImportJsonAsync(dialog.FileName);
+                if (request != null)
+                {
+                    State.CurrentRequest = request;
+                    State.CurrentFilePath = dialog.FileName;
+                    State.ClearResults();
+                    State.ClearHistory();
+                    State.HasUnsavedChanges = false;
+                    State.NotifyStateChanged();
+                    NotificationService.Notify(NotificationSeverity.Success, "Imported",
+                        $"{request.Jobs.Count} jobs, {request.Resources.Count} resources");
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Import Failed", ex.Message);
+            }
+        }
+    }
+
+    private async Task ExportJson()
+    {
+        _showMenu = false;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "JSON files (*.json)|*.json",
+            Title = "Export Schedule Data",
+            FileName = "schedule.json"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                await FileService.ExportJsonAsync(dialog.FileName, State.CurrentRequest);
+                State.CurrentFilePath = dialog.FileName;
+                State.HasUnsavedChanges = false;
+                NotificationService.Notify(NotificationSeverity.Success, "Exported", dialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Export Failed", ex.Message);
+            }
+        }
+    }
+
+    private async Task LoadSample(string name)
+    {
+        _showMenu = false;
+        try
+        {
+            var samplePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Samples", $"{name}.json");
+            if (!File.Exists(samplePath))
+                samplePath = Path.Combine(Directory.GetCurrentDirectory(), "Samples", $"{name}.json");
+
+            if (File.Exists(samplePath))
+            {
+                var request = await FileService.ImportJsonAsync(samplePath);
+                if (request != null)
+                {
+                    State.CurrentRequest = request;
+                    State.CurrentFilePath = null;
+                    State.ClearResults();
+                    State.ClearHistory();
+                    State.HasUnsavedChanges = false;
+                    State.NotifyStateChanged();
+                    NotificationService.Notify(NotificationSeverity.Success, "Loaded", name);
+                }
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Warning, "Not Found", $"{name}.json");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Load Failed", ex.Message);
+        }
+    }
+
+    private void ClearAll()
+    {
+        _showMenu = false;
+        State.Reset();
+    }
+
+    private string FormatDuration(long ms)
+    {
+        var ts = TimeSpan.FromMilliseconds(ms);
+        if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1) return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";
+        return $"{ts.TotalSeconds:F1}s";
+    }
+
+    private double GetUtilization()
+    {
+        if (State.CurrentKpis?.ResourceUtilization == null || !State.CurrentKpis.ResourceUtilization.Any())
+            return 0;
+        return State.CurrentKpis.ResourceUtilization.Average(r => r.UtilizationPercent);
+    }
+}

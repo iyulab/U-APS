@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>UAPS.CLI</AssemblyName>
+    <Description>U-APS Command Line Tool</Description>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>uaps</ToolCommandName>
+    <PackageId>UAPS.CLI</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UAPS.SDK\UAPS.SDK.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,439 @@
+@using UAPS.SDK.Client
+
+<div class="gantt-wrapper">
+    @* Zoom Controls *@
+    <div class="gantt-toolbar">
+        <button class="zoom-btn" @onclick="ZoomOut" title="축소">−</button>
+        <span class="zoom-level">@(_zoomLevel * 100)%</span>
+        <button class="zoom-btn" @onclick="ZoomIn" title="확대">+</button>
+        <button class="zoom-btn" @onclick="ZoomReset" title="원래 크기">⟲</button>
+    </div>
+
+    <div class="gantt-container" @onwheel="HandleWheel" @onwheel:preventDefault="@_ctrlPressed">
+        @if (Schedule != null && Schedule.Assignments.Count > 0)
+        {
+            <svg width="@_svgWidth" height="@_svgHeight" class="gantt-chart" xmlns="http://www.w3.org/2000/svg">
+            @* Header - Time axis *@
+            <g class="time-axis">
+                <rect x="0" y="0" width="@_svgWidth" height="@HeaderHeight" fill="#1e293b" />
+                @foreach (var tick in _timeMarkers)
+                {
+                    <line x1="@(LabelWidth + tick.X)" y1="@HeaderHeight"
+                          x2="@(LabelWidth + tick.X)" y2="@_svgHeight"
+                          stroke="#334155" stroke-width="1" />
+                    @((MarkupString)$"<text x=\"{LabelWidth + tick.X}\" y=\"{HeaderHeight - 5}\" text-anchor=\"middle\" font-size=\"11\" fill=\"#94a3b8\">{tick.Label}</text>")
+                }
+            </g>
+
+            @* Resource rows *@
+            @{ var rowIndex = 0; }
+            @foreach (var resourceId in _resourceIds)
+            {
+                var y = HeaderHeight + rowIndex * RowHeight;
+                var resource = Resources.FirstOrDefault(r => r.Id == resourceId);
+                var bgColor = rowIndex % 2 == 0 ? "#0f172a" : "#1e293b";
+                var resourceName = resource?.Name ?? resourceId;
+
+                @* Row background *@
+                <rect x="0" y="@y" width="@_svgWidth" height="@RowHeight" fill="@bgColor" />
+
+                @* Resource label *@
+                <rect x="0" y="@y" width="@LabelWidth" height="@RowHeight" fill="#1e293b" />
+                @((MarkupString)$"<text x=\"8\" y=\"{y + RowHeight / 2 + 4}\" font-size=\"12\" font-weight=\"500\" fill=\"#f1f5f9\">{System.Web.HttpUtility.HtmlEncode(resourceName)}</text>")
+
+                @* Resource type badge *@
+                @if (resource != null)
+                {
+                    var badgeColor = resource.Kind == ResourceKind.Equipment ? "#2196f3" : "#ff9800";
+                    var badgeText = resource.Kind == ResourceKind.Equipment ? "EQP" : "WKR";
+                    <rect x="@(LabelWidth - 50)" y="@(y + 8)" width="40" height="16" rx="8" fill="@badgeColor" opacity="0.2" />
+                    @((MarkupString)$"<text x=\"{LabelWidth - 30}\" y=\"{y + 20}\" font-size=\"9\" text-anchor=\"middle\" fill=\"{badgeColor}\">{badgeText}</text>")
+                }
+
+                @* Tasks for this resource *@
+                var assignments = Schedule.Assignments.Where(a => a.ResourceId == resourceId).ToList();
+                @foreach (var assignment in assignments)
+                {
+                    var job = Jobs.FirstOrDefault(j => j.Operations.Any(o => o.Id == assignment.OperationId));
+                    var operation = job?.Operations.FirstOrDefault(o => o.Id == assignment.OperationId);
+
+                    var x = LabelWidth + (assignment.StartMs - _minTime) * _scale;
+                    var width = Math.Max(assignment.DurationMs * _scale, 2);
+                    var color = GetJobColor(job?.Id ?? "");
+                    var isSelected = assignment.OperationId == SelectedOperationId;
+
+                    <g class="gantt-task @(isSelected ? "selected" : "")"
+                       @onclick="() => HandleTaskClick(assignment)"
+                       @onclick:stopPropagation="true">
+                        @* Setup time portion (lighter) *@
+                        @if (operation?.Time.SetupMs > 0)
+                        {
+                            var setupWidth = operation.Time.SetupMs * _scale;
+                            <rect x="@x" y="@(y + 6)" width="@setupWidth" height="@(RowHeight - 12)"
+                                  rx="3" fill="@color" opacity="0.4" />
+                        }
+
+                        @* Selection highlight *@
+                        @if (isSelected)
+                        {
+                            <rect x="@(x - 2)" y="@(y + 4)" width="@(width + 4)" height="@(RowHeight - 8)"
+                                  rx="5" fill="none" stroke="#00b4d8" stroke-width="3" />
+                        }
+
+                        @* Process time portion *@
+                        <rect x="@x" y="@(y + 6)" width="@width" height="@(RowHeight - 12)"
+                              rx="3" fill="@color" stroke="@(isSelected ? "#00b4d8" : color)" stroke-width="@(isSelected ? 2 : 1)"
+                              class="task-bar @(isSelected ? "selected" : "")" />
+
+                        @* Task label *@
+                        @if (width > 40)
+                        {
+                            @((MarkupString)$"<text x=\"{x + 4}\" y=\"{y + RowHeight / 2 + 4}\" font-size=\"10\" fill=\"white\">{System.Web.HttpUtility.HtmlEncode(assignment.OperationId)}</text>")
+                        }
+                    </g>
+                }
+
+                rowIndex++;
+            }
+        </svg>
+
+        @* Selected Assignment Details *@
+        @if (_selectedAssignment != null)
+        {
+            <div class="gantt-details" style="margin-top: 8px;">
+                <RadzenCard Style="padding: 12px;">
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" AlignItems="AlignItems.Center">
+                        <div>
+                            <strong>@_selectedAssignment.OperationId</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            Resource: <strong>@_selectedAssignment.ResourceId</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            Start: <strong>@FormatTime(_selectedAssignment.StartMs)</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            End: <strong>@FormatTime(_selectedAssignment.EndMs)</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            Duration: <strong>@FormatDuration(_selectedAssignment.DurationMs)</strong>
+                        </div>
+                        <RadzenButton Icon="close" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light"
+                                      Click="@(() => ClearSelection())" />
+                    </RadzenStack>
+                </RadzenCard>
+            </div>
+        }
+    }
+        else
+        {
+            <div style="display: flex; justify-content: center; align-items: center; height: 200px; color: var(--text-muted, #94a3b8);">
+                No schedule data to display
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .gantt-wrapper {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+
+    .gantt-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: var(--bg-3, #242b36);
+        border-bottom: 1px solid var(--border, #2d3748);
+    }
+
+    .zoom-btn {
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 4px;
+        background: var(--bg-2, #1a2029);
+        color: var(--text-1, #cbd5e1);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .zoom-btn:hover {
+        background: var(--accent, #00b4d8);
+        color: white;
+    }
+
+    .zoom-level {
+        font-size: 11px;
+        color: var(--text-2, #94a3b8);
+        min-width: 40px;
+        text-align: center;
+    }
+
+    .gantt-container {
+        position: relative;
+        flex: 1;
+        overflow: auto;
+        min-height: 150px;
+    }
+
+    .gantt-container::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    .gantt-container::-webkit-scrollbar-track {
+        background: var(--bg-1, #12171f);
+    }
+
+    .gantt-container::-webkit-scrollbar-thumb {
+        background: var(--bg-3, #242b36);
+        border-radius: 5px;
+    }
+
+    .gantt-container::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-dim, #0891b2);
+    }
+
+    .gantt-container::-webkit-scrollbar-corner {
+        background: var(--bg-1, #12171f);
+    }
+
+    .gantt-task {
+        cursor: pointer;
+    }
+
+    .task-bar {
+        transition: opacity 0.2s, transform 0.15s;
+    }
+
+    .task-bar:hover {
+        opacity: 0.85;
+    }
+
+    .gantt-task.selected .task-bar {
+        filter: brightness(1.2);
+    }
+</style>
+
+@code {
+    [Parameter] public Schedule? Schedule { get; set; }
+    [Parameter] public List<Job> Jobs { get; set; } = [];
+    [Parameter] public List<Resource> Resources { get; set; } = [];
+    [Parameter] public string? SelectedOperationId { get; set; }
+    [Parameter] public EventCallback<string> OnOperationSelected { get; set; }
+
+    private const int HeaderHeight = 30;
+    private const int RowHeight = 40;
+    private const int LabelWidth = 120;
+    private const int MinChartWidth = 600;
+
+    private List<string> _resourceIds = [];
+    private List<TimeMarker> _timeMarkers = [];
+    private long _minTime;
+    private long _maxTime;
+    private double _scale;
+    private double _baseScale;
+    private int _svgWidth;
+    private int _svgHeight;
+
+    private Assignment? _selectedAssignment;
+
+    // Zoom control
+    private double _zoomLevel = 1.0;
+    private const double ZoomStep = 0.25;
+    private const double MinZoom = 0.25;
+    private const double MaxZoom = 4.0;
+    private bool _ctrlPressed = false;
+
+    // Color palette for jobs - vibrant colors for dark theme
+    private readonly string[] _colors = [
+        "#00b4d8", "#22c55e", "#f59e0b", "#a855f7", "#ef4444",
+        "#06b6d4", "#84cc16", "#eab308", "#8b5cf6", "#ec4899"
+    ];
+    private readonly Dictionary<string, string> _jobColors = new();
+
+    protected override void OnParametersSet()
+    {
+        if (Schedule?.Assignments == null || Schedule.Assignments.Count == 0)
+            return;
+
+        // Get unique resources
+        _resourceIds = Schedule.Assignments
+            .Select(a => a.ResourceId)
+            .Distinct()
+            .OrderBy(r => Resources.FirstOrDefault(res => res.Id == r)?.Kind ?? ResourceKind.Equipment)
+            .ThenBy(r => r)
+            .ToList();
+
+        // Calculate time range
+        _minTime = Schedule.Assignments.Min(a => a.StartMs);
+        _maxTime = Schedule.Assignments.Max(a => a.EndMs);
+
+        var duration = _maxTime - _minTime;
+        if (duration == 0) duration = 1;
+
+        // Calculate base scale (pixels per ms) at 100% zoom
+        var chartWidth = Math.Max(MinChartWidth, (int)(duration / 1000)); // At least 1px per second
+        _baseScale = (double)chartWidth / duration;
+
+        // Apply zoom
+        RecalculateDimensions();
+
+        // Assign colors to jobs
+        var jobIds = Jobs.Select(j => j.Id).Distinct().ToList();
+        for (int i = 0; i < jobIds.Count; i++)
+        {
+            _jobColors[jobIds[i]] = _colors[i % _colors.Length];
+        }
+
+        // Update selected assignment from SelectedOperationId parameter
+        UpdateSelectedAssignment();
+    }
+
+    private void UpdateSelectedAssignment()
+    {
+        if (string.IsNullOrEmpty(SelectedOperationId) || Schedule == null)
+        {
+            _selectedAssignment = null;
+            return;
+        }
+
+        _selectedAssignment = Schedule.Assignments.FirstOrDefault(a => a.OperationId == SelectedOperationId);
+    }
+
+    private void RecalculateDimensions()
+    {
+        var duration = _maxTime - _minTime;
+        if (duration == 0) duration = 1;
+
+        _scale = _baseScale * _zoomLevel;
+        var chartWidth = (int)(duration * _scale);
+
+        _svgWidth = LabelWidth + chartWidth + 20;
+        _svgHeight = HeaderHeight + _resourceIds.Count * RowHeight;
+
+        GenerateTimeMarkers(duration);
+    }
+
+    private void ZoomIn()
+    {
+        if (_zoomLevel < MaxZoom)
+        {
+            _zoomLevel = Math.Min(_zoomLevel + ZoomStep, MaxZoom);
+            RecalculateDimensions();
+        }
+    }
+
+    private void ZoomOut()
+    {
+        if (_zoomLevel > MinZoom)
+        {
+            _zoomLevel = Math.Max(_zoomLevel - ZoomStep, MinZoom);
+            RecalculateDimensions();
+        }
+    }
+
+    private void ZoomReset()
+    {
+        _zoomLevel = 1.0;
+        RecalculateDimensions();
+    }
+
+    private void HandleWheel(WheelEventArgs e)
+    {
+        _ctrlPressed = e.CtrlKey;
+        if (e.CtrlKey)
+        {
+            if (e.DeltaY < 0)
+                ZoomIn();
+            else if (e.DeltaY > 0)
+                ZoomOut();
+        }
+        // Normal scroll (without Ctrl) is handled by browser default
+    }
+
+    private void GenerateTimeMarkers(long durationMs)
+    {
+        _timeMarkers.Clear();
+
+        // Determine interval based on duration
+        long interval;
+        if (durationMs <= 600000) // <= 10 minutes
+            interval = 60000; // 1 minute
+        else if (durationMs <= 3600000) // <= 1 hour
+            interval = 300000; // 5 minutes
+        else if (durationMs <= 14400000) // <= 4 hours
+            interval = 900000; // 15 minutes
+        else
+            interval = 3600000; // 1 hour
+
+        for (long t = _minTime; t <= _maxTime; t += interval)
+        {
+            var x = (t - _minTime) * _scale;
+            _timeMarkers.Add(new TimeMarker { X = x, Label = FormatTimeShort(t) });
+        }
+    }
+
+    private string GetJobColor(string jobId)
+    {
+        return _jobColors.TryGetValue(jobId, out var color) ? color : "#999";
+    }
+
+    private string FormatTimeShort(long ms)
+    {
+        var minutes = ms / 60000;
+        if (minutes < 60)
+            return $"{minutes}m";
+        return $"{minutes / 60}h{minutes % 60:D2}m";
+    }
+
+    private string FormatTime(long ms)
+    {
+        var dto = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return dto.ToString("HH:mm:ss");
+    }
+
+    private string FormatDuration(long ms)
+    {
+        if (ms >= 3600000)
+            return $"{ms / 3600000}h {(ms % 3600000) / 60000}m";
+        if (ms >= 60000)
+            return $"{ms / 60000}m {(ms % 60000) / 1000}s";
+        return $"{ms / 1000}s";
+    }
+
+    private async Task HandleTaskClick(Assignment assignment)
+    {
+        if (_selectedAssignment?.OperationId == assignment.OperationId)
+        {
+            // Toggle off if already selected
+            _selectedAssignment = null;
+            await OnOperationSelected.InvokeAsync(null!);
+        }
+        else
+        {
+            _selectedAssignment = assignment;
+            await OnOperationSelected.InvokeAsync(assignment.OperationId);
+        }
+    }
+
+    private async Task ClearSelection()
+    {
+        _selectedAssignment = null;
+        await OnOperationSelected.InvokeAsync(null!);
+    }
+
+    private class TimeMarker
+    {
+        public double X { get; set; }
+        public string Label { get; set; } = "";
+    }
+}

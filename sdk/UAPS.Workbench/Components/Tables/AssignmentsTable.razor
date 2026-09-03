@@ -1,0 +1,99 @@
+@using UAPS.SDK.Client
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <span class="toolbar-info">@Schedule.Assignments.Count assignments</span>
+        <div class="toolbar-group">
+            <input type="text" @bind="_filter" @bind:event="oninput" class="input-sm" placeholder="Filter..." />
+        </div>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width:120px" class='sortable @GetSortClass("OpId")' @onclick='() => Sort("OpId")'>Operation</th>
+                <th style="width:100px" class='sortable @GetSortClass("ResourceId")' @onclick='() => Sort("ResourceId")'>Resource</th>
+                <th style="width:100px" class='sortable @GetSortClass("Start")' @onclick='() => Sort("Start")'>Start</th>
+                <th style="width:100px" class='sortable @GetSortClass("End")' @onclick='() => Sort("End")'>End</th>
+                <th style="width:80px" class='sortable @GetSortClass("Duration")' @onclick='() => Sort("Duration")'>Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var assignment in GetFilteredAssignments())
+            {
+                <tr>
+                    <td>@assignment.OperationId</td>
+                    <td>@assignment.ResourceId</td>
+                    <td>@FormatTime(assignment.StartMs)</td>
+                    <td>@FormatTime(assignment.EndMs)</td>
+                    <td class="right">@FormatDuration(assignment.DurationMs)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public Schedule Schedule { get; set; } = null!;
+
+    private string _filter = "";
+    private string _sortColumn = "Start";
+    private bool _sortAsc = true;
+
+    private IEnumerable<Assignment> GetFilteredAssignments()
+    {
+        var query = Schedule.Assignments.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_filter))
+        {
+            var filter = _filter.ToLower();
+            query = query.Where(a =>
+                a.OperationId.ToLower().Contains(filter) ||
+                a.ResourceId.ToLower().Contains(filter));
+        }
+
+        query = _sortColumn switch
+        {
+            "OpId" => _sortAsc ? query.OrderBy(a => a.OperationId) : query.OrderByDescending(a => a.OperationId),
+            "ResourceId" => _sortAsc ? query.OrderBy(a => a.ResourceId) : query.OrderByDescending(a => a.ResourceId),
+            "Start" => _sortAsc ? query.OrderBy(a => a.StartMs) : query.OrderByDescending(a => a.StartMs),
+            "End" => _sortAsc ? query.OrderBy(a => a.EndMs) : query.OrderByDescending(a => a.EndMs),
+            "Duration" => _sortAsc ? query.OrderBy(a => a.DurationMs) : query.OrderByDescending(a => a.DurationMs),
+            _ => query.OrderBy(a => a.StartMs)
+        };
+
+        return query;
+    }
+
+    private void Sort(string column)
+    {
+        if (_sortColumn == column)
+            _sortAsc = !_sortAsc;
+        else
+        {
+            _sortColumn = column;
+            _sortAsc = true;
+        }
+    }
+
+    private string GetSortClass(string column)
+    {
+        if (_sortColumn != column) return "";
+        return _sortAsc ? "sort-asc" : "sort-desc";
+    }
+
+    private string FormatTime(long ms)
+    {
+        var dto = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return dto.ToString("HH:mm:ss");
+    }
+
+    private string FormatDuration(long ms)
+    {
+        if (ms >= 3600000)
+            return $"{ms / 3600000}h{(ms % 3600000) / 60000}m";
+        if (ms >= 60000)
+            return $"{ms / 60000}m{(ms % 60000) / 1000}s";
+        return $"{ms / 1000}s";
+    }
+}

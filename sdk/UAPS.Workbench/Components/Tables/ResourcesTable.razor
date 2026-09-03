@@ -1,0 +1,296 @@
+@inject WorkbenchState State
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <button class="btn btn-sm btn-success" @onclick="AddResource">+ Add Resource</button>
+        <button class="btn btn-sm" @onclick="AddBulkResources">+ Add Multiple</button>
+        @if (_selectedResource != null)
+        {
+            <span class="toolbar-divider"></span>
+            <button class="btn btn-sm" @onclick="DuplicateResource">📋 Duplicate</button>
+            <button class="btn btn-sm btn-danger" @onclick="DeleteSelected">🗑️ Delete</button>
+        }
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width:30px"></th>
+                <th style="width:100px">ID</th>
+                <th style="width:100px">Name</th>
+                <th style="width:90px">Type</th>
+                <th style="width:80px">Efficiency</th>
+                <th style="width:120px">Capabilities</th>
+                <th style="width:100px">Unavailable</th>
+                <th style="width:60px"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (State.CurrentRequest.Resources.Count == 0)
+            {
+                <tr>
+                    <td colspan="8" class="empty-row">No resources. Click "Add Resource" to create one.</td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var res in State.CurrentRequest.Resources)
+                {
+                    var isSelected = _selectedResource == res;
+                    var isEditing = _editingResource == res;
+
+                    <tr class="@(isSelected ? "selected" : "") @(isEditing ? "editing" : "")"
+                        @onclick="() => SelectResource(res)">
+                        <td>
+                            <input type="checkbox" checked="@isSelected"
+                                   @onclick:stopPropagation="true"
+                                   @onchange="() => SelectResource(res)" />
+                        </td>
+                        @if (isEditing)
+                        {
+                            <td><input type="text" @bind="_editId" class="cell-input" /></td>
+                            <td><input type="text" @bind="_editName" class="cell-input" /></td>
+                            <td>
+                                <select @bind="_editKind" class="cell-input">
+                                    <option value="Equipment">Equipment</option>
+                                    <option value="Worker">Worker</option>
+                                </select>
+                            </td>
+                            <td><input type="number" @bind="_editEfficiency" class="cell-input" min="0.1" max="2" step="0.1" /></td>
+                            <td><input type="text" @bind="_editCapabilities" class="cell-input" placeholder="cap1,cap2" /></td>
+                            <td>@res.Unavailable.Count slots</td>
+                            <td>
+                                <button class="btn-icon" @onclick="SaveEdit" @onclick:stopPropagation="true" title="Save">✓</button>
+                                <button class="btn-icon" @onclick="CancelEdit" @onclick:stopPropagation="true" title="Cancel">✗</button>
+                            </td>
+                        }
+                        else
+                        {
+                            <td @ondblclick="() => StartEdit(res)">@res.Id</td>
+                            <td @ondblclick="() => StartEdit(res)">@res.Name</td>
+                            <td @ondblclick="() => StartEdit(res)">
+                                <span class="type-badge @(res.Kind == ResourceKind.Equipment ? "equipment" : "worker")">
+                                    @(res.Kind == ResourceKind.Equipment ? "EQP" : "WKR")
+                                </span>
+                            </td>
+                            <td @ondblclick="() => StartEdit(res)" class="center">@res.Efficiency.ToString("F1")</td>
+                            <td @ondblclick="() => StartEdit(res)">
+                                @if (res.Capabilities.Any())
+                                {
+                                    <span class="capability-list">@string.Join(", ", res.Capabilities.Take(3))</span>
+                                    @if (res.Capabilities.Count > 3)
+                                    {
+                                        <span class="more">+@(res.Capabilities.Count - 3)</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="empty-text">-</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn-link" @onclick="() => OpenUnavailable(res)" @onclick:stopPropagation="true">
+                                    @res.Unavailable.Count slots
+                                </button>
+                            </td>
+                            <td>
+                                <button class="btn-icon" @onclick="() => StartEdit(res)" @onclick:stopPropagation="true" title="Edit">✎</button>
+                                <button class="btn-icon danger" @onclick="() => DeleteResource(res)" @onclick:stopPropagation="true" title="Delete">×</button>
+                            </td>
+                        }
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+
+    @if (_showUnavailable && _selectedResource != null)
+    {
+        <div class="sub-table-section">
+            <div class="sub-table-header">
+                <span>Unavailable Slots for @_selectedResource.Id</span>
+                <button class="btn btn-sm btn-success" @onclick="AddUnavailableSlot">+ Add Slot</button>
+                <button class="btn-icon" @onclick="() => _showUnavailable = false">×</button>
+            </div>
+            <table class="data-table compact">
+                <thead>
+                    <tr>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Duration</th>
+                        <th style="width:60px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < _selectedResource.Unavailable.Count; i++)
+                    {
+                        var slot = _selectedResource.Unavailable[i];
+                        var index = i;
+                        <tr>
+                            <td>@FormatMs(slot.StartMs)</td>
+                            <td>@FormatMs(slot.EndMs)</td>
+                            <td>@FormatDuration(slot.DurationMs)</td>
+                            <td>
+                                <button class="btn-icon danger" @onclick="() => RemoveUnavailableSlot(index)">×</button>
+                            </td>
+                        </tr>
+                    }
+                    @if (_selectedResource.Unavailable.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="empty-row">No unavailable slots</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private Resource? _selectedResource;
+    private Resource? _editingResource;
+    private bool _showUnavailable;
+
+    // Edit fields
+    private string _editId = "";
+    private string _editName = "";
+    private string _editKind = "Equipment";
+    private double _editEfficiency;
+    private string _editCapabilities = "";
+
+    private void SelectResource(Resource res)
+    {
+        _selectedResource = _selectedResource == res ? null : res;
+    }
+
+    private void StartEdit(Resource res)
+    {
+        _editingResource = res;
+        _editId = res.Id;
+        _editName = res.Name ?? "";
+        _editKind = res.Kind.ToString();
+        _editEfficiency = res.Efficiency;
+        _editCapabilities = string.Join(",", res.Capabilities);
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingResource != null)
+        {
+            _editingResource.Id = _editId;
+            _editingResource.Name = _editName;
+            _editingResource.Kind = _editKind == "Worker" ? ResourceKind.Worker : ResourceKind.Equipment;
+            _editingResource.Efficiency = _editEfficiency;
+            _editingResource.Capabilities = _editCapabilities
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+            State.NotifyStateChanged();
+        }
+        _editingResource = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingResource = null;
+    }
+
+    private void AddResource()
+    {
+        var newId = $"RES-{State.CurrentRequest.Resources.Count + 1:D3}";
+        var res = Resource.Equipment(newId);
+        res.Name = newId;
+        res.Efficiency = 1.0;
+
+        State.CurrentRequest.Resources.Add(res);
+        State.NotifyStateChanged();
+        _selectedResource = res;
+        StartEdit(res);
+    }
+
+    private void AddBulkResources()
+    {
+        var startIdx = State.CurrentRequest.Resources.Count + 1;
+        for (int i = 0; i < 5; i++)
+        {
+            var res = Resource.Equipment($"RES-{startIdx + i:D3}");
+            res.Name = $"Resource-{startIdx + i}";
+            res.Efficiency = 1.0;
+            State.CurrentRequest.Resources.Add(res);
+        }
+        State.NotifyStateChanged();
+    }
+
+    private void DuplicateResource()
+    {
+        if (_selectedResource == null) return;
+
+        var newId = $"RES-{State.CurrentRequest.Resources.Count + 1:D3}";
+        var res = _selectedResource.Kind == ResourceKind.Worker
+            ? Resource.Worker(newId)
+            : Resource.Equipment(newId);
+        res.Name = $"{_selectedResource.Name} (Copy)";
+        res.Efficiency = _selectedResource.Efficiency;
+        res.Capabilities = new List<string>(_selectedResource.Capabilities);
+
+        State.CurrentRequest.Resources.Add(res);
+        State.NotifyStateChanged();
+        _selectedResource = res;
+    }
+
+    private void DeleteResource(Resource res)
+    {
+        State.CurrentRequest.Resources.Remove(res);
+        if (_selectedResource == res) _selectedResource = null;
+        if (_editingResource == res) _editingResource = null;
+        State.NotifyStateChanged();
+    }
+
+    private void DeleteSelected()
+    {
+        if (_selectedResource != null)
+        {
+            DeleteResource(_selectedResource);
+        }
+    }
+
+    private void OpenUnavailable(Resource res)
+    {
+        _selectedResource = res;
+        _showUnavailable = true;
+    }
+
+    private void AddUnavailableSlot()
+    {
+        if (_selectedResource == null) return;
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var oneHourMs = 3600000L;
+        _selectedResource.Unavailable.Add(new TimeSlot(now, now + oneHourMs));
+        State.NotifyStateChanged();
+    }
+
+    private void RemoveUnavailableSlot(int index)
+    {
+        if (_selectedResource != null && index >= 0 && index < _selectedResource.Unavailable.Count)
+        {
+            _selectedResource.Unavailable.RemoveAt(index);
+            State.NotifyStateChanged();
+        }
+    }
+
+    private string FormatMs(long ms)
+    {
+        var dto = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+        return dto.ToString("MM/dd HH:mm");
+    }
+
+    private string FormatDuration(long ms)
+    {
+        if (ms >= 3600000)
+            return $"{ms / 3600000}h {(ms % 3600000) / 60000}m";
+        if (ms >= 60000)
+            return $"{ms / 60000}m";
+        return $"{ms / 1000}s";
+    }
+}

@@ -1,0 +1,257 @@
+{
+  "jobs": [
+    {
+      "id": "JOB-001",
+      "productName": "Product-A",
+      "priority": 1,
+      "quantity": 10,
+      "operations": [
+        {
+          "id": "OP-001-1",
+          "operationType": "Cutting",
+          "sequence": 1,
+          "setupMs": 300000,
+          "processMs": 600000,
+          "waitMs": 0,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-001", "EQP-002"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001", "WRK-002"]
+            }
+          ]
+        },
+        {
+          "id": "OP-001-2",
+          "operationType": "Drilling",
+          "sequence": 2,
+          "setupMs": 150000,
+          "processMs": 450000,
+          "waitMs": 0,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-001"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001"]
+            }
+          ]
+        },
+        {
+          "id": "OP-001-3",
+          "operationType": "Assembly",
+          "sequence": 3,
+          "setupMs": 0,
+          "processMs": 300000,
+          "waitMs": 60000,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-003"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 2,
+              "candidates": ["WRK-001", "WRK-002", "WRK-003"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "JOB-002",
+      "productName": "Product-B",
+      "priority": 2,
+      "quantity": 5,
+      "operations": [
+        {
+          "id": "OP-002-1",
+          "operationType": "Cutting",
+          "sequence": 1,
+          "setupMs": 300000,
+          "processMs": 400000,
+          "waitMs": 0,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-001", "EQP-002"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001", "WRK-002"]
+            }
+          ]
+        },
+        {
+          "id": "OP-002-2",
+          "operationType": "Assembly",
+          "sequence": 2,
+          "setupMs": 0,
+          "processMs": 200000,
+          "waitMs": 30000,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-003"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001", "WRK-002", "WRK-003"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "JOB-003",
+      "productName": "Product-A",
+      "priority": 1,
+      "quantity": 8,
+      "operations": [
+        {
+          "id": "OP-003-1",
+          "operationType": "Cutting",
+          "sequence": 1,
+          "setupMs": 300000,
+          "processMs": 500000,
+          "waitMs": 0,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-001", "EQP-002"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001", "WRK-002"]
+            }
+          ]
+        },
+        {
+          "id": "OP-003-2",
+          "operationType": "Assembly",
+          "sequence": 2,
+          "setupMs": 0,
+          "processMs": 250000,
+          "waitMs": 45000,
+          "requiredResources": [
+            {
+              "resourceType": "Equipment",
+              "quantity": 1,
+              "candidates": ["EQP-003"]
+            },
+            {
+              "resourceType": "Worker",
+              "quantity": 1,
+              "candidates": ["WRK-001", "WRK-002", "WRK-003"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "id": "EQP-001",
+      "name": "Cutting/Drilling Machine 1",
+      "type": "Equipment",
+      "capability": "Cutting,Drilling",
+      "efficiency": 1.0
+    },
+    {
+      "id": "EQP-002",
+      "name": "Cutting Machine 2",
+      "type": "Equipment",
+      "capability": "Cutting",
+      "efficiency": 0.9
+    },
+    {
+      "id": "EQP-003",
+      "name": "Assembly Station",
+      "type": "Equipment",
+      "capability": "Assembly",
+      "efficiency": 1.0
+    },
+    {
+      "id": "WRK-001",
+      "name": "Multi-skilled Operator",
+      "type": "Worker",
+      "capability": "Cutting,Drilling,Assembly",
+      "efficiency": 1.0,
+      "calendarId": "CAL-DAY"
+    },
+    {
+      "id": "WRK-002",
+      "name": "Operator 2",
+      "type": "Worker",
+      "capability": "Cutting,Assembly",
+      "efficiency": 0.85,
+      "calendarId": "CAL-DAY"
+    },
+    {
+      "id": "WRK-003",
+      "name": "Assembly Specialist",
+      "type": "Worker",
+      "capability": "Assembly",
+      "efficiency": 1.0,
+      "calendarId": "CAL-DAY"
+    }
+  ],
+  "calendars": [
+    {
+      "id": "CAL-DAY",
+      "name": "주간 근무",
+      "shifts": [
+        {
+          "name": "주간",
+          "start": { "hour": 8, "minute": 0 },
+          "end": { "hour": 17, "minute": 0 },
+          "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+        }
+      ],
+      "breaks": [
+        { "start": { "hour": 12, "minute": 0 }, "end": { "hour": 13, "minute": 0 } }
+      ]
+    }
+  ],
+  "setupMatrices": {
+    "matrices": [
+      {
+        "resourceId": "EQP-001",
+        "entries": [
+          { "fromProduct": "Product-A", "toProduct": "Product-B", "setupTimeMs": 600000 },
+          { "fromProduct": "Product-B", "toProduct": "Product-A", "setupTimeMs": 600000 }
+        ]
+      },
+      {
+        "resourceId": "EQP-002",
+        "entries": [
+          { "fromProduct": "Product-A", "toProduct": "Product-B", "setupTimeMs": 480000 },
+          { "fromProduct": "Product-B", "toProduct": "Product-A", "setupTimeMs": 480000 }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "startTimeMs": 0,
+    "algorithm": "dispatching"
+  },
+  "dispatchingConfig": {
+    "primaryRule": "SPT"
+  }
+}

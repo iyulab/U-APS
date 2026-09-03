@@ -1,0 +1,161 @@
+@using UAPS.SDK.Analytics
+
+<div class="kpi-view">
+    @if (Kpis != null)
+    {
+        <div class="kpi-grid">
+            <div class="kpi-card primary">
+                <div class="kpi-icon">⏱️</div>
+                <div class="kpi-content">
+                    <div class="kpi-value">@Kpis.Summary.TotalMakespanMinutes.ToString("F1")<small>min</small></div>
+                    <div class="kpi-label">Makespan</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon">📦</div>
+                <div class="kpi-content">
+                    <div class="kpi-value">@Kpis.Summary.TotalJobCount</div>
+                    <div class="kpi-label">Jobs</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon">📋</div>
+                <div class="kpi-content">
+                    <div class="kpi-value">@Kpis.Summary.TotalAssignmentCount</div>
+                    <div class="kpi-label">Assignments</div>
+                </div>
+            </div>
+
+            <div class="kpi-card @(Kpis.Summary.TotalViolationCount > 0 ? "warning" : "")">
+                <div class="kpi-icon">⚠️</div>
+                <div class="kpi-content">
+                    <div class="kpi-value">@Kpis.Summary.TotalViolationCount</div>
+                    <div class="kpi-label">Violations</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-sections">
+            <div class="kpi-section">
+                <h4>Quality Score</h4>
+                <div class="quality-display">
+                    <div class="quality-bar">
+                        <div class="quality-fill @GetQualityClass(Kpis.QualityMetrics.ScheduleQualityScore)"
+                             style="width: @Kpis.QualityMetrics.ScheduleQualityScore%"></div>
+                    </div>
+                    <span class="quality-value">@Kpis.QualityMetrics.ScheduleQualityScore.ToString("F0")%</span>
+                    <span class="quality-label">@GetQualityLabel(Kpis.QualityMetrics.ScheduleQualityScore)</span>
+                </div>
+            </div>
+
+            @if (Kpis.DueDatePerformance.TotalJobsWithDueDate > 0)
+            {
+                <div class="kpi-section">
+                    <h4>Due Date Performance</h4>
+                    <div class="metric-row">
+                        <span>On-Time Rate</span>
+                        <span class="@(Kpis.DueDatePerformance.OnTimeRate >= 80 ? "text-success" : Kpis.DueDatePerformance.OnTimeRate >= 50 ? "text-warning" : "text-danger")">
+                            @Kpis.DueDatePerformance.OnTimeRate.ToString("F1")%
+                        </span>
+                    </div>
+                    <div class="metric-row">
+                        <span>On-Time Jobs</span>
+                        <span class="text-success">@Kpis.DueDatePerformance.OnTimeJobCount</span>
+                    </div>
+                    <div class="metric-row">
+                        <span>Late Jobs</span>
+                        <span class="text-danger">@Kpis.DueDatePerformance.LateJobCount</span>
+                    </div>
+                    @if (Kpis.DueDatePerformance.LateJobCount > 0)
+                    {
+                        <div class="metric-row">
+                            <span>Avg Tardiness</span>
+                            <span>@Kpis.DueDatePerformance.AverageTardinessMinutes.ToString("F1") min</span>
+                        </div>
+                        <div class="metric-row">
+                            <span>Max Tardiness</span>
+                            <span>@Kpis.DueDatePerformance.MaxTardinessMinutes.ToString("F1") min</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="kpi-section">
+                <h4>Throughput</h4>
+                <div class="metric-row">
+                    <span>Jobs/Hour</span>
+                    <span>@Kpis.ThroughputMetrics.JobsPerHour.ToString("F2")</span>
+                </div>
+                <div class="metric-row">
+                    <span>Units/Hour</span>
+                    <span>@Kpis.ThroughputMetrics.UnitsPerHour.ToString("F2")</span>
+                </div>
+                <div class="metric-row">
+                    <span>Avg Flow Time</span>
+                    <span>@Kpis.ThroughputMetrics.AverageFlowTimeMinutes.ToString("F1") min</span>
+                </div>
+            </div>
+
+            @if (Kpis.ResourceUtilization.Count > 0)
+            {
+                <div class="kpi-section">
+                    <h4>Resource Utilization</h4>
+                    @foreach (var util in Kpis.ResourceUtilization.Take(8))
+                    {
+                        <div class="utilization-row">
+                            <span class="util-name">
+                                <span class="type-badge @(util.ResourceType == "Equipment" ? "equipment" : "worker")">
+                                    @(util.ResourceType == "Equipment" ? "E" : "W")
+                                </span>
+                                @util.ResourceId
+                            </span>
+                            <div class="util-bar">
+                                <div class="util-fill @GetUtilClass(util.UtilizationPercent)"
+                                     style="width: @util.UtilizationPercent%"></div>
+                            </div>
+                            <span class="util-value">@util.UtilizationPercent.ToString("F0")%</span>
+                        </div>
+                    }
+                    @if (Kpis.ResourceUtilization.Count > 8)
+                    {
+                        <div class="more-text">+@(Kpis.ResourceUtilization.Count - 8) more</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-panel">
+            <div class="empty-text">No KPI data</div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public KpiDashboard? Kpis { get; set; }
+
+    private string GetQualityClass(double score)
+    {
+        if (score >= 80) return "high";
+        if (score >= 60) return "medium";
+        return "low";
+    }
+
+    private string GetQualityLabel(double score)
+    {
+        if (score >= 90) return "Excellent";
+        if (score >= 80) return "Good";
+        if (score >= 60) return "Fair";
+        return "Poor";
+    }
+
+    private string GetUtilClass(double percent)
+    {
+        if (percent >= 80) return "high";
+        if (percent >= 50) return "medium";
+        return "low";
+    }
+}

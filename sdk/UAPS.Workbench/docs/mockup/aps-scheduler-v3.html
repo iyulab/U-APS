@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U-APS Scheduler v3 - Simple Tabs</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-light: #dbeafe;
+            --success: #10b981;
+            --success-light: #d1fae5;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 0 20px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        /* Main Tabs */
+        .main-tabs {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .main-tab {
+            padding: 12px 24px;
+            border: none;
+            background: var(--gray-100);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--gray-600);
+            border-radius: 8px 8px 0 0;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .main-tab:hover {
+            background: var(--gray-200);
+        }
+        
+        .main-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .main-tab .badge {
+            background: rgba(0,0,0,0.2);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        
+        .main-tab.active .badge {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover { background: var(--gray-50); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-warning { background: var(--warning); color: white; border-color: var(--warning); }
+        .btn-lg { padding: 12px 24px; font-size: 15px; }
+        
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            overflow: hidden;
+            background: white;
+        }
+        
+        .tab-content {
+            height: 100%;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .tab-content.active {
+            display: flex;
+        }
+        
+        /* ===================== */
+        /* DASHBOARD TAB         */
+        /* ===================== */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            padding: 24px;
+        }
+        
+        .kpi-card {
+            background: var(--gray-50);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        
+        .kpi-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .kpi-card.highlight { background: var(--primary-light); }
+        .kpi-card.success { background: var(--success-light); }
+        .kpi-card.warning { background: var(--warning-light); }
+        .kpi-card.danger { background: var(--danger-light); }
+        
+        .kpi-icon { font-size: 32px; margin-bottom: 12px; }
+        .kpi-value { font-size: 36px; font-weight: 700; }
+        .kpi-label { font-size: 14px; color: var(--gray-500); margin-top: 8px; }
+        .kpi-change { 
+            font-size: 13px; 
+            margin-top: 8px; 
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+        .kpi-change.positive { background: var(--success-light); color: #065f46; }
+        .kpi-change.negative { background: var(--danger-light); color: #991b1b; }
+        
+        .dashboard-section {
+            padding: 0 24px 24px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .changes-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        
+        .change-card {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            gap: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .change-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+        }
+        
+        .change-card.applied {
+            border-left: 4px solid var(--warning);
+            background: var(--warning-light);
+        }
+        
+        .change-icon {
+            font-size: 32px;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--gray-100);
+            border-radius: 12px;
+        }
+        
+        .change-card.applied .change-icon {
+            background: white;
+        }
+        
+        .change-info { flex: 1; }
+        .change-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .change-desc { font-size: 13px; color: var(--gray-500); }
+        
+        .change-action {
+            display: flex;
+            align-items: center;
+        }
+        
+        /* Quick Action Grid */
+        .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        
+        .quick-card {
+            background: var(--gray-50);
+            border: 2px dashed var(--gray-300);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .quick-card:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+        
+        .quick-icon { font-size: 28px; margin-bottom: 8px; }
+        .quick-label { font-size: 13px; color: var(--gray-600); }
+        
+        /* ===================== */
+        /* TABLE TAB             */
+        /* ===================== */
+        .table-toolbar {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--gray-50);
+        }
+        
+        .table-tabs {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .table-tab {
+            padding: 8px 16px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .table-tab.active {
+            background: var(--gray-800);
+            color: white;
+            border-color: var(--gray-800);
+        }
+        
+        .table-tab .count {
+            background: var(--gray-200);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        
+        .table-tab.active .count {
+            background: var(--gray-600);
+        }
+        
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            padding: 0;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        .data-table th {
+            background: var(--gray-100);
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--gray-600);
+            border-bottom: 2px solid var(--gray-200);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .data-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        
+        .data-table tr:hover {
+            background: var(--gray-50);
+        }
+        
+        .data-table tr.selected {
+            background: var(--primary-light);
+        }
+        
+        .data-table tr.new {
+            background: var(--success-light);
+        }
+        
+        .data-table tr.changed {
+            background: var(--warning-light);
+        }
+        
+        .data-table tr.deleted {
+            background: var(--danger-light);
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-success { background: var(--success-light); color: #065f46; }
+        .badge-warning { background: var(--warning-light); color: #92400e; }
+        .badge-danger { background: var(--danger-light); color: #991b1b; }
+        .badge-info { background: var(--primary-light); color: #1e40af; }
+        
+        .row-actions {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .row-btn {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: var(--gray-100);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .row-btn:hover { background: var(--gray-200); }
+        
+        /* ===================== */
+        /* GANTT TAB             */
+        /* ===================== */
+        .gantt-toolbar {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--gray-50);
+        }
+        
+        .gantt-view-toggle {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .view-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        
+        .view-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .gantt-container {
+            flex: 1;
+            overflow: auto;
+            background: white;
+        }
+        
+        .gantt-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            min-width: 1400px;
+        }
+        
+        .gantt-header-row {
+            display: contents;
+        }
+        
+        .gantt-header-label {
+            background: var(--gray-100);
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 13px;
+            border-bottom: 2px solid var(--gray-200);
+            border-right: 1px solid var(--gray-200);
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        
+        .gantt-header-timeline {
+            background: var(--gray-100);
+            border-bottom: 2px solid var(--gray-200);
+            display: flex;
+        }
+        
+        .gantt-hour {
+            flex: 1;
+            min-width: 100px;
+            padding: 12px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-600);
+            border-right: 1px solid var(--gray-200);
+        }
+        
+        .gantt-row {
+            display: contents;
+        }
+        
+        .gantt-row-label {
+            padding: 0 16px;
+            font-size: 13px;
+            border-bottom: 1px solid var(--gray-100);
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            position: sticky;
+            left: 0;
+            z-index: 5;
+            min-height: 44px;
+        }
+        
+        .gantt-row-label.group {
+            background: var(--gray-50);
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .gantt-row-label .icon { font-size: 16px; }
+        
+        .gantt-row-bars {
+            position: relative;
+            border-bottom: 1px solid var(--gray-100);
+            min-height: 44px;
+            background: linear-gradient(90deg, var(--gray-50) 1px, transparent 1px);
+            background-size: 100px 100%;
+        }
+        
+        .gantt-bar {
+            position: absolute;
+            height: 28px;
+            top: 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 11px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            overflow: hidden;
+            white-space: nowrap;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        .gantt-bar:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+            z-index: 10;
+        }
+        
+        .gantt-bar.process { background: #3b82f6; }
+        .gantt-bar.process-a { background: #3b82f6; }
+        .gantt-bar.process-b { background: #10b981; }
+        .gantt-bar.process-c { background: #8b5cf6; }
+        .gantt-bar.setup { background: #94a3b8; }
+        .gantt-bar.changed { 
+            background: linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%, #f59e0b 75%, #fbbf24 75%);
+            background-size: 10px 10px;
+        }
+        .gantt-bar.new { 
+            background: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.3);
+        }
+        .gantt-bar.down {
+            background: linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%, #ef4444 75%, #fca5a5 75%);
+            background-size: 10px 10px;
+        }
+        
+        .gantt-legend {
+            padding: 12px 20px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 14px;
+            border-radius: 3px;
+        }
+        
+        /* Status Bar */
+        .status-bar {
+            background: var(--gray-800);
+            color: white;
+            padding: 8px 20px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+        
+        /* Hidden */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">U-APS</div>
+        
+        <div class="main-tabs">
+            <button class="main-tab active" onclick="showTab('dashboard')">
+                📊 Dashboard
+            </button>
+            <button class="main-tab" onclick="showTab('table')">
+                📋 Table
+                <span class="badge">12</span>
+            </button>
+            <button class="main-tab" onclick="showTab('gantt')">
+                📈 Gantt
+            </button>
+        </div>
+        
+        <div class="header-actions">
+            <button class="btn btn-warning">
+                ⚡ 변경 2건
+            </button>
+            <button class="btn btn-primary btn-lg" onclick="runOptimize()">
+                ▶ 최적화 실행
+            </button>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        
+        <!-- ==================== -->
+        <!-- DASHBOARD TAB        -->
+        <!-- ==================== -->
+        <div class="tab-content active" id="tab-dashboard">
+            <div class="dashboard-grid">
+                <div class="kpi-card">
+                    <div class="kpi-icon">⏱️</div>
+                    <div class="kpi-value">5h 15m</div>
+                    <div class="kpi-label">총 소요시간 (Makespan)</div>
+                    <div class="kpi-change negative">▲ +45m</div>
+                </div>
+                <div class="kpi-card success">
+                    <div class="kpi-icon">✅</div>
+                    <div class="kpi-value">100%</div>
+                    <div class="kpi-label">납기 준수율</div>
+                    <div class="kpi-change positive">▲ +14.3%</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-icon">🔧</div>
+                    <div class="kpi-value">68.1%</div>
+                    <div class="kpi-label">설비 가동률</div>
+                    <div class="kpi-change negative">▼ -4.2%</div>
+                </div>
+                <div class="kpi-card highlight">
+                    <div class="kpi-icon">📦</div>
+                    <div class="kpi-value">4</div>
+                    <div class="kpi-label">처리 Production</div>
+                    <div class="kpi-change positive">+1 신규</div>
+                </div>
+            </div>
+            
+            <div class="dashboard-section">
+                <div class="section-title">⚡ 적용된 변경사항</div>
+                <div class="changes-grid">
+                    <div class="change-card applied">
+                        <div class="change-icon">🔧</div>
+                        <div class="change-info">
+                            <div class="change-title">설비 고장 - EQP-001</div>
+                            <div class="change-desc">10:00 - 14:00 (4시간) | 3개 공정 재배치</div>
+                        </div>
+                        <div class="change-action">
+                            <button class="btn">×</button>
+                        </div>
+                    </div>
+                    <div class="change-card applied">
+                        <div class="change-icon">📦</div>
+                        <div class="change-info">
+                            <div class="change-title">긴급 주문 - PO-004</div>
+                            <div class="change-desc">Product-C | 수량: 15 | 납기: 12/24</div>
+                        </div>
+                        <div class="change-action">
+                            <button class="btn">×</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-section">
+                <div class="section-title">➕ 변경 추가</div>
+                <div class="quick-grid">
+                    <div class="quick-card" onclick="addChange('production')">
+                        <div class="quick-icon">📦</div>
+                        <div class="quick-label">Production 추가/변경</div>
+                    </div>
+                    <div class="quick-card" onclick="addChange('machine')">
+                        <div class="quick-icon">🔧</div>
+                        <div class="quick-label">설비 가용성 변경</div>
+                    </div>
+                    <div class="quick-card" onclick="addChange('worker')">
+                        <div class="quick-icon">👤</div>
+                        <div class="quick-label">인력 가용성 변경</div>
+                    </div>
+                    <div class="quick-card" onclick="addChange('calendar')">
+                        <div class="quick-icon">📅</div>
+                        <div class="quick-label">근무 일정 변경</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ==================== -->
+        <!-- TABLE TAB            -->
+        <!-- ==================== -->
+        <div class="tab-content" id="tab-table">
+            <div class="table-toolbar">
+                <div class="table-tabs">
+                    <button class="table-tab active" onclick="showTable('productions')">
+                        📦 Productions <span class="count">4</span>
+                    </button>
+                    <button class="table-tab" onclick="showTable('tasks')">
+                        ⚙️ Process Tasks <span class="count">12</span>
+                    </button>
+                    <button class="table-tab" onclick="showTable('machines')">
+                        🔧 Machines <span class="count">3</span>
+                    </button>
+                    <button class="table-tab" onclick="showTable('workers')">
+                        👤 Workers <span class="count">3</span>
+                    </button>
+                    <button class="table-tab" onclick="showTable('calendar')">
+                        📅 Calendar <span class="count">5</span>
+                    </button>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn">+ 추가</button>
+                    <button class="btn">📥 Import</button>
+                    <button class="btn">📤 Export</button>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <!-- Productions Table -->
+                <table class="data-table" id="table-productions">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>Production ID</th>
+                            <th>Product</th>
+                            <th>수량</th>
+                            <th>우선순위</th>
+                            <th>납기</th>
+                            <th>시작</th>
+                            <th>종료</th>
+                            <th>상태</th>
+                            <th style="width: 100px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><strong>PO-001</strong></td>
+                            <td>Product-A</td>
+                            <td>10</td>
+                            <td>1 (긴급)</td>
+                            <td>12/31 17:00</td>
+                            <td>08:05</td>
+                            <td>10:30</td>
+                            <td><span class="badge badge-success">정상</span></td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                                <button class="row-btn">📋</button>
+                                <button class="row-btn">🗑️</button>
+                            </td>
+                        </tr>
+                        <tr class="changed">
+                            <td><input type="checkbox"></td>
+                            <td><strong>PO-002</strong></td>
+                            <td>Product-B</td>
+                            <td><s>5</s> → <strong>8</strong></td>
+                            <td>2</td>
+                            <td>12/25 12:00</td>
+                            <td>14:00</td>
+                            <td>15:30</td>
+                            <td><span class="badge badge-warning">변경됨</span></td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                                <button class="row-btn">📋</button>
+                                <button class="row-btn">🗑️</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><strong>PO-003</strong></td>
+                            <td>Product-A</td>
+                            <td>8</td>
+                            <td>1 (긴급)</td>
+                            <td>12/28 17:00</td>
+                            <td>08:10</td>
+                            <td>11:00</td>
+                            <td><span class="badge badge-success">정상</span></td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                                <button class="row-btn">📋</button>
+                                <button class="row-btn">🗑️</button>
+                            </td>
+                        </tr>
+                        <tr class="new">
+                            <td><input type="checkbox"></td>
+                            <td><strong>PO-004</strong> <span class="badge badge-info">NEW</span></td>
+                            <td>Product-C</td>
+                            <td>15</td>
+                            <td>1 (긴급)</td>
+                            <td>12/24 17:00</td>
+                            <td>12:30</td>
+                            <td>15:45</td>
+                            <td><span class="badge badge-danger">긴급</span></td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                                <button class="row-btn">📋</button>
+                                <button class="row-btn">🗑️</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <!-- Machines Table (Hidden) -->
+                <table class="data-table hidden" id="table-machines">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>Machine ID</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Capability</th>
+                            <th>상태</th>
+                            <th>가용성</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="changed">
+                            <td><input type="checkbox"></td>
+                            <td><strong>EQP-001</strong></td>
+                            <td>CNC Machine 1</td>
+                            <td>CNC</td>
+                            <td>Cutting, Drilling</td>
+                            <td><span class="badge badge-danger">DOWN</span></td>
+                            <td>10:00 - 14:00 불가</td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><strong>EQP-002</strong></td>
+                            <td>CNC Machine 2</td>
+                            <td>CNC</td>
+                            <td>Cutting</td>
+                            <td><span class="badge badge-success">OK</span></td>
+                            <td>100%</td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox"></td>
+                            <td><strong>EQP-003</strong></td>
+                            <td>Assembly Station</td>
+                            <td>Assembly</td>
+                            <td>Assembly</td>
+                            <td><span class="badge badge-success">OK</span></td>
+                            <td>100%</td>
+                            <td class="row-actions">
+                                <button class="row-btn">✏️</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- ==================== -->
+        <!-- GANTT TAB            -->
+        <!-- ==================== -->
+        <div class="tab-content" id="tab-gantt">
+            <div class="gantt-toolbar">
+                <div class="gantt-view-toggle">
+                    <button class="view-btn active">Machine View</button>
+                    <button class="view-btn">Production View</button>
+                    <button class="view-btn">Worker View</button>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn">◀ Prev</button>
+                    <button class="btn">Today</button>
+                    <button class="btn">Next ▶</button>
+                    <select class="btn" style="padding: 8px 12px;">
+                        <option>Hour</option>
+                        <option>Day</option>
+                        <option>Week</option>
+                    </select>
+                    <button class="btn">🔍 Fit</button>
+                </div>
+            </div>
+            
+            <div class="gantt-container">
+                <div class="gantt-grid">
+                    <div class="gantt-header-row">
+                        <div class="gantt-header-label">Resource</div>
+                        <div class="gantt-header-timeline">
+                            <div class="gantt-hour">08:00</div>
+                            <div class="gantt-hour">09:00</div>
+                            <div class="gantt-hour">10:00</div>
+                            <div class="gantt-hour">11:00</div>
+                            <div class="gantt-hour">12:00</div>
+                            <div class="gantt-hour">13:00</div>
+                            <div class="gantt-hour">14:00</div>
+                            <div class="gantt-hour">15:00</div>
+                            <div class="gantt-hour">16:00</div>
+                            <div class="gantt-hour">17:00</div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label group">
+                            <span class="icon">🔧</span> Machines
+                        </div>
+                        <div class="gantt-row-bars" style="background: var(--gray-50); min-height: 32px;"></div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">⚙️</span> EQP-001 (CNC)
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar setup" style="left: 0%; width: 3%;">S</div>
+                            <div class="gantt-bar process-a" style="left: 3%; width: 12%;">PO-001 Cutting</div>
+                            <div class="gantt-bar down" style="left: 20%; width: 40%;">⚠ Machine Down</div>
+                            <div class="gantt-bar process-b" style="left: 65%; width: 15%;">PO-002 Cutting</div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">⚙️</span> EQP-002 (CNC)
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar setup" style="left: 3%; width: 2%;">S</div>
+                            <div class="gantt-bar process-a" style="left: 5%; width: 15%;">PO-003 Cutting</div>
+                            <div class="gantt-bar changed" style="left: 22%; width: 18%;">PO-001 Drill ↔</div>
+                            <div class="gantt-bar new" style="left: 45%; width: 22%;">PO-004 Cutting ★</div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">⚙️</span> EQP-003 (Assy)
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process-a" style="left: 22%; width: 10%;">PO-001 Assy</div>
+                            <div class="gantt-bar process-a" style="left: 42%; width: 8%;">PO-003 Assy</div>
+                            <div class="gantt-bar changed" style="left: 55%; width: 12%;">PO-002 Assy</div>
+                            <div class="gantt-bar new" style="left: 72%; width: 15%;">PO-004 Assy ★</div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label group">
+                            <span class="icon">👷</span> Workers
+                        </div>
+                        <div class="gantt-row-bars" style="background: var(--gray-50); min-height: 32px;"></div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">👤</span> WRK-001
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process-a" style="left: 3%; width: 30%; opacity: 0.7;"></div>
+                            <div class="gantt-bar process-c" style="left: 45%; width: 40%; opacity: 0.7;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="gantt-row">
+                        <div class="gantt-row-label">
+                            <span class="icon">👤</span> WRK-002
+                        </div>
+                        <div class="gantt-row-bars">
+                            <div class="gantt-bar process-a" style="left: 22%; width: 30%; opacity: 0.7;"></div>
+                            <div class="gantt-bar process-b" style="left: 55%; width: 30%; opacity: 0.7;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="gantt-legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3b82f6;"></div> Product-A
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #10b981;"></div> Product-B
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #8b5cf6;"></div> Product-C
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #94a3b8;"></div> Setup
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(135deg, #f59e0b 25%, #fbbf24 25%, #fbbf24 50%, #f59e0b 50%); background-size: 8px 8px;"></div> Changed
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(135deg, #ef4444 25%, #fca5a5 25%, #fca5a5 50%, #ef4444 50%); background-size: 8px 8px;"></div> Down
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot"></div>
+            Engine: Connected | Algorithm: Dispatching (SPT)
+        </div>
+        <div class="status-item">
+            Productions: 4 | Tasks: 12 | Changes: 2
+        </div>
+        <div class="status-item">
+            Last Optimized: 2026-01-16 14:35:22
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        function showTable(tableName) {
+            document.querySelectorAll('.table-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.querySelectorAll('.data-table').forEach(t => t.classList.add('hidden'));
+            document.getElementById('table-' + tableName)?.classList.remove('hidden');
+        }
+        
+        function addChange(type) {
+            alert('변경 추가: ' + type);
+        }
+        
+        function runOptimize() {
+            alert('🔄 최적화 실행 중...\n\n변경사항 2개 적용 → 재스케줄링 완료!');
+        }
+    </script>
+</body>
+</html>

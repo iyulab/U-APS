@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U-APS Workbench - UI Mockup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-800);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .logo span {
+            color: var(--gray-500);
+            font-weight: 400;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+        
+        /* Stage Navigation */
+        .stage-nav {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 0 24px;
+        }
+        
+        .stage-tabs {
+            display: flex;
+            gap: 0;
+        }
+        
+        .stage-tab {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 32px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            position: relative;
+            color: var(--gray-500);
+            transition: all 0.2s;
+        }
+        
+        .stage-tab:hover {
+            background: var(--gray-50);
+        }
+        
+        .stage-tab.active {
+            color: var(--primary);
+        }
+        
+        .stage-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--primary);
+        }
+        
+        .stage-tab.completed {
+            color: var(--success);
+        }
+        
+        .stage-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            background: var(--gray-100);
+        }
+        
+        .stage-tab.active .stage-icon {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .stage-tab.completed .stage-icon {
+            background: var(--success);
+            color: white;
+        }
+        
+        .stage-info {
+            text-align: left;
+        }
+        
+        .stage-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .stage-subtitle {
+            font-size: 12px;
+            color: var(--gray-400);
+        }
+        
+        .stage-arrow {
+            color: var(--gray-300);
+            font-size: 20px;
+            padding: 0 8px;
+            display: flex;
+            align-items: center;
+        }
+        
+        /* Main Content */
+        .main {
+            padding: 24px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .panel-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .panel-body {
+            padding: 20px;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--gray-300);
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: var(--gray-50);
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+            border-color: var(--success);
+        }
+        
+        .btn-lg {
+            padding: 12px 24px;
+            font-size: 16px;
+        }
+        
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .kpi-card {
+            background: var(--gray-50);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        
+        .kpi-card.warning {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+        }
+        
+        .kpi-card.success {
+            background: #d1fae5;
+            border: 1px solid #6ee7b7;
+        }
+        
+        .kpi-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+        
+        .kpi-label {
+            font-size: 13px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+        
+        /* Gantt Chart Mock */
+        .gantt-container {
+            background: var(--gray-50);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+        }
+        
+        .gantt-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .gantt-label {
+            width: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+            flex-shrink: 0;
+        }
+        
+        .gantt-bars {
+            flex: 1;
+            height: 32px;
+            background: white;
+            border-radius: 4px;
+            position: relative;
+            border: 1px solid var(--gray-200);
+        }
+        
+        .gantt-bar {
+            position: absolute;
+            height: 24px;
+            top: 3px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: white;
+            font-weight: 500;
+        }
+        
+        .gantt-bar.job1 { background: #3b82f6; }
+        .gantt-bar.job2 { background: #10b981; }
+        .gantt-bar.job3 { background: #8b5cf6; }
+        .gantt-bar.job4 { background: #f59e0b; }
+        .gantt-bar.setup { background: #94a3b8; }
+        .gantt-bar.down { background: #ef4444; opacity: 0.7; }
+        
+        .gantt-time {
+            display: flex;
+            margin-top: 8px;
+            padding-left: 100px;
+        }
+        
+        .gantt-time span {
+            flex: 1;
+            font-size: 11px;
+            color: var(--gray-400);
+        }
+        
+        /* Disruption Cards */
+        .disruption-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .disruption-category {
+            background: var(--gray-50);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .disruption-category-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .disruption-item {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .disruption-item:hover {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+        
+        .disruption-item.selected {
+            border-color: var(--primary);
+            background: #dbeafe;
+        }
+        
+        .disruption-badge {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        
+        .disruption-badge.add { background: #d1fae5; color: #059669; }
+        .disruption-badge.remove { background: #fee2e2; color: #dc2626; }
+        .disruption-badge.change { background: #fef3c7; color: #d97706; }
+        
+        /* Applied Disruptions */
+        .applied-list {
+            border: 2px dashed var(--gray-300);
+            border-radius: 12px;
+            padding: 16px;
+            min-height: 200px;
+        }
+        
+        .applied-list-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--gray-600);
+        }
+        
+        .applied-card {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+        
+        .applied-card-icon {
+            font-size: 20px;
+            margin-right: 12px;
+        }
+        
+        .applied-card-content {
+            flex: 1;
+        }
+        
+        .applied-card-title {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .applied-card-desc {
+            font-size: 13px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+        
+        .applied-card-impact {
+            font-size: 12px;
+            color: var(--warning);
+            margin-top: 6px;
+        }
+        
+        .applied-card-remove {
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            cursor: pointer;
+            font-size: 18px;
+        }
+        
+        .applied-card-remove:hover {
+            color: var(--danger);
+        }
+        
+        /* Comparison View */
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        
+        .comparison-panel {
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .comparison-panel.baseline {
+            border: 2px solid var(--gray-300);
+        }
+        
+        .comparison-panel.proposed {
+            border: 2px solid var(--primary);
+        }
+        
+        .comparison-header {
+            padding: 12px 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .comparison-panel.baseline .comparison-header {
+            background: var(--gray-100);
+        }
+        
+        .comparison-panel.proposed .comparison-header {
+            background: #dbeafe;
+            color: var(--primary);
+        }
+        
+        .comparison-body {
+            padding: 16px;
+            background: white;
+        }
+        
+        /* KPI Comparison Table */
+        .kpi-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+        }
+        
+        .kpi-table th, .kpi-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .kpi-table th {
+            background: var(--gray-50);
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--gray-600);
+        }
+        
+        .kpi-table td {
+            font-size: 14px;
+        }
+        
+        .kpi-table .value {
+            font-weight: 600;
+        }
+        
+        .kpi-table .change {
+            font-weight: 600;
+        }
+        
+        .kpi-table .change.positive {
+            color: var(--success);
+        }
+        
+        .kpi-table .change.negative {
+            color: var(--danger);
+        }
+        
+        /* Data Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        .data-table th, .data-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .data-table th {
+            background: var(--gray-50);
+            font-weight: 600;
+            color: var(--gray-600);
+        }
+        
+        .data-table tr:hover {
+            background: var(--gray-50);
+        }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+            margin-bottom: 16px;
+        }
+        
+        .tab {
+            padding: 10px 16px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--gray-500);
+            position: relative;
+        }
+        
+        .tab.active {
+            color: var(--primary);
+            font-weight: 600;
+        }
+        
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+        }
+        
+        /* Utility */
+        .hidden {
+            display: none !important;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .text-right {
+            text-align: right;
+        }
+        
+        .mt-4 {
+            margin-top: 16px;
+        }
+        
+        .mb-4 {
+            margin-bottom: 16px;
+        }
+        
+        /* Status Bar */
+        .status-bar {
+            background: var(--gray-800);
+            color: white;
+            padding: 8px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .status-dot.online { background: var(--success); }
+        .status-dot.warning { background: var(--warning); }
+        
+        /* Floating Action */
+        .floating-action {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 100;
+        }
+        
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--gray-200);
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--gray-600);
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        
+        /* Impact Alert */
+        .impact-alert {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        
+        .impact-alert-icon {
+            font-size: 20px;
+        }
+        
+        .impact-alert-content {
+            flex: 1;
+        }
+        
+        .impact-alert-title {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .impact-alert-list {
+            margin-top: 8px;
+            font-size: 13px;
+            color: var(--gray-700);
+        }
+        
+        .impact-alert-list li {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">U-APS <span>Production Scheduler</span></div>
+        <div class="header-actions">
+            <button class="btn">📁 파일</button>
+            <button class="btn">⚙️ 설정</button>
+        </div>
+    </div>
+    
+    <nav class="stage-nav">
+        <div class="stage-tabs">
+            <button class="stage-tab completed" onclick="showStage(1)">
+                <div class="stage-icon">📊</div>
+                <div class="stage-info">
+                    <div class="stage-title">BASELINE</div>
+                    <div class="stage-subtitle">기준 스케줄</div>
+                </div>
+            </button>
+            <div class="stage-arrow">→</div>
+            <button class="stage-tab active" onclick="showStage(2)">
+                <div class="stage-icon">⚡</div>
+                <div class="stage-info">
+                    <div class="stage-title">DISRUPTION</div>
+                    <div class="stage-subtitle">변경 시나리오</div>
+                </div>
+            </button>
+            <div class="stage-arrow">→</div>
+            <button class="stage-tab" onclick="showStage(3)">
+                <div class="stage-icon">🔄</div>
+                <div class="stage-info">
+                    <div class="stage-title">RESCHEDULE</div>
+                    <div class="stage-subtitle">재스케줄링</div>
+                </div>
+            </button>
+        </div>
+    </nav>
+    
+    <!-- Stage 1: BASELINE -->
+    <main class="main hidden" id="stage1">
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">📊 기준 스케줄 (Baseline)</div>
+                <div>
+                    <button class="btn">📥 불러오기</button>
+                    <button class="btn">💾 저장</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon">⏱️</div>
+                        <div class="kpi-value">4h 30m</div>
+                        <div class="kpi-label">총 소요시간 (Makespan)</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-icon">🔧</div>
+                        <div class="kpi-value">72.3%</div>
+                        <div class="kpi-label">설비 가동률</div>
+                    </div>
+                    <div class="kpi-card success">
+                        <div class="kpi-icon">✅</div>
+                        <div class="kpi-value">85.7%</div>
+                        <div class="kpi-label">납기 준수율</div>
+                    </div>
+                    <div class="kpi-card warning">
+                        <div class="kpi-icon">⚠️</div>
+                        <div class="kpi-value">2</div>
+                        <div class="kpi-label">지연 예상 Job</div>
+                    </div>
+                </div>
+                
+                <div class="gantt-container">
+                    <div class="gantt-row">
+                        <div class="gantt-label">EQP-001</div>
+                        <div class="gantt-bars">
+                            <div class="gantt-bar setup" style="left: 0%; width: 5%"></div>
+                            <div class="gantt-bar job1" style="left: 5%; width: 20%">JOB-001</div>
+                            <div class="gantt-bar setup" style="left: 25%; width: 3%"></div>
+                            <div class="gantt-bar job2" style="left: 28%; width: 15%">JOB-002</div>
+                        </div>
+                    </div>
+                    <div class="gantt-row">
+                        <div class="gantt-label">EQP-002</div>
+                        <div class="gantt-bars">
+                            <div class="gantt-bar setup" style="left: 5%; width: 4%"></div>
+                            <div class="gantt-bar job3" style="left: 9%; width: 18%">JOB-003</div>
+                        </div>
+                    </div>
+                    <div class="gantt-row">
+                        <div class="gantt-label">EQP-003</div>
+                        <div class="gantt-bars">
+                            <div class="gantt-bar job1" style="left: 28%; width: 12%">JOB-001</div>
+                            <div class="gantt-bar job2" style="left: 45%; width: 8%">JOB-002</div>
+                            <div class="gantt-bar job3" style="left: 55%; width: 10%">JOB-003</div>
+                        </div>
+                    </div>
+                    <div class="gantt-row">
+                        <div class="gantt-label">WRK-001</div>
+                        <div class="gantt-bars">
+                            <div class="gantt-bar job1" style="left: 5%; width: 35%"></div>
+                            <div class="gantt-bar job2" style="left: 45%; width: 20%"></div>
+                        </div>
+                    </div>
+                    <div class="gantt-time">
+                        <span>08:00</span>
+                        <span>09:00</span>
+                        <span>10:00</span>
+                        <span>11:00</span>
+                        <span>12:00</span>
+                        <span>13:00</span>
+                        <span>14:00</span>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-item"><div class="legend-color" style="background: #3b82f6"></div> JOB-001 (Product-A)</div>
+                        <div class="legend-item"><div class="legend-color" style="background: #10b981"></div> JOB-002 (Product-B)</div>
+                        <div class="legend-item"><div class="legend-color" style="background: #8b5cf6"></div> JOB-003 (Product-A)</div>
+                        <div class="legend-item"><div class="legend-color" style="background: #94a3b8"></div> Setup</div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <div class="tabs">
+                        <button class="tab active">Jobs (3)</button>
+                        <button class="tab">Operations (7)</button>
+                        <button class="tab">Resources (6)</button>
+                        <button class="tab">Assignments (10)</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>제품</th>
+                                <th>우선순위</th>
+                                <th>수량</th>
+                                <th>납기</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>JOB-001</strong></td>
+                                <td>Product-A</td>
+                                <td>1 (긴급)</td>
+                                <td>10</td>
+                                <td>12/31 17:00</td>
+                                <td><span class="badge badge-success">정상</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>JOB-002</strong></td>
+                                <td>Product-B</td>
+                                <td>2</td>
+                                <td>5</td>
+                                <td>12/25 12:00</td>
+                                <td><span class="badge badge-danger">지연 예상</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>JOB-003</strong></td>
+                                <td>Product-A</td>
+                                <td>1 (긴급)</td>
+                                <td>8</td>
+                                <td>12/28 17:00</td>
+                                <td><span class="badge badge-warning">주의</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="text-right mt-4">
+                    <button class="btn btn-primary btn-lg" onclick="showStage(2)">
+                        → 변경 시나리오 정의
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Stage 2: DISRUPTION -->
+    <main class="main" id="stage2">
+        <div style="display: grid; grid-template-columns: 1fr 400px; gap: 24px;">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">⚡ 변경 유형 선택</div>
+                </div>
+                <div class="panel-body">
+                    <div class="disruption-grid">
+                        <div class="disruption-category">
+                            <div class="disruption-category-title">
+                                📦 수요 변경 (Demand)
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'new-order')">
+                                <div class="disruption-badge add">+</div>
+                                <span>긴급 주문 추가</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'qty-change')">
+                                <div class="disruption-badge change">±</div>
+                                <span>수량 변경</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'priority-change')">
+                                <div class="disruption-badge change">↑</div>
+                                <span>우선순위 변경</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'due-change')">
+                                <div class="disruption-badge change">📅</div>
+                                <span>납기 변경</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'cancel')">
+                                <div class="disruption-badge remove">−</div>
+                                <span>주문 취소</span>
+                            </div>
+                        </div>
+                        
+                        <div class="disruption-category">
+                            <div class="disruption-category-title">
+                                🔧 설비/인력 변경 (Resource)
+                            </div>
+                            <div class="disruption-item selected" onclick="selectDisruption(this, 'machine-down')">
+                                <div class="disruption-badge remove">⚠</div>
+                                <span>설비 고장</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'worker-out')">
+                                <div class="disruption-badge remove">👤</div>
+                                <span>인력 부재</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'capacity-change')">
+                                <div class="disruption-badge change">%</div>
+                                <span>가동률 변경</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'new-resource')">
+                                <div class="disruption-badge add">+</div>
+                                <span>신규 설비 투입</span>
+                            </div>
+                        </div>
+                        
+                        <div class="disruption-category">
+                            <div class="disruption-category-title">
+                                ⚙️ 공정 변경 (Process)
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'op-delay')">
+                                <div class="disruption-badge change">⏱</div>
+                                <span>공정 지연</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'setup-change')">
+                                <div class="disruption-badge change">🔄</div>
+                                <span>셋업시간 변경</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'route-change')">
+                                <div class="disruption-badge change">↔</div>
+                                <span>공정 경로 변경</span>
+                            </div>
+                        </div>
+                        
+                        <div class="disruption-category">
+                            <div class="disruption-category-title">
+                                📦 자재 변경 (Material)
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'mat-shortage')">
+                                <div class="disruption-badge remove">!</div>
+                                <span>자재 부족</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'delivery-delay')">
+                                <div class="disruption-badge change">🚚</div>
+                                <span>입고 지연</span>
+                            </div>
+                            <div class="disruption-item" onclick="selectDisruption(this, 'mat-arrival')">
+                                <div class="disruption-badge add">✓</div>
+                                <span>자재 입고</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <div class="panel" style="margin-bottom: 16px;">
+                    <div class="panel-header">
+                        <div class="panel-title">📋 적용된 변경사항</div>
+                        <button class="btn" style="font-size: 12px;">모두 삭제</button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="applied-card">
+                            <div class="applied-card-icon">🔧</div>
+                            <div class="applied-card-content">
+                                <div class="applied-card-title">설비 고장</div>
+                                <div class="applied-card-desc">EQP-001 | 10:00 - 14:00 (4시간)</div>
+                                <div class="applied-card-impact">⚠️ 3개 공정 영향</div>
+                            </div>
+                            <button class="applied-card-remove">×</button>
+                        </div>
+                        
+                        <div class="applied-card">
+                            <div class="applied-card-icon">📦</div>
+                            <div class="applied-card-content">
+                                <div class="applied-card-title">긴급 주문 추가</div>
+                                <div class="applied-card-desc">JOB-004 | Product-C | 수량: 15</div>
+                                <div class="applied-card-impact">⚠️ 납기: 12/24 (긴급)</div>
+                            </div>
+                            <button class="applied-card-remove">×</button>
+                        </div>
+                        
+                        <button class="btn" style="width: 100%; margin-top: 8px;">
+                            + 변경사항 추가
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="impact-alert">
+                    <div class="impact-alert-icon">⚠️</div>
+                    <div class="impact-alert-content">
+                        <div class="impact-alert-title">영향도 분석</div>
+                        <ul class="impact-alert-list">
+                            <li>• 3개 공정 재스케줄링 필요</li>
+                            <li>• JOB-002 납기 지연 가능성 높음</li>
+                            <li>• EQP-002 부하 증가 예상</li>
+                            <li>• 1개 신규 Job 스케줄 필요</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary btn-lg" style="width: 100%; margin-top: 16px;" onclick="showStage(3)">
+                    ▶ 재스케줄링 실행
+                </button>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Stage 3: RESCHEDULE -->
+    <main class="main hidden" id="stage3">
+        <div class="panel" style="margin-bottom: 24px;">
+            <div class="panel-header">
+                <div class="panel-title">📊 KPI 비교</div>
+                <div>
+                    <button class="btn btn-success">✓ 신규 스케줄 확정</button>
+                    <button class="btn">💾 시나리오 저장</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <table class="kpi-table">
+                    <thead>
+                        <tr>
+                            <th>지표</th>
+                            <th>Baseline (기준)</th>
+                            <th>Proposed (제안)</th>
+                            <th>변화</th>
+                            <th>평가</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>총 소요시간 (Makespan)</td>
+                            <td class="value">4h 30m</td>
+                            <td class="value">5h 15m</td>
+                            <td class="change negative">▲ +16.7%</td>
+                            <td><span class="badge badge-warning">주의</span></td>
+                        </tr>
+                        <tr>
+                            <td>설비 가동률</td>
+                            <td class="value">72.3%</td>
+                            <td class="value">68.1%</td>
+                            <td class="change negative">▼ -4.2%</td>
+                            <td><span class="badge badge-warning">주의</span></td>
+                        </tr>
+                        <tr>
+                            <td>납기 준수율</td>
+                            <td class="value">85.7%</td>
+                            <td class="value">100%</td>
+                            <td class="change positive">▲ +14.3%</td>
+                            <td><span class="badge badge-success">개선</span></td>
+                        </tr>
+                        <tr>
+                            <td>지연 Job 수</td>
+                            <td class="value">2</td>
+                            <td class="value">0</td>
+                            <td class="change positive">▼ -100%</td>
+                            <td><span class="badge badge-success">해결</span></td>
+                        </tr>
+                        <tr>
+                            <td>처리 Job 수</td>
+                            <td class="value">3</td>
+                            <td class="value">4</td>
+                            <td class="change positive">+1 (신규)</td>
+                            <td><span class="badge badge-success">추가</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="comparison-grid">
+            <div class="comparison-panel baseline">
+                <div class="comparison-header">
+                    📊 BASELINE (기준 스케줄)
+                    <span style="margin-left: auto; font-weight: normal; font-size: 13px;">Makespan: 4h 30m</span>
+                </div>
+                <div class="comparison-body">
+                    <div class="gantt-container" style="background: white;">
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-001</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar setup" style="left: 0%; width: 5%"></div>
+                                <div class="gantt-bar job1" style="left: 5%; width: 20%">JOB-001</div>
+                                <div class="gantt-bar setup" style="left: 25%; width: 3%"></div>
+                                <div class="gantt-bar job2" style="left: 28%; width: 15%">JOB-002</div>
+                            </div>
+                        </div>
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-002</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar setup" style="left: 5%; width: 4%"></div>
+                                <div class="gantt-bar job3" style="left: 9%; width: 18%">JOB-003</div>
+                            </div>
+                        </div>
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-003</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar job1" style="left: 28%; width: 12%">JOB-001</div>
+                                <div class="gantt-bar job2" style="left: 45%; width: 8%">JOB-002</div>
+                                <div class="gantt-bar job3" style="left: 55%; width: 10%">JOB-003</div>
+                            </div>
+                        </div>
+                        <div class="gantt-time">
+                            <span>08:00</span>
+                            <span>10:00</span>
+                            <span>12:00</span>
+                            <span>14:00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="comparison-panel proposed">
+                <div class="comparison-header">
+                    🔄 PROPOSED (제안 스케줄)
+                    <span style="margin-left: auto; font-weight: normal; font-size: 13px;">Makespan: 5h 15m</span>
+                </div>
+                <div class="comparison-body">
+                    <div class="gantt-container" style="background: white;">
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-001</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar down" style="left: 15%; width: 30%">⚠ DOWN</div>
+                                <div class="gantt-bar job2" style="left: 50%; width: 15%">JOB-002</div>
+                            </div>
+                        </div>
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-002</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar setup" style="left: 0%; width: 3%"></div>
+                                <div class="gantt-bar job1" style="left: 3%; width: 22%">JOB-001</div>
+                                <div class="gantt-bar setup" style="left: 25%; width: 3%"></div>
+                                <div class="gantt-bar job3" style="left: 28%; width: 18%">JOB-003</div>
+                                <div class="gantt-bar job4" style="left: 50%; width: 20%">JOB-004</div>
+                            </div>
+                        </div>
+                        <div class="gantt-row">
+                            <div class="gantt-label">EQP-003</div>
+                            <div class="gantt-bars">
+                                <div class="gantt-bar job1" style="left: 26%; width: 12%">JOB-001</div>
+                                <div class="gantt-bar job3" style="left: 48%; width: 10%">JOB-003</div>
+                                <div class="gantt-bar job2" style="left: 67%; width: 8%">JOB-002</div>
+                                <div class="gantt-bar job4" style="left: 78%; width: 12%">JOB-004</div>
+                            </div>
+                        </div>
+                        <div class="gantt-time">
+                            <span>08:00</span>
+                            <span>10:00</span>
+                            <span>12:00</span>
+                            <span>14:00</span>
+                        </div>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-item"><div class="legend-color" style="background: #f59e0b"></div> JOB-004 (신규)</div>
+                        <div class="legend-item"><div class="legend-color" style="background: #ef4444"></div> 설비 고장</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="panel mt-4">
+            <div class="panel-header">
+                <div class="panel-title">📋 변경 상세</div>
+            </div>
+            <div class="panel-body">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>공정</th>
+                            <th>Job</th>
+                            <th>설비 (Before)</th>
+                            <th>설비 (After)</th>
+                            <th>시작시간 (Before)</th>
+                            <th>시작시간 (After)</th>
+                            <th>변화</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>OP-001-1</td>
+                            <td>JOB-001</td>
+                            <td>EQP-001</td>
+                            <td style="color: var(--primary); font-weight: 600;">EQP-002 ↔</td>
+                            <td>08:05</td>
+                            <td>08:03</td>
+                            <td><span class="badge badge-success">설비 변경</span></td>
+                        </tr>
+                        <tr>
+                            <td>OP-002-1</td>
+                            <td>JOB-002</td>
+                            <td>EQP-001</td>
+                            <td>EQP-001</td>
+                            <td>08:30</td>
+                            <td style="color: var(--danger); font-weight: 600;">14:00 →</td>
+                            <td><span class="badge badge-warning">5h 30m 지연</span></td>
+                        </tr>
+                        <tr>
+                            <td>OP-003-1</td>
+                            <td>JOB-003</td>
+                            <td>EQP-002</td>
+                            <td>EQP-002</td>
+                            <td>08:10</td>
+                            <td>08:30</td>
+                            <td><span class="badge badge-warning">20m 지연</span></td>
+                        </tr>
+                        <tr style="background: #fef3c7;">
+                            <td>OP-004-1</td>
+                            <td style="color: var(--warning); font-weight: 600;">JOB-004 (신규)</td>
+                            <td>-</td>
+                            <td>EQP-002</td>
+                            <td>-</td>
+                            <td>12:30</td>
+                            <td><span class="badge badge-success">신규 배정</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+    
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot online"></div>
+            Engine Connected
+        </div>
+        <div class="status-item">
+            최종 업데이트: 2026-01-16 14:30:25
+        </div>
+        <div class="status-item">
+            Jobs: 3 → 4 | Resources: 6 | Operations: 7 → 10
+        </div>
+    </div>
+    
+    <script>
+        function showStage(num) {
+            // Hide all stages
+            document.querySelectorAll('.main').forEach(el => el.classList.add('hidden'));
+            
+            // Show selected stage
+            document.getElementById('stage' + num).classList.remove('hidden');
+            
+            // Update tab states
+            document.querySelectorAll('.stage-tab').forEach((tab, idx) => {
+                tab.classList.remove('active', 'completed');
+                if (idx + 1 < num) {
+                    tab.classList.add('completed');
+                } else if (idx + 1 === num) {
+                    tab.classList.add('active');
+                }
+            });
+        }
+        
+        function selectDisruption(el, type) {
+            // Toggle selection
+            el.classList.toggle('selected');
+        }
+        
+        // Initialize
+        showStage(1);
+    </script>
+</body>
+</html>

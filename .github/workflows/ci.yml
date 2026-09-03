@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid PR pushes) to avoid
+# burning Actions minutes on stale commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DOTNET_VERSION: '9.0.x'
+
+jobs:
+  # `check` was removed: `clippy` (compiles + lints) and `test` (compiles +
+  # runs) both already cover compilation, so a standalone `cargo check` only
+  # duplicated work on every run.
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+        working-directory: engine
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: engine
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows runners bill at 2x on private repos; test Windows only
+        # post-merge on main, PRs run ubuntu only.
+        os: ${{ github.ref == 'refs/heads/main' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --all-targets
+        working-directory: engine
+
+  bench:
+    name: Benchmark Build
+    runs-on: ubuntu-latest
+    # Bench build is a compile-only regression guard; run it post-merge on main
+    # rather than on every PR to save Actions minutes.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo bench --no-run
+        working-directory: engine
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo doc --no-deps
+        working-directory: engine
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      # Prebuilt binary (~seconds) instead of `cargo install cargo-audit`
+      # which recompiles from source (~3-4 min) on every run.
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit
+        working-directory: engine
+
+  sdk-build:
+    name: SDK Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - run: dotnet build -c Release -p:EnableWindowsTargeting=true
+        working-directory: sdk
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout path dependencies
+        shell: bash
+        run: |
+          mkdir -p ../../foundation ../../algorithms ../../frameworks
+          git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
+          git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
+          git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo llvm-cov --lcov --output-path lcov.info
+        working-directory: engine
+      - uses: codecov/codecov-action@v4
+        with:
+          files: engine/lcov.info
+          fail_ci_if_error: false

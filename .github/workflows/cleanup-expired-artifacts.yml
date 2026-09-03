@@ -1,0 +1,59 @@
+name: Cleanup Expired Artifacts
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete expired artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let totalDeleted = 0;
+            let totalFreedBytes = 0;
+
+            const artifacts = await github.paginate(
+              github.rest.actions.listArtifactsForRepo,
+              { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
+            );
+
+            const expired = artifacts.filter(a => a.expired);
+            if (expired.length === 0) {
+              core.info('No expired artifacts found');
+              return;
+            }
+
+            core.info(`Found ${expired.length} expired artifacts`);
+
+            for (const artifact of expired) {
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id,
+                });
+                totalDeleted++;
+                totalFreedBytes += artifact.size_in_bytes;
+                core.info(`Deleted: ${artifact.name} (${(artifact.size_in_bytes / 1048576).toFixed(1)} MB)`);
+              } catch (err) {
+                core.warning(`Failed to delete ${artifact.name}: ${err.message}`);
+              }
+            }
+
+            core.info(`\nDeleted ${totalDeleted} artifacts, freed ${(totalFreedBytes / 1048576).toFixed(1)} MB`);
+
+            await core.summary
+              .addHeading('Artifact Cleanup')
+              .addTable([
+                [{data: 'Metric', header: true}, {data: 'Value', header: true}],
+                ['Deleted', String(totalDeleted)],
+                ['Freed', `${(totalFreedBytes / 1048576).toFixed(1)} MB`],
+              ])
+              .write();

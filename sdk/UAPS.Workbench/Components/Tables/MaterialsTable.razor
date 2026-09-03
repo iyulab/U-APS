@@ -1,0 +1,168 @@
+@inject WorkbenchState State
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <button class="btn btn-sm" @onclick="AddMaterial">
+            <span>➕</span> Add Material
+        </button>
+        <div class="toolbar-divider"></div>
+        <span class="toolbar-info">@Materials.Count materials</span>
+    </div>
+
+    <div style="overflow: auto; flex: 1;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 100px;">ID</th>
+                    <th style="width: 150px;">Name</th>
+                    <th style="width: 60px;">Unit</th>
+                    <th style="width: 100px;" class="right">Stock</th>
+                    <th style="width: 100px;" class="right">Safety Stock</th>
+                    <th style="width: 100px;" class="right">Lead Time</th>
+                    <th style="width: 100px;" class="right">Available</th>
+                    <th style="width: 80px;" class="center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Materials.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="empty-row">
+                            No materials defined. Click "Add Material" to create one.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var mat in Materials)
+                    {
+                        var isEditing = _editingMaterial == mat;
+                        <tr class="@(isEditing ? "editing" : "") @(mat.IsBelowSafetyStock ? "warning-row" : "")">
+                            @if (isEditing)
+                            {
+                                <td><input type="text" @bind="_editId" class="cell-input" /></td>
+                                <td><input type="text" @bind="_editName" class="cell-input" /></td>
+                                <td><input type="text" @bind="_editUnit" class="cell-input" style="width: 50px;" /></td>
+                                <td><input type="number" @bind="_editStock" class="cell-input" min="0" step="1" /></td>
+                                <td><input type="number" @bind="_editSafetyStock" class="cell-input" min="0" step="1" /></td>
+                                <td><input type="number" @bind="_editLeadTimeMin" class="cell-input" min="0" step="1" /> min</td>
+                                <td class="right">@mat.AvailableStock.ToString("F0")</td>
+                                <td class="center">
+                                    <button class="btn-icon" @onclick="SaveEdit" title="Save">✓</button>
+                                    <button class="btn-icon" @onclick="CancelEdit" title="Cancel">✗</button>
+                                </td>
+                            }
+                            else
+                            {
+                                <td @ondblclick="() => StartEdit(mat)">@mat.Id</td>
+                                <td @ondblclick="() => StartEdit(mat)">@mat.Name</td>
+                                <td @ondblclick="() => StartEdit(mat)">@mat.Unit</td>
+                                <td @ondblclick="() => StartEdit(mat)" class="right">@mat.StockQuantity.ToString("F0")</td>
+                                <td @ondblclick="() => StartEdit(mat)" class="right">@mat.SafetyStock.ToString("F0")</td>
+                                <td @ondblclick="() => StartEdit(mat)" class="right">@FormatLeadTime(mat.LeadTimeMs)</td>
+                                <td class="right @(mat.IsBelowSafetyStock ? "text-danger" : "text-success")">
+                                    @mat.AvailableStock.ToString("F0")
+                                </td>
+                                <td class="center">
+                                    <button class="btn-icon" @onclick="() => StartEdit(mat)" title="Edit">✏️</button>
+                                    <button class="btn-icon danger" @onclick="() => DeleteMaterial(mat)" title="Delete">×</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private Material? _editingMaterial;
+    private string _editId = "";
+    private string _editName = "";
+    private string _editUnit = "";
+    private double _editStock;
+    private double _editSafetyStock;
+    private int _editLeadTimeMin;
+
+    private List<Material> Materials
+    {
+        get
+        {
+            State.CurrentRequest.MaterialManager ??= MaterialManager.Create();
+            return State.CurrentRequest.MaterialManager.Materials;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnStateChanged -= StateHasChanged;
+    }
+
+    private void AddMaterial()
+    {
+        State.CurrentRequest.MaterialManager ??= MaterialManager.Create();
+        var newId = $"MAT-{Materials.Count + 1:D3}";
+        var mat = Material.Create(newId, $"Material {Materials.Count + 1}");
+        Materials.Add(mat);
+        State.NotifyStateChanged();
+        StartEdit(mat);
+    }
+
+    private void StartEdit(Material mat)
+    {
+        _editingMaterial = mat;
+        _editId = mat.Id;
+        _editName = mat.Name;
+        _editUnit = mat.Unit;
+        _editStock = mat.StockQuantity;
+        _editSafetyStock = mat.SafetyStock;
+        _editLeadTimeMin = (int)(mat.LeadTimeMs / 60000);
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingMaterial != null)
+        {
+            _editingMaterial.Id = _editId;
+            _editingMaterial.Name = _editName;
+            _editingMaterial.Unit = _editUnit;
+            _editingMaterial.StockQuantity = _editStock;
+            _editingMaterial.SafetyStock = _editSafetyStock;
+            _editingMaterial.LeadTimeMs = _editLeadTimeMin * 60000L;
+            State.NotifyStateChanged();
+        }
+        _editingMaterial = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingMaterial = null;
+    }
+
+    private void DeleteMaterial(Material mat)
+    {
+        Materials.Remove(mat);
+        if (_editingMaterial == mat) _editingMaterial = null;
+        State.NotifyStateChanged();
+        NotificationService.Notify(NotificationSeverity.Info, "Deleted", $"Material {mat.Id}");
+    }
+
+    private string FormatLeadTime(long ms)
+    {
+        if (ms == 0) return "-";
+        var ts = TimeSpan.FromMilliseconds(ms);
+        if (ts.TotalDays >= 1)
+            return $"{(int)ts.TotalDays}d {ts.Hours}h";
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        return $"{(int)ts.TotalMinutes}m";
+    }
+}

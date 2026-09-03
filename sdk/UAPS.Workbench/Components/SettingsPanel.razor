@@ -1,0 +1,156 @@
+@using UAPS.SDK.Client
+@inject WorkbenchState State
+
+<div class="settings-panel">
+    @* Dispatching Rule Section *@
+    <div class="settings-section">
+        <h3>Dispatching Rules</h3>
+
+        <div class="form-row">
+            <label>Primary Rule</label>
+            <div class="rule-selector">
+                @foreach (var rule in DispatchingRules.All)
+                {
+                    <button class="rule-chip @(State.DispatchingConfig.PrimaryRule == rule ? "selected" : "")"
+                            @onclick="() => SetPrimaryRule(rule)">
+                        @rule
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="form-row">
+            <label>Tie Breaker (Optional)</label>
+            <div class="rule-selector">
+                <button class="rule-chip @(State.DispatchingConfig.TieBreaker == null ? "selected" : "")"
+                        @onclick="() => SetTieBreaker(null)">
+                    None
+                </button>
+                @foreach (var rule in DispatchingRules.All.Where(r => r != State.DispatchingConfig.PrimaryRule))
+                {
+                    <button class="rule-chip @(State.DispatchingConfig.TieBreaker == rule ? "selected" : "")"
+                            @onclick="() => SetTieBreaker(rule)">
+                        @rule
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Preset Strategies *@
+    <div class="settings-section">
+        <h3>Preset Strategies</h3>
+        <div class="rule-selector">
+            @foreach (var preset in DispatchingPresets.AllPresets)
+            {
+                <button class="rule-chip" @onclick="() => ApplyPreset(preset)">
+                    @FormatPresetName(preset)
+                </button>
+            }
+        </div>
+    </div>
+
+    @* Rule Descriptions *@
+    <div class="settings-section">
+        <h3>Rule Reference</h3>
+        <div class="rule-reference">
+            @foreach (var (rule, desc) in RuleDescriptions)
+            {
+                <div class="rule-desc-row">
+                    <span class="rule-name">@rule</span>
+                    <span class="rule-desc">@desc</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Scheduling Options *@
+    <div class="settings-section">
+        <h3>Scheduling Options</h3>
+
+        <div class="form-row">
+            <label>Start Time</label>
+            <input type="datetime-local" class="input"
+                   value="@StartTimeString"
+                   @onchange="OnStartTimeChanged" />
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Rule, string Desc)[] RuleDescriptions =
+    [
+        ("FIFO", "First In First Out - Process jobs in arrival order"),
+        ("SPT", "Shortest Processing Time - Minimize average completion time"),
+        ("LPT", "Longest Processing Time - Minimize makespan for parallel machines"),
+        ("EDD", "Earliest Due Date - Minimize maximum lateness"),
+        ("MST", "Minimum Slack Time - Prioritize jobs with least slack"),
+        ("CR", "Critical Ratio - Balance due date and processing time"),
+        ("ATC", "Apparent Tardiness Cost - Weighted urgency"),
+        ("WSPT", "Weighted SPT - Consider job priorities"),
+        ("PRIORITY", "Priority-based - Process highest priority first"),
+        ("WINQ", "Work In Next Queue - Balance downstream load"),
+        ("LPUL", "Least Planned Utilization Level - Load balancing")
+    ];
+
+    private string StartTimeString
+    {
+        get
+        {
+            if (State.CurrentRequest.StartTimeMs == 0)
+                return DateTime.Now.ToString("yyyy-MM-ddTHH:mm");
+
+            return DateTimeOffset.FromUnixTimeMilliseconds(State.CurrentRequest.StartTimeMs)
+                .LocalDateTime.ToString("yyyy-MM-ddTHH:mm");
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        State.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnStateChanged -= StateHasChanged;
+    }
+
+    private void SetPrimaryRule(string rule)
+    {
+        State.DispatchingConfig.PrimaryRule = rule;
+        if (State.DispatchingConfig.TieBreaker == rule)
+            State.DispatchingConfig.TieBreaker = null;
+        State.NotifyStateChanged();
+    }
+
+    private void SetTieBreaker(string? rule)
+    {
+        State.DispatchingConfig.TieBreaker = rule;
+        State.NotifyStateChanged();
+    }
+
+    private void ApplyPreset(string presetName)
+    {
+        var preset = DispatchingPresets.GetPreset(presetName);
+        if (preset != null)
+        {
+            State.DispatchingConfig.MultiLayer = preset;
+            State.DispatchingConfig.PrimaryRule = preset.DefaultRule;
+            State.NotifyStateChanged();
+        }
+    }
+
+    private void OnStartTimeChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            State.CurrentRequest.StartTimeMs = new DateTimeOffset(dt).ToUnixTimeMilliseconds();
+            State.NotifyStateChanged();
+        }
+    }
+
+    private string FormatPresetName(string name)
+    {
+        return name.Replace("_", " ").ToLowerInvariant();
+    }
+}

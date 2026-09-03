@@ -1,0 +1,281 @@
+@inject WorkbenchState State
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<div class="table-container">
+    <div class="table-toolbar">
+        <button class="btn btn-sm" @onclick="AddCalendar">
+            <span>➕</span> Add Calendar
+        </button>
+        <button class="btn btn-sm" @onclick="AddDefaultCalendar" title="Add default day shift calendar">
+            <span>📅</span> Add Day Shift
+        </button>
+        <div class="toolbar-divider"></div>
+        <span class="toolbar-info">@State.CurrentRequest.Calendars.Count calendars</span>
+    </div>
+
+    <div style="overflow: auto; flex: 1;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 100px;">ID</th>
+                    <th style="width: 150px;">Name</th>
+                    <th style="width: 100px;">Shifts</th>
+                    <th style="width: 100px;">Breaks</th>
+                    <th style="width: 100px;" class="right">Work/Day</th>
+                    <th style="width: 80px;">Holidays</th>
+                    <th style="width: 80px;" class="center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (State.CurrentRequest.Calendars.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7" class="empty-row">
+                            No calendars defined. Click "Add Calendar" or "Add Day Shift" to create one.
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var cal in State.CurrentRequest.Calendars)
+                    {
+                        var isEditing = _editingCalendar == cal;
+                        <tr class="@(isEditing ? "editing" : "")">
+                            @if (isEditing)
+                            {
+                                <td><input type="text" @bind="_editId" class="cell-input" /></td>
+                                <td><input type="text" @bind="_editName" class="cell-input" /></td>
+                                <td>@cal.Shifts.Count shifts</td>
+                                <td>@cal.Breaks.Count breaks</td>
+                                <td class="right">@cal.WorkingMinutesPerDay() min</td>
+                                <td>@cal.Holidays.Count</td>
+                                <td class="center">
+                                    <button class="btn-icon" @onclick="SaveEdit" title="Save">✓</button>
+                                    <button class="btn-icon" @onclick="CancelEdit" title="Cancel">✗</button>
+                                </td>
+                            }
+                            else
+                            {
+                                <td @ondblclick="() => StartEdit(cal)">@cal.Id</td>
+                                <td @ondblclick="() => StartEdit(cal)">@cal.Name</td>
+                                <td @ondblclick="() => OpenShiftEditor(cal)">
+                                    <button class="btn-link">@cal.Shifts.Count shifts</button>
+                                </td>
+                                <td @ondblclick="() => OpenBreakEditor(cal)">
+                                    <button class="btn-link">@cal.Breaks.Count breaks</button>
+                                </td>
+                                <td class="right">@FormatWorkingTime(cal.WorkingMinutesPerDay())</td>
+                                <td>@cal.Holidays.Count</td>
+                                <td class="center">
+                                    <button class="btn-icon" @onclick="() => StartEdit(cal)" title="Edit">✏️</button>
+                                    <button class="btn-icon danger" @onclick="() => DeleteCalendar(cal)" title="Delete">×</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* Shift Editor *@
+    @if (_showShiftEditor && _selectedCalendar != null)
+    {
+        <div class="sub-table-section">
+            <div class="sub-table-header">
+                <span>Shifts for @_selectedCalendar.Name</span>
+                <div>
+                    <button class="btn btn-sm" @onclick="AddShift">➕ Add Shift</button>
+                    <button class="btn-icon" @onclick="() => _showShiftEditor = false">×</button>
+                </div>
+            </div>
+            <table class="data-table compact nested">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Days</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var shift in _selectedCalendar.Shifts)
+                    {
+                        <tr>
+                            <td>@shift.Name</td>
+                            <td>@($"{shift.Start.Hour:D2}:{shift.Start.Minute:D2}")</td>
+                            <td>@($"{shift.End.Hour:D2}:{shift.End.Minute:D2}")</td>
+                            <td>@string.Join(", ", shift.Days.Select(d => d.ToString().Substring(0, 3)))</td>
+                            <td>
+                                <button class="btn-icon danger" @onclick="() => RemoveShift(shift)">×</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @* Break Editor *@
+    @if (_showBreakEditor && _selectedCalendar != null)
+    {
+        <div class="sub-table-section">
+            <div class="sub-table-header">
+                <span>Breaks for @_selectedCalendar.Name</span>
+                <div>
+                    <button class="btn btn-sm" @onclick="AddBreak">➕ Add Break</button>
+                    <button class="btn-icon" @onclick="() => _showBreakEditor = false">×</button>
+                </div>
+            </div>
+            <table class="data-table compact nested">
+                <thead>
+                    <tr>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Duration</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var brk in _selectedCalendar.Breaks)
+                    {
+                        <tr>
+                            <td>@($"{brk.Start.Hour:D2}:{brk.Start.Minute:D2}")</td>
+                            <td>@($"{brk.End.Hour:D2}:{brk.End.Minute:D2}")</td>
+                            <td>@brk.DurationMinutes() min</td>
+                            <td>
+                                <button class="btn-icon danger" @onclick="() => RemoveBreak(brk)">×</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private Calendar? _editingCalendar;
+    private Calendar? _selectedCalendar;
+    private bool _showShiftEditor;
+    private bool _showBreakEditor;
+
+    private string _editId = "";
+    private string _editName = "";
+
+    protected override void OnInitialized()
+    {
+        State.OnStateChanged += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        State.OnStateChanged -= StateHasChanged;
+    }
+
+    private void AddCalendar()
+    {
+        var newId = $"CAL-{State.CurrentRequest.Calendars.Count + 1:D3}";
+        var cal = Calendar.Create(newId, $"Calendar {State.CurrentRequest.Calendars.Count + 1}");
+        State.CurrentRequest.Calendars.Add(cal);
+        State.NotifyStateChanged();
+        StartEdit(cal);
+    }
+
+    private void AddDefaultCalendar()
+    {
+        var cal = Calendar.DefaultDay();
+        cal.Id = $"CAL-{State.CurrentRequest.Calendars.Count + 1:D3}";
+        State.CurrentRequest.Calendars.Add(cal);
+        State.NotifyStateChanged();
+        NotificationService.Notify(NotificationSeverity.Success, "Added", "Default day shift calendar");
+    }
+
+    private void StartEdit(Calendar cal)
+    {
+        _editingCalendar = cal;
+        _editId = cal.Id;
+        _editName = cal.Name;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingCalendar != null)
+        {
+            _editingCalendar.Id = _editId;
+            _editingCalendar.Name = _editName;
+            State.NotifyStateChanged();
+        }
+        _editingCalendar = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingCalendar = null;
+    }
+
+    private void DeleteCalendar(Calendar cal)
+    {
+        State.CurrentRequest.Calendars.Remove(cal);
+        if (_editingCalendar == cal) _editingCalendar = null;
+        if (_selectedCalendar == cal)
+        {
+            _selectedCalendar = null;
+            _showShiftEditor = false;
+            _showBreakEditor = false;
+        }
+        State.NotifyStateChanged();
+        NotificationService.Notify(NotificationSeverity.Info, "Deleted", $"Calendar {cal.Id}");
+    }
+
+    private void OpenShiftEditor(Calendar cal)
+    {
+        _selectedCalendar = cal;
+        _showShiftEditor = true;
+        _showBreakEditor = false;
+    }
+
+    private void OpenBreakEditor(Calendar cal)
+    {
+        _selectedCalendar = cal;
+        _showBreakEditor = true;
+        _showShiftEditor = false;
+    }
+
+    private void AddShift()
+    {
+        if (_selectedCalendar == null) return;
+        _selectedCalendar.Shifts.Add(Shift.DayShift());
+        State.NotifyStateChanged();
+    }
+
+    private void RemoveShift(Shift shift)
+    {
+        if (_selectedCalendar == null) return;
+        _selectedCalendar.Shifts.Remove(shift);
+        State.NotifyStateChanged();
+    }
+
+    private void AddBreak()
+    {
+        if (_selectedCalendar == null) return;
+        _selectedCalendar.Breaks.Add(BreakTime.Lunch());
+        State.NotifyStateChanged();
+    }
+
+    private void RemoveBreak(BreakTime brk)
+    {
+        if (_selectedCalendar == null) return;
+        _selectedCalendar.Breaks.Remove(brk);
+        State.NotifyStateChanged();
+    }
+
+    private string FormatWorkingTime(int minutes)
+    {
+        if (minutes >= 60)
+            return $"{minutes / 60}h {minutes % 60}m";
+        return $"{minutes}m";
+    }
+}
