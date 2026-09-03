@@ -14,7 +14,7 @@ namespace UAPS.SDK.Interop;
 /// </summary>
 public static class NativeLoader
 {
-    private const string GitHubRepo = "iyulab/U-APS-releases";
+    private const string GitHubRepo = "iyulab/U-APS";
     private const string LibraryBaseName = "uaps_engine";
 
     private static readonly object _lock = new();

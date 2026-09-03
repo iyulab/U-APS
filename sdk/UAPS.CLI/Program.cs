@@ -15,7 +15,7 @@ namespace UAPS.CLI;
 
 class Program
 {
-    private const string GitHubRepo = "iyulab/U-APS-releases";
+    private const string GitHubRepo = "iyulab/U-APS";
 
     static async Task<int> Main(string[] args)
     {

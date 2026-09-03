@@ -48,7 +48,7 @@ uaps input.json output.json --strategy SPT
 uaps input.json output.json --strategy EDD --tie-breaker FIFO
 ```
 
-Or download standalone binaries from [GitHub Releases](https://github.com/iyulab/U-APS-releases/releases).
+Or download standalone binaries from [GitHub Releases](https://github.com/iyulab/U-APS/releases).
 
 ### SDK
 

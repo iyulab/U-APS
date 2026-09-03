@@ -265,10 +265,13 @@ jobs:
           path: artifacts/
           retention-days: 1
 
-  # Create GitHub release on U-APS-releases (public repo)
+  # Create GitHub release on this repo (public since the OSS conversion --
+  # no more reason to route through a separate U-APS-releases repo)
   create-release:
     needs: [extract-version, build-native, build-dotnet, build-cli]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -286,11 +289,9 @@ jobs:
           cp artifacts/nuget-packages/* release/
           ls -la release/
 
-      - name: Create GitHub Release on U-APS-releases
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          repository: iyulab/U-APS-releases
-          token: ${{ secrets.GH_PAT }}
           tag_name: v${{ needs.extract-version.outputs.version }}
           name: Release v${{ needs.extract-version.outputs.version }}
           body: |
@@ -306,10 +307,10 @@ jobs:
             #### CLI (Quick Install - Self-contained)
             ```bash
             # Windows (PowerShell)
-            irm https://raw.githubusercontent.com/iyulab/U-APS-releases/main/install.ps1 | iex
+            irm https://raw.githubusercontent.com/iyulab/U-APS/main/install.ps1 | iex
 
             # Linux/macOS
-            curl -fsSL https://raw.githubusercontent.com/iyulab/U-APS-releases/main/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/iyulab/U-APS/main/install.sh | bash
             ```
 
             #### SDK (NuGet)
