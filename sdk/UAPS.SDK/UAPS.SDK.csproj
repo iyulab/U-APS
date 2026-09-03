@@ -9,4 +9,13 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
+  <!-- Native engine binaries, staged per-RID under runtimes/ before `dotnet pack`
+       (release.yml's build-dotnet job; empty/absent locally). NuGet recognizes this
+       layout and copies the matching RID's asset to a consuming app's output during
+       its own build/publish, so referencing this package is enough on its own —
+       no separate download step required. -->
+  <ItemGroup>
+    <None Include="runtimes/**" Pack="true" PackagePath="runtimes/" Condition="Exists('runtimes')" />
+  </ItemGroup>
+
 </Project>

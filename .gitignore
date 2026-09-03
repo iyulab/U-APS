@@ -8,6 +8,10 @@ Cargo.lock
 engine/target/
 ras/target/
 
+# UAPS.SDK native engine binaries, staged per-RID before `dotnet pack`
+# (release.yml's build-dotnet job; regenerated every release, never committed)
+sdk/UAPS.SDK/runtimes/
+
 # C#
 ## Build results
 [Dd]ebug/

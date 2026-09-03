@@ -5,7 +5,12 @@ using System.Runtime.InteropServices;
 namespace UAPS.SDK.Interop;
 
 /// <summary>
-/// Native library loader with automatic download from GitHub releases
+/// Native library loader. UAPS.SDK bundles the engine binary for each supported
+/// RID under the package's runtimes/ folder (see UAPS.SDK.csproj), so a normal
+/// `dotnet add package UAPS.SDK` + build/publish already places it where the
+/// runtime's standard native-library resolution finds it — the methods here
+/// are then a fast no-op. The GitHub Releases download is a fallback for the
+/// remaining case: an RID this package doesn't bundle a binary for.
 /// </summary>
 public static class NativeLoader
 {
@@ -28,6 +33,12 @@ public static class NativeLoader
         lock (_lock)
         {
             if (_initialized) return;
+
+            if (TryStandardResolution())
+            {
+                _initialized = true;
+                return;
+            }
 
             var libraryPath = GetLibraryPath();
             if (File.Exists(libraryPath))
@@ -59,6 +70,12 @@ public static class NativeLoader
         {
             if (_initialized) return;
 
+            if (TryStandardResolution())
+            {
+                _initialized = true;
+                return;
+            }
+
             var libraryPath = GetLibraryPath();
             if (File.Exists(libraryPath))
             {
@@ -76,6 +93,21 @@ public static class NativeLoader
             _libraryPath = GetLibraryPath();
             _initialized = true;
         }
+    }
+
+    /// <summary>
+    /// Checks whether the engine binary resolves via the runtime's standard native-library
+    /// search (same mechanism <see cref="NativeInterop"/>'s DllImportResolver tries first),
+    /// which succeeds once a package-bundled runtimes/{rid}/native/ asset has been copied to
+    /// the app's output by a normal build/publish. Caller must hold <see cref="_lock"/>.
+    /// </summary>
+    private static bool TryStandardResolution()
+    {
+        if (!NativeLibrary.TryLoad(LibraryBaseName, typeof(NativeLoader).Assembly, null, out var handle))
+            return false;
+
+        NativeLibrary.Free(handle);
+        return true;
     }
 
     /// <summary>

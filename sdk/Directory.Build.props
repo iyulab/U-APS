@@ -15,7 +15,7 @@
          and Version silently fell back to the SDK default "1.0.0" no
          matter what UAPSVersion said. Single-file definition removes the
          cross-file ordering dependency entirely. -->
-    <UAPSVersion>1.0.1</UAPSVersion>
+    <UAPSVersion>1.0.2</UAPSVersion>
     <Version>$(UAPSVersion)</Version>
     <AssemblyVersion>$(UAPSVersion)</AssemblyVersion>
     <FileVersion>$(UAPSVersion)</FileVersion>

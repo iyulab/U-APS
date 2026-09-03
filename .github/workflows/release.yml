@@ -151,6 +151,30 @@ jobs:
         run: |
           mv sdk/UAPS.SDK.Tests/bin/Release/net10.0/uaps_engine-linux-x64.so sdk/UAPS.SDK.Tests/bin/Release/net10.0/libuaps_engine.so
 
+      - name: Download native libraries for packaging
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: native-artifacts
+
+      - name: Stage native libraries into UAPS.SDK runtimes/
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A rid_file=(
+            [win-x64]=uaps_engine.dll
+            [linux-x64]=libuaps_engine.so
+            [osx-x64]=libuaps_engine.dylib
+            [osx-arm64]=libuaps_engine.dylib
+          )
+          for rid in "${!rid_file[@]}"; do
+            dest="sdk/UAPS.SDK/runtimes/$rid/native"
+            mkdir -p "$dest"
+            src=$(ls native-artifacts/native-"$rid"/uaps_engine-"$rid".*)
+            cp "$src" "$dest/${rid_file[$rid]}"
+          done
+          find sdk/UAPS.SDK/runtimes -type f
+
       - name: Restore dependencies
         working-directory: sdk
         run: dotnet restore -p:EnableWindowsTargeting=true
