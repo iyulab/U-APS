@@ -165,8 +165,8 @@ Five C-ABI functions for external consumption:
 
 ### Requirements
 
-- Rust 1.70+
-- .NET 9.0+ SDK
+- Rust 1.87+
+- .NET 10.0+ SDK
 
 ### Commands
 
