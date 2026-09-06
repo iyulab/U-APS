@@ -15,7 +15,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  DOTNET_VERSION: '9.0.x'
+  # Must track the SDK's TargetFramework (sdk/Directory.Build.props: net10.0).
+  # A 9.0.x SDK cannot target net10.0 — the build only passed because the runner
+  # image happens to ship .NET 10 as well, which is luck, not configuration.
+  DOTNET_VERSION: '10.0.x'
 
 jobs:
   # `check` was removed: `clippy` (compiles + lints) and `test` (compiles +
