@@ -20,6 +20,9 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="FluentAssertions" Version="7.0.0" />
+    <!-- AwesomeAssertions is the community fork of FluentAssertions 7, kept under
+         the Apache 2.0 licence that FluentAssertions 8 left behind for a paid
+         proprietary one. Namespace and package are renamed as of its v9. -->
+    <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
   </ItemGroup>
 </Project>

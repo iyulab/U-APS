@@ -48,6 +48,18 @@ uaps input.json output.json --strategy SPT
 uaps input.json output.json --strategy EDD --tie-breaker FIFO
 ```
 
+> **The first run needs network access.** A .NET tool package is
+> runtime-identifier neutral, so `UAPS.CLI` cannot carry the native engine the way
+> `UAPS.SDK` does. On its first run the tool downloads the engine binary for your
+> platform from GitHub Releases into
+> `%LOCALAPPDATA%\UAPS\native` (Windows) or `~/.local/share/UAPS/native` (Linux,
+> macOS), and every later run uses that copy offline. To install onto a machine
+> without network access, fetch the binary for your platform from
+> [GitHub Releases](https://github.com/iyulab/U-APS/releases) and place it in that
+> directory before the first run, or use the SDK package instead — `UAPS.SDK` ships
+> the engine inside the package for every supported platform and never downloads
+> anything.
+
 Or download standalone binaries from [GitHub Releases](https://github.com/iyulab/U-APS/releases).
 
 ### SDK

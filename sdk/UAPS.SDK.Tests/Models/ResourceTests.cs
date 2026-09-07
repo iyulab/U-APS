@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using UAPS.SDK.Models;
 using Xunit;
 

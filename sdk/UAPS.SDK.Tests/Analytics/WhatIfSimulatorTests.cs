@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using UAPS.SDK.Analytics;
 using UAPS.SDK.Client;
 using UAPS.SDK.Models;

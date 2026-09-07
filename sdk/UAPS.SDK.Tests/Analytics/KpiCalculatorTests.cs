@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using UAPS.SDK.Analytics;
 using UAPS.SDK.Client;
 using UAPS.SDK.Models;
@@ -252,7 +252,7 @@ public class KpiCalculatorTests
 
         // Assert
         dashboard.QualityMetrics.TotalViolations.Should().Be(0);
-        dashboard.QualityMetrics.ScheduleQualityScore.Should().BeGreaterOrEqualTo(80);
+        dashboard.QualityMetrics.ScheduleQualityScore.Should().BeGreaterThanOrEqualTo(80);
     }
 
     [Fact]
@@ -297,6 +297,6 @@ public class KpiCalculatorTests
         dashboard.QualityMetrics.ViolationsByType["ResourceConflict"].Should().Be(1);
         // 11 violations * 5점 = 55점 감점, 납기 없으므로 +10점 → 100 - 55 + 10 = 55
         dashboard.QualityMetrics.ScheduleQualityScore.Should().BeLessThan(100);
-        dashboard.QualityMetrics.ScheduleQualityScore.Should().BeLessOrEqualTo(55);
+        dashboard.QualityMetrics.ScheduleQualityScore.Should().BeLessThanOrEqualTo(55);
     }
 }

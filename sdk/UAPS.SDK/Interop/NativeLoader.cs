@@ -9,9 +9,21 @@ namespace UAPS.SDK.Interop;
 /// RID under the package's runtimes/ folder (see UAPS.SDK.csproj), so a normal
 /// `dotnet add package UAPS.SDK` + build/publish already places it where the
 /// runtime's standard native-library resolution finds it — the methods here
-/// are then a fast no-op. The GitHub Releases download is a fallback for the
-/// remaining case: an RID this package doesn't bundle a binary for.
+/// are then a fast no-op.
 /// </summary>
+/// <remarks>
+/// The GitHub Releases download is the fallback for the cases standard resolution
+/// cannot cover, and one of them is routine rather than exceptional:
+/// <list type="bullet">
+///   <item><description>An RID this package does not bundle a binary for.</description></item>
+///   <item><description><b>Any install of the UAPS.CLI dotnet tool.</b> A tool package is
+///   runtime-identifier neutral — its payload lands under tools/{tfm}/any/ — so the
+///   runtimes/ assets do not travel with it across the ProjectReference, and standard
+///   resolution therefore fails on every platform. For that install path the download is
+///   not a rare fallback but the normal first run, which is why it needs network access
+///   once. Later runs load the cached copy from <see cref="GetLibraryDirectory"/>.</description></item>
+/// </list>
+/// </remarks>
 public static class NativeLoader
 {
     private const string GitHubRepo = "iyulab/U-APS";
@@ -202,12 +214,32 @@ public static class NativeLoader
         }
         catch (HttpRequestException ex)
         {
-            throw new InvalidOperationException(
-                $"Failed to download native library from {url}. " +
-                $"Please download manually from https://github.com/{GitHubRepo}/releases and place in {GetLibraryDirectory()}",
-                ex);
+            throw new InvalidOperationException(DownloadFailureMessage(rid, fileName, url), ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // HttpClient reports its own timeout as a cancellation rather than an
+            // HttpRequestException, so without this the offline case — the one this
+            // message exists for — would surface as a bare "A task was canceled".
+            throw new InvalidOperationException(DownloadFailureMessage(rid, fileName, url), ex);
         }
     }
+
+    /// <summary>
+    /// Explains a failed engine download in terms of what the caller can act on: why a
+    /// download was attempted at all, and the two ways out. Reached most often when the
+    /// UAPS.CLI dotnet tool runs for the first time without network access.
+    /// </summary>
+    private static string DownloadFailureMessage(string rid, string fileName, string url) =>
+        $"Could not obtain the UAPS native engine for {rid}. It was not found in the " +
+        $"application's own directory or in {GetLibraryDirectory()}, so it was downloaded " +
+        $"from {url} — and that download failed." + Environment.NewLine +
+        $"The engine ships inside the UAPS.SDK package, but a dotnet tool package such as " +
+        $"UAPS.CLI is runtime-identifier neutral and cannot carry it, so the first run of the " +
+        $"tool needs network access once. Later runs reuse the downloaded copy." +
+        Environment.NewLine +
+        $"To resolve: connect to the network and run again, or download {fileName} from " +
+        $"https://github.com/{GitHubRepo}/releases and place it at {GetLibraryPath()}.";
 
     private static string GetDownloadFileName(string rid)
     {
