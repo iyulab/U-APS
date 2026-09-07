@@ -28,9 +28,10 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
+          toolchain: stable
           components: rustfmt
       - run: cargo fmt --all -- --check
         working-directory: engine
@@ -39,7 +40,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -47,10 +48,11 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
           git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -67,7 +69,7 @@ jobs:
         # post-merge on main, PRs run ubuntu only.
         os: ${{ github.ref == 'refs/heads/main' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -75,8 +77,10 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
           git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -90,7 +94,7 @@ jobs:
     # rather than on every PR to save Actions minutes.
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -98,8 +102,10 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
           git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -110,7 +116,7 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -118,8 +124,10 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
           git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -132,7 +140,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -142,7 +150,9 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
       # Prebuilt binary (~seconds) instead of `cargo install cargo-audit`
       # which recompiles from source (~3-4 min) on every run.
-      - uses: taiki-e/install-action@cargo-audit
+      - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+        with:
+          tool: cargo-audit
       - run: cargo audit
         working-directory: engine
 
@@ -150,18 +160,24 @@ jobs:
     name: SDK Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-      - run: dotnet build -c Release -p:EnableWindowsTargeting=true
+      # Audit gate: NuGet's security audit already runs on every restore, but its
+      # findings are warnings by default. AuditPipeline=true promotes NU1900-NU1905
+      # to errors so a newly published advisory fails CI instead of scrolling past.
+      - name: Restore (NuGet security audit gate)
+        run: dotnet restore -p:AuditPipeline=true -p:EnableWindowsTargeting=true
+        working-directory: sdk
+      - run: dotnet build -c Release -p:EnableWindowsTargeting=true --no-restore
         working-directory: sdk
 
   changelog:
     name: Changelog Entry
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Changelog has an entry for UAPSVersion
         run: bash scripts/check-changelog-entry.sh
 
@@ -170,7 +186,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Checkout path dependencies
         shell: bash
         run: |
@@ -178,17 +194,20 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-numflow.git ../../foundation/u-numflow
           git clone --depth 1 https://github.com/iyulab/u-metaheur.git ../../algorithms/u-metaheur
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
+          toolchain: stable
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: engine
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo llvm-cov --lcov --output-path lcov.info
         working-directory: engine
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
         with:
           files: engine/lcov.info
           fail_ci_if_error: false

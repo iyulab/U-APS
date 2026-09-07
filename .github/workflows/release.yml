@@ -25,7 +25,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       should_release: ${{ steps.check_release.outputs.should_release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Extract version from Directory.Build.props
         id: get_version
@@ -79,7 +79,7 @@ jobs:
             ext: dylib
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
           token: ${{ secrets.GH_PAT }}
@@ -93,12 +93,13 @@ jobs:
           git clone --depth 1 https://github.com/iyulab/u-schedule.git ../../frameworks/u-schedule
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -123,7 +124,7 @@ jobs:
           fi
 
       - name: Upload native library
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-${{ matrix.rid }}
           path: artifacts/
@@ -134,15 +135,15 @@ jobs:
     needs: [extract-version, build-native]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download native library for tests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: native-linux-x64
           path: sdk/UAPS.SDK.Tests/bin/Release/net10.0/
@@ -152,7 +153,7 @@ jobs:
           mv sdk/UAPS.SDK.Tests/bin/Release/net10.0/uaps_engine-linux-x64.so sdk/UAPS.SDK.Tests/bin/Release/net10.0/libuaps_engine.so
 
       - name: Download native libraries for packaging
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: native-*
           path: native-artifacts
@@ -196,7 +197,7 @@ jobs:
         run: dotnet pack -c Release --no-build -o ../../artifacts/nuget
 
       - name: Upload NuGet packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nuget-packages
           path: artifacts/nuget/*.nupkg
@@ -222,15 +223,15 @@ jobs:
             archive: tar.gz
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Download native library
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: native-${{ matrix.rid }}
           path: native/
@@ -259,7 +260,7 @@ jobs:
           tar -czf artifacts/uaps-cli-${{ matrix.rid }}.tar.gz -C publish/${{ matrix.rid }} .
 
       - name: Upload CLI bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cli-${{ matrix.rid }}
           path: artifacts/
@@ -274,7 +275,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 
@@ -290,7 +291,7 @@ jobs:
           ls -la release/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v${{ needs.extract-version.outputs.version }}
           name: Release v${{ needs.extract-version.outputs.version }}
@@ -345,13 +346,13 @@ jobs:
       packages: write
     steps:
       - name: Download NuGet packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: nuget-packages
           path: packages
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 

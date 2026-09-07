@@ -33,4 +33,19 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <!-- NuGet security audit.
+       Auditing itself is already on by default (NuGetAudit=true, and
+       NuGetAuditMode defaults to "all" for net10.0+), but by default its
+       findings are warnings that nothing acts on. This makes them errors in
+       the dedicated audit pipeline only, so a newly published advisory fails
+       CI loudly without blocking local builds and unrelated bug fixes.
+       Pattern taken from the NuGet documentation ("Running NuGet Audit in CI").
+       CI runs: dotnet restore -p:AuditPipeline=true -->
+  <PropertyGroup>
+    <NuGetAuditCodes>NU1900;NU1901;NU1902;NU1903;NU1904;NU1905</NuGetAuditCodes>
+    <WarningsAsErrors Condition=" '$(AuditPipeline)' == 'true' ">$(WarningsAsErrors);$(NuGetAuditCodes)</WarningsAsErrors>
+    <WarningsNotAsErrors Condition=" '$(AuditPipeline)' != 'true' ">$(WarningsNotAsErrors);$(NuGetAuditCodes)</WarningsNotAsErrors>
+  </PropertyGroup>
+
 </Project>
