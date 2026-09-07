@@ -11,7 +11,7 @@
 
     <!-- Workbench Dependencies (WPF + Blazor Hybrid) -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.0-rc.1.25452.6" />
-    <PackageVersion Include="Radzen.Blazor" Version="5.5.4" />
+    <PackageVersion Include="Radzen.Blazor" Version="11.3.2" />
     <!-- Pin transitive dependency to fix GHSA-4cv2-4hjh-77rx vulnerability -->
     <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.6.1" />
 
