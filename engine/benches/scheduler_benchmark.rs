@@ -1,6 +1,7 @@
 //! Performance Benchmarks for U-APS Scheduling Engine
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 use uaps_engine::*;
 
 /// 테스트 데이터 생성 헬퍼
