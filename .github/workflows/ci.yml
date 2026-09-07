@@ -157,6 +157,14 @@ jobs:
       - run: dotnet build -c Release -p:EnableWindowsTargeting=true
         working-directory: sdk
 
+  changelog:
+    name: Changelog Entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Changelog has an entry for UAPSVersion
+        run: bash scripts/check-changelog-entry.sh
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

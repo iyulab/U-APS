@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -186,7 +187,11 @@ public static class NativeLoader
         using var httpClient = new HttpClient();
         httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("UAPS-SDK", GetSdkVersion()));
 
-        Console.WriteLine($"Downloading UAPS engine for {rid}...");
+        // Trace rather than Console: a library has no claim on the consumer's
+        // standard output, and there is none to write to when the host is a web
+        // app, a GUI or a test runner. A caller that wants to show progress adds
+        // a TraceListener.
+        Trace.WriteLine($"Downloading UAPS engine for {rid}...");
 
         try
         {
@@ -210,7 +215,7 @@ public static class NativeLoader
                                                   UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
-            Console.WriteLine($"Downloaded to: {targetPath}");
+            Trace.WriteLine($"Downloaded to: {targetPath}");
         }
         catch (HttpRequestException ex)
         {
@@ -222,6 +227,16 @@ public static class NativeLoader
             // HttpRequestException, so without this the offline case — the one this
             // message exists for — would surface as a bare "A task was canceled".
             throw new InvalidOperationException(DownloadFailureMessage(rid, fileName, url), ex);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The download can also fail after the bytes arrive, while writing them:
+            // the cache directory may be read-only, full, or already hold a locked
+            // copy of the library. That is a different failure from an unreachable
+            // network and needs different advice — telling someone to place the file
+            // there by hand is useless when the problem is that the directory cannot
+            // be written to.
+            throw new InvalidOperationException(WriteFailureMessage(rid, targetPath), ex);
         }
     }
 
@@ -240,6 +255,22 @@ public static class NativeLoader
         Environment.NewLine +
         $"To resolve: connect to the network and run again, or download {fileName} from " +
         $"https://github.com/{GitHubRepo}/releases and place it at {GetLibraryPath()}.";
+
+    /// <summary>
+    /// Explains an engine download that reached this machine but could not be stored.
+    /// Kept separate from <see cref="DownloadFailureMessage"/> because the way out is
+    /// different: the file arrived, so retrying the download or placing it by hand
+    /// changes nothing until the destination is writable.
+    /// </summary>
+    private static string WriteFailureMessage(string rid, string targetPath) =>
+        $"The UAPS native engine for {rid} was downloaded but could not be written to " +
+        $"{targetPath}." + Environment.NewLine +
+        $"The download itself succeeded, so this is not a network problem: the directory " +
+        $"is read-only or full, or another process is holding the existing file open." +
+        Environment.NewLine +
+        $"To resolve: make {GetLibraryDirectory()} writable and run again, close any process " +
+        $"still using the engine, or set the application's own directory up with the engine " +
+        $"binary so no download is attempted.";
 
     private static string GetDownloadFileName(string rid)
     {
