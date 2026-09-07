@@ -31,8 +31,22 @@ jobs:
         id: get_version
         shell: pwsh
         run: |
+          # Select the element by XPath rather than walking Project.PropertyGroup:
+          # the props file has more than one PropertyGroup, so the property-chain
+          # form yields an array whose string form is "1.0.3 " (trailing space from
+          # the group that does not define it), which then corrupts every consumer
+          # of this output — including a URL, where it fails as a malformed request.
           $xml = [xml](Get-Content 'sdk/Directory.Build.props')
-          $version = $xml.Project.PropertyGroup.UAPSVersion
+          $node = $xml.SelectSingleNode('//UAPSVersion')
+          if ($null -eq $node) {
+            Write-Error "no <UAPSVersion> element in sdk/Directory.Build.props"
+            exit 1
+          }
+          $version = $node.InnerText.Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            Write-Error "UAPSVersion '$version' is not a semantic version"
+            exit 1
+          }
           echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "Extracted version: $version"
 
