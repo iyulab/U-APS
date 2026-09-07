@@ -8,7 +8,16 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>uaps</ToolCommandName>
     <PackageId>UAPS.CLI</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!-- Scoped to this package rather than the repository README: nuget.org
+       renders the readme on the package page and does not resolve relative
+       links, so a whole-repository document loses its links and buries what a
+       consumer of this one package needs. -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" />

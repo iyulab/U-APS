@@ -250,6 +250,11 @@ U-APS/
 - **FFI Tests**: 12 integration tests
 - **SDK Tests**: 78 passed (C#)
 
+## Changelog
+
+Release history is in [CHANGELOG.md](CHANGELOG.md). Both NuGet packages share
+one version, `UAPSVersion`.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE).

@@ -7,7 +7,16 @@
     <Description>U-APS Scheduling SDK</Description>
     <PackageId>UAPS.SDK</PackageId>
     <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!-- Scoped to this package rather than the repository README: nuget.org
+       renders the readme on the package page and does not resolve relative
+       links, so a whole-repository document loses its links and buries what a
+       consumer of this one package needs. -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <!-- Native engine binaries, staged per-RID under runtimes/ before `dotnet pack`
        (release.yml's build-dotnet job; empty/absent locally). NuGet recognizes this
