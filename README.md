@@ -182,26 +182,15 @@ Five C-ABI functions for external consumption:
 
 ### Commands
 
-```powershell
-# Full build
-.\scripts\build.ps1 -Configuration Release
-
-# Run tests
-.\scripts\test.ps1
-
-# Run samples
-.\scripts\run-samples.ps1 -Report
-```
-
-### Individual Components
+The two halves build independently.
 
 ```powershell
-# Rust Engine only
+# Rust engine
 cd engine
 cargo build --release
 cargo test
 
-# C# SDK only
+# C# SDK — build the engine first: the tests load the native library
 cd sdk
 dotnet build -c Release
 dotnet test
@@ -218,7 +207,7 @@ U-APS/
 │       ├── ga/             # Genetic algorithm with dual-vector encoding
 │       ├── cp/             # Constraint programming solver
 │       ├── benchmark/      # Standard JSP/FJSSP instances
-│       ├── validation/     # Input validation
+│       ├── validation.rs   # Input validation
 │       └── ffi.rs          # C-ABI FFI interface
 ├── sdk/
 │   ├── UAPS.SDK/           # C# SDK
@@ -227,28 +216,10 @@ U-APS/
 │   │   ├── Simulation/     # SimulationSession
 │   │   └── Analytics/      # WhatIfSimulator
 │   ├── UAPS.CLI/           # Command-line tool
+│   ├── UAPS.Workbench/     # Blazor workbench
 │   └── UAPS.SDK.Tests/     # C# tests
-├── samples/                # Example scenarios
 └── docs/                   # Documentation
 ```
-
-## Samples
-
-| Sample | Description |
-|--------|-------------|
-| `001-simple` | Basic single job scheduling |
-| `002-multi-job` | Multiple jobs with priorities |
-| `003-due-dates` | Due date constraints and violations |
-| `004-setup-matrix` | Setup time optimization |
-| `005-multi-resource` | Multi-resource operations |
-| `006-parallel-machines` | Parallel machine scheduling |
-| `007-complex-flow` | Complex multi-job flow |
-
-## Test Results
-
-- **Engine Tests**: 373 passed (Rust)
-- **FFI Tests**: 12 integration tests
-- **SDK Tests**: 78 passed (C#)
 
 ## Changelog
 
