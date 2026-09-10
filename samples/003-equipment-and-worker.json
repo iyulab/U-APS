@@ -1,0 +1,40 @@
+{
+  "// ": "An operation that needs a machine and an operator at the same time. Two identical cells exist, so the two jobs can run in parallel only while both operators are free.",
+  "jobs": [
+    {
+      "id": "JOB-A",
+      "productName": "Panel-A",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 3600000,
+      "operations": [
+        { "id": "OP-A-1", "sequence": 1, "setupMs": 60000, "processMs": 600000, "waitMs": 0,
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["PRESS-1", "PRESS-2"] },
+            { "resourceType": "Worker",    "quantity": 1, "candidates": ["OP-ALICE", "OP-BOB"] }
+          ] }
+      ]
+    },
+    {
+      "id": "JOB-B",
+      "productName": "Panel-B",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 3600000,
+      "operations": [
+        { "id": "OP-B-1", "sequence": 1, "setupMs": 60000, "processMs": 600000, "waitMs": 0,
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["PRESS-1", "PRESS-2"] },
+            { "resourceType": "Worker",    "quantity": 1, "candidates": ["OP-ALICE", "OP-BOB"] }
+          ] }
+      ]
+    }
+  ],
+  "resources": [
+    { "id": "PRESS-1",  "type": "Equipment", "capability": "pressing", "efficiency": 1.0 },
+    { "id": "PRESS-2",  "type": "Equipment", "capability": "pressing", "efficiency": 1.0 },
+    { "id": "OP-ALICE", "type": "Worker",    "capability": "pressing", "efficiency": 1.0 },
+    { "id": "OP-BOB",   "type": "Worker",    "capability": "pressing", "efficiency": 1.0 }
+  ],
+  "options": { "startTimeMs": 0 }
+}

@@ -13,6 +13,25 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- `samples/` — runnable CLI inputs, each small enough to check by hand, with the
+  input schema documented alongside them. The README described a samples
+  directory and three build scripts that did not exist; the scripts are gone
+  from it and the samples now do.
+
+### Fixed
+
+- An operation that names worker candidates got them in the order they were
+  written, not by when they were free. With two operators available, a second
+  operation would take the one already busy and wait for them, serialising work
+  that had idle capacity on both sides — a two-machine, two-operator cell ran at
+  half its throughput. Equipment selection already chose the earliest-available
+  candidate, and so did worker selection when no candidate list was given; only
+  the listed-candidates path differed. Reachable through JSON and FFI input
+  only: the builder API cannot express worker candidates, which is why no test
+  had ever covered that branch.
+
 ## [1.0.3] - 2026-09-07
 
 ### Added

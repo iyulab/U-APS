@@ -1,0 +1,50 @@
+{
+  "// ": "Smallest input the scheduler accepts: one job, three sequential operations, one machine each.",
+  "jobs": [
+    {
+      "id": "JOB-1",
+      "productName": "Bracket",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 3600000,
+      "operations": [
+        {
+          "id": "OP-1",
+          "sequence": 1,
+          "setupMs": 300000,
+          "processMs": 600000,
+          "waitMs": 0,
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["CUT-1"] }
+          ]
+        },
+        {
+          "id": "OP-2",
+          "sequence": 2,
+          "setupMs": 120000,
+          "processMs": 900000,
+          "waitMs": 0,
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["MILL-1"] }
+          ]
+        },
+        {
+          "id": "OP-3",
+          "sequence": 3,
+          "setupMs": 0,
+          "processMs": 300000,
+          "waitMs": 0,
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["INSP-1"] }
+          ]
+        }
+      ]
+    }
+  ],
+  "resources": [
+    { "id": "CUT-1",  "type": "Equipment", "capability": "cutting",    "efficiency": 1.0 },
+    { "id": "MILL-1", "type": "Equipment", "capability": "milling",    "efficiency": 1.0 },
+    { "id": "INSP-1", "type": "Equipment", "capability": "inspection", "efficiency": 1.0 }
+  ],
+  "options": { "startTimeMs": 0 }
+}

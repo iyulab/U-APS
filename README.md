@@ -218,7 +218,18 @@ U-APS/
 │   ├── UAPS.CLI/           # Command-line tool
 │   ├── UAPS.Workbench/     # Blazor workbench
 │   └── UAPS.SDK.Tests/     # C# tests
+├── samples/                # Runnable CLI inputs
 └── docs/                   # Documentation
+```
+
+## Samples
+
+[`samples/`](samples/) holds runnable CLI inputs, each small enough to check by
+hand. See [samples/README.md](samples/README.md) for what each one demonstrates
+and for the input schema.
+
+```powershell
+uaps samples/001-single-job.json out.json
 ```
 
 ## Changelog

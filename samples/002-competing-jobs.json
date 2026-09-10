@@ -1,0 +1,42 @@
+{
+  "// ": "Three jobs contending for one machine. The dispatching rule decides the order, so this is the input to run twice with different --rule values and compare.",
+  "jobs": [
+    {
+      "id": "JOB-LONG",
+      "productName": "Housing",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 7200000,
+      "operations": [
+        { "id": "OP-LONG-1", "sequence": 1, "setupMs": 0, "processMs": 1800000, "waitMs": 0,
+          "requiredResources": [{ "resourceType": "Equipment", "quantity": 1, "candidates": ["LATHE-1"] }] }
+      ]
+    },
+    {
+      "id": "JOB-SHORT",
+      "productName": "Pin",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 7200000,
+      "operations": [
+        { "id": "OP-SHORT-1", "sequence": 1, "setupMs": 0, "processMs": 300000, "waitMs": 0,
+          "requiredResources": [{ "resourceType": "Equipment", "quantity": 1, "candidates": ["LATHE-1"] }] }
+      ]
+    },
+    {
+      "id": "JOB-URGENT",
+      "productName": "Shaft",
+      "priority": 100,
+      "quantity": 1,
+      "dueDateMs": 1200000,
+      "operations": [
+        { "id": "OP-URGENT-1", "sequence": 1, "setupMs": 0, "processMs": 900000, "waitMs": 0,
+          "requiredResources": [{ "resourceType": "Equipment", "quantity": 1, "candidates": ["LATHE-1"] }] }
+      ]
+    }
+  ],
+  "resources": [
+    { "id": "LATHE-1", "type": "Equipment", "capability": "turning", "efficiency": 1.0 }
+  ],
+  "options": { "startTimeMs": 0 }
+}

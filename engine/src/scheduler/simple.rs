@@ -513,29 +513,35 @@ impl SimpleScheduler {
                         let op_type_for_candidates =
                             operation.operation_type.as_deref().unwrap_or(&operation.id);
                         if !worker_req.candidates.is_empty() {
-                            for candidate_id in &worker_req.candidates {
-                                if assigned_workers >= worker_req.quantity {
-                                    break;
-                                }
-                                // 스킬 매트릭스 검증 (설정된 경우)
-                                if let Some(ref skill_matrix) = request.skill_matrix {
-                                    if !skill_matrix
-                                        .can_perform(candidate_id, op_type_for_candidates)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                // 인증 매트릭스 검증 (설정된 경우)
-                                if let Some(ref cert_matrix) = request.certification_matrix {
-                                    if !cert_matrix.is_certified(
-                                        candidate_id,
-                                        op_type_for_candidates,
-                                        request.start_time_ms,
-                                    ) {
-                                        continue;
-                                    }
-                                }
-                                if request.resources.iter().any(|r| r.id == *candidate_id) {
+                            // 후보를 **가용 시간 순**으로 고른다. 선언 순서대로 앞에서부터
+                            // 집으면, 한가한 후보를 두고 이미 바쁜 첫 후보를 다시 골라
+                            // 병렬로 돌 수 있는 작업이 직렬화된다. 후보 목록이 없는 아래
+                            // 분기는 처음부터 이 순서로 골랐고, 장비 쪽도
+                            // `find_earliest_resource_with_setup`으로 같은 기준을 쓴다 —
+                            // 후보가 주어졌을 때만 기준이 달랐다.
+                            let mut eligible: Vec<(String, i64)> = worker_req
+                                .candidates
+                                .iter()
+                                .filter(|candidate_id| {
+                                    // 스킬 매트릭스 검증 (설정된 경우)
+                                    request.skill_matrix.as_ref().is_none_or(|m| {
+                                        m.can_perform(candidate_id, op_type_for_candidates)
+                                    })
+                                })
+                                .filter(|candidate_id| {
+                                    // 인증 매트릭스 검증 (설정된 경우)
+                                    request.certification_matrix.as_ref().is_none_or(|m| {
+                                        m.is_certified(
+                                            candidate_id,
+                                            op_type_for_candidates,
+                                            request.start_time_ms,
+                                        )
+                                    })
+                                })
+                                .filter(|candidate_id| {
+                                    request.resources.iter().any(|r| r.id == **candidate_id)
+                                })
+                                .map(|candidate_id| {
                                     // load_factor 기반 가용 시간 계산
                                     let available = if load_factor < 1.0 {
                                         // 부하 기반 스케줄링: 시작 시간부터 가용 시간 찾기
@@ -552,15 +558,30 @@ impl SimpleScheduler {
                                             .copied()
                                             .unwrap_or(0)
                                     };
-                                    latest_available = latest_available.max(available);
-                                    allocated_resources.push(candidate_id.clone());
-                                    worker_allocations.push((candidate_id.clone(), load_factor));
-                                    // 첫 번째 할당 작업자 기록 (스킬 기반 시간 조정용)
-                                    if assigned_worker_id.is_none() {
-                                        assigned_worker_id = Some(candidate_id.clone());
-                                    }
-                                    assigned_workers += 1;
+                                    (candidate_id.clone(), available)
+                                })
+                                .collect();
+
+                            // 가용 시간 순 정렬. 동률이면 후보 목록에 적힌 순서가 남는다
+                            // (`sort_by_key`는 안정 정렬) — 입력이 같으면 결과도 같아야 한다.
+                            eligible.sort_by_key(|(_, avail)| *avail);
+
+                            for (candidate_id, available) in eligible {
+                                if assigned_workers >= worker_req.quantity {
+                                    break;
                                 }
+                                // 같은 후보가 목록에 두 번 적혀 있어도 한 번만 센다
+                                if allocated_resources.contains(&candidate_id) {
+                                    continue;
+                                }
+                                latest_available = latest_available.max(available);
+                                allocated_resources.push(candidate_id.clone());
+                                worker_allocations.push((candidate_id.clone(), load_factor));
+                                // 첫 번째 할당 작업자 기록 (스킬 기반 시간 조정용)
+                                if assigned_worker_id.is_none() {
+                                    assigned_worker_id = Some(candidate_id.clone());
+                                }
+                                assigned_workers += 1;
                             }
                         } else {
                             // 후보가 없으면 Worker 타입 자원에서 선택
@@ -1033,7 +1054,7 @@ impl Default for SimpleScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Operation;
+    use crate::{Operation, ResourceRequirement, ResourceType};
 
     #[test]
     fn test_single_job_single_resource() {
@@ -2963,5 +2984,75 @@ mod tests {
         assert_eq!(schedule.assignments_for_site("SITE-A").len(), 1);
         assert_eq!(schedule.assignments_for_site("SITE-B").len(), 1);
         assert_eq!(schedule.assignments_for_site("SITE-C").len(), 0);
+    }
+
+    /// Worker 후보가 주어졌을 때도 **가용 시간 순**으로 골라야 한다.
+    ///
+    /// 후보 목록을 선언 순서대로 앞에서부터 집으면, 두 번째 작업이 한가한
+    /// 두 번째 후보를 두고 이미 바쁜 첫 후보를 다시 골라 직렬화된다. 장비 쪽은
+    /// `find_earliest_resource_with_setup`으로, 후보가 없는 경로는 정렬로 이미
+    /// 이 기준을 쓰고 있었다 — 후보가 주어졌을 때만 달랐다.
+    ///
+    /// 이 분기는 빌더 API로 도달할 수 없다(`with_workers`는 후보를 비워 둔다).
+    /// JSON/FFI 입력만이 후보를 채우므로, 결함은 외부 소비자에게만 보였다.
+    #[test]
+    fn worker_candidates_are_chosen_by_availability_not_declaration_order() {
+        fn cell_op(op_id: &str, job_id: &str) -> Operation {
+            let mut op = Operation::new(op_id, job_id, 1).with_time(0, 600_000, 0);
+            op.required_resources.push(ResourceRequirement {
+                resource_type: ResourceType::Equipment,
+                quantity: 1,
+                candidates: vec!["PRESS-1".to_string(), "PRESS-2".to_string()],
+                load_factor: 1.0,
+            });
+            op.required_resources.push(ResourceRequirement {
+                resource_type: ResourceType::Worker,
+                quantity: 1,
+                candidates: vec!["ALICE".to_string(), "BOB".to_string()],
+                load_factor: 1.0,
+            });
+            op
+        }
+
+        // Given: 같은 셀을 요구하는 두 Job, 프레스 2대와 작업자 2명
+        let request = ScheduleRequest::new(
+            vec![
+                Job::new("JOB-A").with_operation(cell_op("OP-A", "JOB-A")),
+                Job::new("JOB-B").with_operation(cell_op("OP-B", "JOB-B")),
+            ],
+            vec![
+                Resource::equipment("PRESS-1"),
+                Resource::equipment("PRESS-2"),
+                Resource::worker("ALICE"),
+                Resource::worker("BOB"),
+            ],
+        );
+
+        // When
+        let schedule = SimpleScheduler::new().schedule(&request);
+
+        // Then: 두 작업이 병렬로 돈다. 유휴 설비를 두고 직렬화되면 1,200,000 이 된다.
+        assert_eq!(
+            schedule.makespan_ms, 600_000,
+            "idle capacity on both sides means both jobs run at once"
+        );
+
+        let a = schedule.assignment_for_operation("OP-A").expect("OP-A");
+        let b = schedule.assignment_for_operation("OP-B").expect("OP-B");
+        assert_eq!((a.start_ms, b.start_ms), (0, 0));
+
+        // 두 작업자가 서로 다르게 배정돼야 한다 — 같은 사람이 두 번 잡히면
+        // 그 사람이 병목이 되어 위의 makespan 이 성립할 수 없다.
+        let workers: Vec<&String> = schedule
+            .assignments
+            .iter()
+            .filter(|x| x.resource_id == "ALICE" || x.resource_id == "BOB")
+            .map(|x| &x.resource_id)
+            .collect();
+        assert_eq!(workers.len(), 2, "one worker per operation");
+        assert_ne!(
+            workers[0], workers[1],
+            "the free second worker must be used"
+        );
     }
 }
