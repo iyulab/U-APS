@@ -279,7 +279,7 @@ public class WhatIfSimulator
         return request;
     }
 
-    private ScheduleRequest CloneRequest(ScheduleRequest original)
+    internal ScheduleRequest CloneRequest(ScheduleRequest original)
     {
         // 단순화된 복사 - 실제로는 더 깊은 복사 필요
         return new ScheduleRequest
@@ -310,12 +310,16 @@ public class WhatIfSimulator
             var clonedOp = Operation.Create(op.Id, op.JobId, op.Sequence)
                 .WithTime(op.Time.SetupMs, op.Time.ProcessMs, op.Time.WaitMs);
 
+            // Copy the requirement rather than rebuilding it through the
+            // builders. Rebuilding is what made this lossy: the worker branch
+            // carried only Quantity across, so a worker-candidate restriction
+            // vanished and LoadFactor reset to 1.0 — the scenario then answered
+            // a different question from the baseline it is compared against.
+            // ResourceRequirement is a record, so `with` gives a copy; the
+            // candidate list is copied too so the clone cannot alias it.
             foreach (var req in op.RequiredResources)
             {
-                if (req.ResourceType == ResourceType.Equipment)
-                    clonedOp = clonedOp.WithEquipment(req.Candidates.ToArray());
-                else
-                    clonedOp = clonedOp.WithWorkers(req.Quantity);
+                clonedOp.RequiredResources.Add(req with { Candidates = [.. req.Candidates] });
             }
 
             clone = clone.WithOperation(clonedOp);

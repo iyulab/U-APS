@@ -160,6 +160,27 @@ public class Operation
     }
 
     /// <summary>
+    /// 작업자 요구사항 추가 (후보 지정) — <see cref="WithEquipment"/>의 작업자 짝.
+    /// </summary>
+    /// <remarks>
+    /// 후보를 비워 두면 Worker 유형 자원 전체가 대상이 되고, 그것이
+    /// <see cref="WithWorkers"/>와 같아진다. 후보를 채우면 스케줄러는 그 안에서
+    /// 가장 빨리 자유로워지는 자원을 고른다 — 적힌 순서가 아니다.
+    /// 후보와 부하계수를 함께 쓰려면 <see cref="ResourceRequirement"/>를 직접 만든다.
+    /// </remarks>
+    public Operation WithWorkerCandidates(int count, params string[] candidateIds)
+    {
+        RequiredResources.Add(new ResourceRequirement
+        {
+            ResourceType = ResourceType.Worker,
+            Quantity = count,
+            Candidates = [.. candidateIds],
+            LoadFactor = 1.0
+        });
+        return this;
+    }
+
+    /// <summary>
     /// 무인공정 설정
     /// </summary>
     public Operation Unmanned()

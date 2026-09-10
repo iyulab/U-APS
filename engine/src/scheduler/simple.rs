@@ -1054,7 +1054,7 @@ impl Default for SimpleScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Operation, ResourceRequirement, ResourceType};
+    use crate::Operation;
 
     #[test]
     fn test_single_job_single_resource() {
@@ -2993,25 +2993,18 @@ mod tests {
     /// `find_earliest_resource_with_setup`으로, 후보가 없는 경로는 정렬로 이미
     /// 이 기준을 쓰고 있었다 — 후보가 주어졌을 때만 달랐다.
     ///
-    /// 이 분기는 빌더 API로 도달할 수 없다(`with_workers`는 후보를 비워 둔다).
-    /// JSON/FFI 입력만이 후보를 채우므로, 결함은 외부 소비자에게만 보였다.
+    /// 이 분기는 한동안 빌더 API로 도달할 수 없었다 — `with_workers`가 후보를
+    /// 비워 두어 JSON/FFI 입력만이 후보를 채웠고, 그래서 결함이 외부 소비자에게만
+    /// 보였다. `with_worker_candidates`가 그 대칭을 복구했으므로 이 테스트는
+    /// 이제 공개 빌더만으로 쓰인다 — **빌더가 실제로 그 분기를 여는지**까지
+    /// 함께 고정한다.
     #[test]
     fn worker_candidates_are_chosen_by_availability_not_declaration_order() {
         fn cell_op(op_id: &str, job_id: &str) -> Operation {
-            let mut op = Operation::new(op_id, job_id, 1).with_time(0, 600_000, 0);
-            op.required_resources.push(ResourceRequirement {
-                resource_type: ResourceType::Equipment,
-                quantity: 1,
-                candidates: vec!["PRESS-1".to_string(), "PRESS-2".to_string()],
-                load_factor: 1.0,
-            });
-            op.required_resources.push(ResourceRequirement {
-                resource_type: ResourceType::Worker,
-                quantity: 1,
-                candidates: vec!["ALICE".to_string(), "BOB".to_string()],
-                load_factor: 1.0,
-            });
-            op
+            Operation::new(op_id, job_id, 1)
+                .with_time(0, 600_000, 0)
+                .with_equipment(vec!["PRESS-1".to_string(), "PRESS-2".to_string()])
+                .with_worker_candidates(1, vec!["ALICE".to_string(), "BOB".to_string()])
         }
 
         // Given: 같은 셀을 요구하는 두 Job, 프레스 2대와 작업자 2명

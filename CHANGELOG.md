@@ -19,6 +19,11 @@ published to a registry — it ships inside those packages.
   input schema documented alongside them. The README described a samples
   directory and three build scripts that did not exist; the scripts are gone
   from it and the samples now do.
+- `Operation.WithWorkerCandidates(count, ids)` in the SDK, and
+  `Operation::with_worker_candidates` in the engine — the worker counterpart of
+  `WithEquipment`. Worker candidates could previously be set through JSON and
+  FFI input but not through either builder, which is why the defect below was
+  invisible to every test and visible only to callers outside the API.
 
 ### Fixed
 
@@ -29,8 +34,15 @@ published to a registry — it ships inside those packages.
   half its throughput. Equipment selection already chose the earliest-available
   candidate, and so did worker selection when no candidate list was given; only
   the listed-candidates path differed. Reachable through JSON and FFI input
-  only: the builder API cannot express worker candidates, which is why no test
-  had ever covered that branch.
+  only: the builder API could not express worker candidates, which is why no
+  test had ever covered that branch.
+- A what-if scenario no longer starts from a different problem than its
+  baseline. Building the scenario's copy of a request rebuilt each resource
+  requirement through the builders, and the worker branch carried only the
+  count across — so a worker-candidate restriction vanished and the load factor
+  reset to 1.0. The comparison the whole feature exists to make was against a
+  problem the caller never described. Requirements are now copied whole, with
+  their own candidate lists rather than shared ones.
 
 ## [1.0.3] - 2026-09-07
 

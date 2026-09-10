@@ -592,6 +592,41 @@ impl Operation {
         self
     }
 
+    /// Builder: 작업자 요구사항 추가 (후보 지정) — [`with_equipment`](Self::with_equipment)의 작업자 짝.
+    ///
+    /// `candidates`가 비어 있으면 Worker 유형 자원 전체가 대상이 되고, 그것이
+    /// [`with_workers`](Self::with_workers)와 같아진다. 후보를 채우면 스케줄러는
+    /// 그 안에서 **가장 빨리 자유로워지는** 자원을 고른다 — 적힌 순서가 아니다.
+    ///
+    /// 이 빌더가 없는 동안 후보를 채우는 길은 JSON/FFI 입력뿐이었고, 그래서 그
+    /// 분기는 어떤 단위 테스트도 밟지 못했다. 후보 선택이 선언 순서대로 이뤄지던
+    /// 결함이 외부 소비자에게만 보였던 이유다.
+    ///
+    /// 후보와 부하계수를 함께 쓰려면 [`ResourceRequirement`]를 직접 만든다 —
+    /// 네 조합마다 빌더를 두는 것보다 그쪽이 읽기 쉽다.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use uaps_engine::Operation;
+    ///
+    /// let op = Operation::new("OP-1", "JOB-1", 1)
+    ///     .with_time(0, 600_000, 0)
+    ///     .with_equipment(vec!["PRESS-1".into(), "PRESS-2".into()])
+    ///     .with_worker_candidates(1, vec!["ALICE".into(), "BOB".into()]);
+    ///
+    /// assert_eq!(op.required_resources.len(), 2);
+    /// ```
+    pub fn with_worker_candidates(mut self, count: i32, candidates: Vec<String>) -> Self {
+        self.required_resources.push(ResourceRequirement {
+            resource_type: ResourceType::Worker,
+            quantity: count,
+            candidates,
+            load_factor: 1.0,
+        });
+        self
+    }
+
     /// Builder: 자재 요구사항 추가
     pub fn with_material(mut self, requirement: MaterialRequirement) -> Self {
         self.material_requirements.push(requirement);

@@ -27,4 +27,11 @@
     <None Include="runtimes/**" Pack="true" PackagePath="runtimes/" Condition="Exists('runtimes')" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- CloneRequest is the seam a what-if scenario is built on, and it is not
+         part of the public API. Opening it to the test assembly is what lets a
+         regression cover it without widening the surface consumers see. -->
+    <InternalsVisibleTo Include="UAPS.SDK.Tests" />
+  </ItemGroup>
+
 </Project>
