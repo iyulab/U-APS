@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-10
+
 ### Added
 
 - `samples/` — runnable CLI inputs, each small enough to check by hand, with the
