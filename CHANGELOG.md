@@ -51,6 +51,14 @@ published to a registry — it ships inside those packages.
   were all absent from the scenario, and each of them changes a schedule. The
   clone copies now instead of rebuilding, so a field added to a model cannot
   quietly fall out of it again.
+- Four of the nine declared what-if scenario types — `AddJob`, `RemoveJob`,
+  `ChangeDueDate`, `ChangeSetupTime` — had no implementation and fell straight
+  through, so the scenario returned the baseline unchanged and was reported as
+  a success. That is exactly what a caller sees when a real change turns out
+  not to matter, and a what-if that cannot separate those two readings is worse
+  than one that refuses. They now fail with a message naming the supported
+  types. Implementing them is a separate piece of work; `ChangeSetupTime` in
+  particular needs the setup matrices to be copied rather than shared.
 
 ## [1.0.3] - 2026-09-07
 

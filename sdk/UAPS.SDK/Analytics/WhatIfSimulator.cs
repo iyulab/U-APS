@@ -217,7 +217,7 @@ public class WhatIfSimulator
             .FirstOrDefault();
     }
 
-    private ScheduleRequest ApplyScenario(ScheduleRequest baseRequest, WhatIfScenario scenario)
+    internal ScheduleRequest ApplyScenario(ScheduleRequest baseRequest, WhatIfScenario scenario)
     {
         // 깊은 복사 (간단한 구현)
         var request = CloneRequest(baseRequest);
@@ -274,6 +274,20 @@ public class WhatIfSimulator
                     }
                 }
                 break;
+
+            // AddJob, RemoveJob, ChangeDueDate and ChangeSetupTime are declared
+            // on the enum but not implemented here. Falling through returned the
+            // request untouched, and the scenario was then reported as a success
+            // whose result happened to match the baseline -- indistinguishable
+            // from a change that genuinely had no effect, which is the one
+            // reading a caller must never get wrong about a what-if. RunScenario
+            // already turns an exception into Success=false with the message, so
+            // this reaches the caller as a failure rather than a false negative.
+            default:
+                throw new NotSupportedException(
+                    $"What-if scenario type '{scenario.Type}' is declared but not implemented. " +
+                    "Supported types: AddResource, RemoveResource, ChangeResourceEfficiency, " +
+                    "ChangePriority, ChangeProcessTime.");
         }
 
         return request;
