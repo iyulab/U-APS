@@ -279,62 +279,31 @@ public class WhatIfSimulator
         return request;
     }
 
+    /// <summary>
+    /// 시나리오가 올라앉을 요청의 독립된 사본.
+    /// </summary>
+    /// <remarks>
+    /// 예전에는 빌더로 각 객체를 다시 지었고, 빌더가 옮기는 것만 살아남았다 —
+    /// Job 24개 필드 중 6개, Operation 26개 중 5개, Resource 18개 중 3개. 즉
+    /// 시나리오는 의존관계·자재·시간창·달력·능력·용량·비가동 구간이 사라진
+    /// <em>다른 문제</em>를 풀고 그것을 기준선과 비교하고 있었다. 재구성이 아니라
+    /// 복사이므로, 모델에 필드가 늘어도 사본이 뒤처지지 않는다.
+    ///
+    /// 매트릭스와 조 편성은 참조를 공유한다. 어떤 시나리오도 그것들을 수정하지
+    /// 않기 때문인데, 수정하는 시나리오가 생기면 그때 함께 복사해야 한다.
+    /// </remarks>
     internal ScheduleRequest CloneRequest(ScheduleRequest original)
     {
-        // 단순화된 복사 - 실제로는 더 깊은 복사 필요
         return new ScheduleRequest
         {
-            Jobs = original.Jobs.Select(CloneJob).ToList(),
-            Resources = original.Resources.Select(CloneResource).ToList(),
+            Jobs = [.. original.Jobs.Select(j => j.DeepClone())],
+            Resources = [.. original.Resources.Select(r => r.DeepClone())],
             StartTimeMs = original.StartTimeMs,
             SetupMatrices = original.SetupMatrices,
             SkillMatrix = original.SkillMatrix,
             CertificationMatrix = original.CertificationMatrix,
             CrewManager = original.CrewManager
         };
-    }
-
-    private Job CloneJob(Job original)
-    {
-        var clone = Job.Create(original.Id)
-            .WithPriority(original.Priority)
-            .WithQuantity(original.Quantity);
-
-        clone.ProductName = original.ProductName;
-
-        if (original.DueDate.HasValue)
-            clone = clone.WithDueDate(original.DueDate.Value);
-
-        foreach (var op in original.Operations)
-        {
-            var clonedOp = Operation.Create(op.Id, op.JobId, op.Sequence)
-                .WithTime(op.Time.SetupMs, op.Time.ProcessMs, op.Time.WaitMs);
-
-            // Copy the requirement rather than rebuilding it through the
-            // builders. Rebuilding is what made this lossy: the worker branch
-            // carried only Quantity across, so a worker-candidate restriction
-            // vanished and LoadFactor reset to 1.0 — the scenario then answered
-            // a different question from the baseline it is compared against.
-            // ResourceRequirement is a record, so `with` gives a copy; the
-            // candidate list is copied too so the clone cannot alias it.
-            foreach (var req in op.RequiredResources)
-            {
-                clonedOp.RequiredResources.Add(req with { Candidates = [.. req.Candidates] });
-            }
-
-            clone = clone.WithOperation(clonedOp);
-        }
-
-        return clone;
-    }
-
-    private Resource CloneResource(Resource original)
-    {
-        var clone = original.Kind == ResourceKind.Equipment
-            ? Resource.Equipment(original.Id)
-            : Resource.Worker(original.Id);
-
-        return clone.WithEfficiency(original.Efficiency);
     }
 
     private WhatIfComparison CompareResults(KpiDashboard baseline, KpiDashboard scenario)

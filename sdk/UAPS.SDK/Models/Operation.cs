@@ -361,6 +361,28 @@ public class Operation
             EndMinute = DailyWorkWindow.EndMinute,
         } : null,
     };
+
+    /// <summary>
+    /// 이 공정의 독립된 사본. 사본을 고쳐도 원본은 변하지 않는다.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Resource.DeepClone"/>과 같은 이유로 통째 복사한다 — 26개 필드 중
+    /// 다섯 개만 옮기던 재구성 방식이 의존관계·자재·시간창을 시나리오에서
+    /// 지우고 있었다.
+    /// <see cref="MaterialRequirement"/>는 참조가 공유된다: 자체 컬렉션이 없고
+    /// 어떤 시나리오도 그것을 수정하지 않는다. 수정하는 시나리오가 생기면
+    /// 그때 이 목록도 원소 단위로 복사해야 한다.
+    /// </remarks>
+    internal Operation DeepClone()
+    {
+        var clone = (Operation)MemberwiseClone();
+        clone.RequiredResources = [.. RequiredResources.Select(r => r with { Candidates = [.. r.Candidates] })];
+        clone.Dependencies = [.. Dependencies];
+        clone.MaterialRequirements = [.. MaterialRequirements];
+        clone.InspectionItems = [.. InspectionItems];
+        clone.DefectTypes = [.. DefectTypes];
+        return clone;
+    }
 }
 
 /// <summary>

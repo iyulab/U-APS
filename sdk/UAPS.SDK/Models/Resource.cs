@@ -159,6 +159,24 @@ public class Resource
         LinkedResourceId = LinkedResourceId,
         IsRobot = IsRobot
     };
+
+    /// <summary>
+    /// 이 자원의 독립된 사본. 사본을 고쳐도 원본은 변하지 않는다.
+    /// </summary>
+    /// <remarks>
+    /// 필드를 하나하나 옮겨 적지 않고 <c>MemberwiseClone</c>으로 통째 복사한 뒤
+    /// 가변 컬렉션만 새로 만든다. 옮겨 적는 방식은 필드가 늘 때마다 조용히
+    /// 뒤처지고, 실제로 그렇게 됐다 — what-if 시나리오가 18개 필드 중 3개만 가진
+    /// 자원 위에서 돌고 있었다(능력·용량·비가동 구간이 전부 사라진 채로).
+    /// <see cref="TimeSlot"/>은 record라 리스트만 새로 만들면 된다.
+    /// </remarks>
+    internal Resource DeepClone()
+    {
+        var clone = (Resource)MemberwiseClone();
+        clone.Capabilities = [.. Capabilities];
+        clone.Unavailable = [.. Unavailable];
+        return clone;
+    }
 }
 
 /// <summary>

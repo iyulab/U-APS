@@ -80,6 +80,16 @@ public class Job
         Quantity = Quantity,
         IsSplittable = IsSplittable
     };
+
+    /// <summary>
+    /// 이 작업의 독립된 사본. 공정까지 함께 복사된다.
+    /// </summary>
+    internal Job DeepClone()
+    {
+        var clone = (Job)MemberwiseClone();
+        clone.Operations = [.. Operations.Select(o => o.DeepClone())];
+        return clone;
+    }
 }
 
 /// <summary>

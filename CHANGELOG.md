@@ -43,6 +43,14 @@ published to a registry — it ships inside those packages.
   reset to 1.0. The comparison the whole feature exists to make was against a
   problem the caller never described. Requirements are now copied whole, with
   their own candidate lists rather than shared ones.
+- The same clone dropped most of every object it copied, not only the worker
+  requirements: it rebuilt each job, operation and resource through the
+  builders, so only what a builder happens to carry survived — 6 of a job's 24
+  fields, 5 of an operation's 26, 3 of a resource's 18. Dependencies, materials,
+  time windows, transit times, capabilities, capacity and unavailable periods
+  were all absent from the scenario, and each of them changes a schedule. The
+  clone copies now instead of rebuilding, so a field added to a model cannot
+  quietly fall out of it again.
 
 ## [1.0.3] - 2026-09-07
 
