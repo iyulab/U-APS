@@ -1,6 +1,6 @@
 [package]
 name = "uaps-engine"
-version = "0.1.2"
+version = "0.2.0"
 rust-version = "1.87"
 edition = "2021"
 description = "U-APS Scheduling Engine"
