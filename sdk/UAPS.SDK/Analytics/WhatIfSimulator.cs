@@ -92,6 +92,61 @@ public class WhatIfScenario
             Parameters = { ["multiplier"] = multiplier }
         };
     }
+
+    /// <summary>작업 추가 — 기준선의 사본에 <paramref name="job"/> 의 사본이 들어간다.</summary>
+    public static WhatIfScenario AddJob(string name, Job job)
+    {
+        return new WhatIfScenario
+        {
+            Name = name,
+            Type = WhatIfScenarioType.AddJob,
+            TargetId = job.Id,
+            Parameters = { ["job"] = job }
+        };
+    }
+
+    /// <summary>
+    /// 작업 제거 — 그 작업의 공정을 선행으로 삼던 다른 작업의 의존도 함께 끊긴다
+    /// (없어진 공정을 기다릴 수는 없다).
+    /// </summary>
+    public static WhatIfScenario RemoveJob(string name, string jobId)
+    {
+        return new WhatIfScenario
+        {
+            Name = name,
+            Type = WhatIfScenarioType.RemoveJob,
+            TargetId = jobId
+        };
+    }
+
+    /// <summary>납기 변경.</summary>
+    public static WhatIfScenario ChangeDueDate(string name, string jobId, DateTime newDueDate)
+    {
+        return new WhatIfScenario
+        {
+            Name = name,
+            Type = WhatIfScenarioType.ChangeDueDate,
+            TargetId = jobId,
+            Parameters = { ["dueDate"] = newDueDate }
+        };
+    }
+
+    /// <summary>
+    /// 셋업 시간 변경 — 설비 <paramref name="resourceId"/> 의 순서 의존 준비 시간 행렬
+    /// (기본값과 항목 전부)에 <paramref name="multiplier"/> 를 곱한다. 그 설비에 행렬이
+    /// 없으면 시나리오는 실패로 보고된다: 아무것도 안 바뀐 결과를 성공으로 내는 것이
+    /// 이 시뮬레이터가 피하는 단 하나의 오독이다.
+    /// </summary>
+    public static WhatIfScenario ChangeSetupTime(string name, string resourceId, double multiplier)
+    {
+        return new WhatIfScenario
+        {
+            Name = name,
+            Type = WhatIfScenarioType.ChangeSetupTime,
+            TargetId = resourceId,
+            Parameters = { ["multiplier"] = multiplier }
+        };
+    }
 }
 
 /// <summary>
@@ -275,19 +330,74 @@ public class WhatIfSimulator
                 }
                 break;
 
-            // AddJob, RemoveJob, ChangeDueDate and ChangeSetupTime are declared
-            // on the enum but not implemented here. Falling through returned the
-            // request untouched, and the scenario was then reported as a success
-            // whose result happened to match the baseline -- indistinguishable
-            // from a change that genuinely had no effect, which is the one
-            // reading a caller must never get wrong about a what-if. RunScenario
-            // already turns an exception into Success=false with the message, so
-            // this reaches the caller as a failure rather than a false negative.
+            case WhatIfScenarioType.AddJob:
+                if (scenario.Parameters.TryGetValue("job", out var addJob) && addJob is Job newJob)
+                {
+                    if (request.Jobs.Any(j => j.Id == newJob.Id))
+                    {
+                        throw new ArgumentException(
+                            $"Job '{newJob.Id}' is already in the request; a what-if cannot add it twice.");
+                    }
+                    // A copy, so the caller's object never becomes part of a scenario request.
+                    request.Jobs.Add(newJob.DeepClone());
+                }
+                else
+                {
+                    throw new ArgumentException("AddJob needs a Job in Parameters[\"job\"].");
+                }
+                break;
+
+            case WhatIfScenarioType.RemoveJob:
+            {
+                var removed = request.Jobs.FirstOrDefault(j => j.Id == scenario.TargetId)
+                    ?? throw new ArgumentException($"Job '{scenario.TargetId}' is not in the request.");
+                request.Jobs.Remove(removed);
+                // Operations elsewhere that waited on the removed job's operations
+                // have nothing left to wait for.
+                var gone = removed.Operations.Select(o => o.Id).ToHashSet();
+                foreach (var op in request.Jobs.SelectMany(j => j.Operations))
+                {
+                    op.Dependencies.RemoveAll(gone.Contains);
+                }
+                break;
+            }
+
+            case WhatIfScenarioType.ChangeDueDate:
+                if (scenario.Parameters.TryGetValue("dueDate", out var due) && due is DateTime dueDate)
+                {
+                    var job = request.Jobs.FirstOrDefault(j => j.Id == scenario.TargetId)
+                        ?? throw new ArgumentException($"Job '{scenario.TargetId}' is not in the request.");
+                    job.DueDate = dueDate;
+                }
+                else
+                {
+                    throw new ArgumentException("ChangeDueDate needs a DateTime in Parameters[\"dueDate\"].");
+                }
+                break;
+
+            case WhatIfScenarioType.ChangeSetupTime:
+                if (scenario.Parameters.TryGetValue("multiplier", out var setupMult) && setupMult is double setupMultiplier)
+                {
+                    var matrix = request.SetupMatrices?.Matrices.FirstOrDefault(m => m.ResourceId == scenario.TargetId)
+                        ?? throw new ArgumentException(
+                            $"Resource '{scenario.TargetId}' has no setup matrix; there is no setup time to change.");
+                    matrix.DefaultSetupMs = (long)(matrix.DefaultSetupMs * setupMultiplier);
+                    matrix.Entries = [.. matrix.Entries.Select(e => e with { SetupMs = (long)(e.SetupMs * setupMultiplier) })];
+                }
+                else
+                {
+                    throw new ArgumentException("ChangeSetupTime needs a double in Parameters[\"multiplier\"].");
+                }
+                break;
+
+            // Every declared type is handled above. A new enum member that is not
+            // must fail loudly rather than return the request untouched: a
+            // scenario that silently changes nothing reports a success whose
+            // numbers match the baseline, which is exactly what a change with no
+            // effect also reports, and a caller cannot tell the two apart.
             default:
                 throw new NotSupportedException(
-                    $"What-if scenario type '{scenario.Type}' is declared but not implemented. " +
-                    "Supported types: AddResource, RemoveResource, ChangeResourceEfficiency, " +
-                    "ChangePriority, ChangeProcessTime.");
+                    $"What-if scenario type '{scenario.Type}' is declared but not implemented.");
         }
 
         return request;
@@ -303,8 +413,9 @@ public class WhatIfSimulator
     /// <em>다른 문제</em>를 풀고 그것을 기준선과 비교하고 있었다. 재구성이 아니라
     /// 복사이므로, 모델에 필드가 늘어도 사본이 뒤처지지 않는다.
     ///
-    /// 매트릭스와 조 편성은 참조를 공유한다. 어떤 시나리오도 그것들을 수정하지
-    /// 않기 때문인데, 수정하는 시나리오가 생기면 그때 함께 복사해야 한다.
+    /// 셋업 행렬은 <see cref="WhatIfScenarioType.ChangeSetupTime"/> 이 고치므로 함께
+    /// 복사한다. 스킬·인증 행렬과 조 편성은 아직 어떤 시나리오도 수정하지 않아 참조를
+    /// 공유한다 — 수정하는 시나리오가 생기면 그때 함께 복사해야 한다.
     /// </remarks>
     internal ScheduleRequest CloneRequest(ScheduleRequest original)
     {
@@ -313,7 +424,15 @@ public class WhatIfSimulator
             Jobs = [.. original.Jobs.Select(j => j.DeepClone())],
             Resources = [.. original.Resources.Select(r => r.DeepClone())],
             StartTimeMs = original.StartTimeMs,
-            SetupMatrices = original.SetupMatrices,
+            SetupMatrices = original.SetupMatrices is null ? null : new SetupMatrixCollection
+            {
+                Matrices = [.. original.SetupMatrices.Matrices.Select(m => new SetupMatrix
+                {
+                    ResourceId = m.ResourceId,
+                    DefaultSetupMs = m.DefaultSetupMs,
+                    Entries = [.. m.Entries]
+                })]
+            },
             SkillMatrix = original.SkillMatrix,
             CertificationMatrix = original.CertificationMatrix,
             CrewManager = original.CrewManager

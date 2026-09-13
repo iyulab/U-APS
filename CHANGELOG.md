@@ -13,6 +13,21 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- The four what-if scenario types that were declared but refused since 1.1.0
+  now do what their names say. `WhatIfScenario.AddJob` appends a copy of the
+  job to the scenario request (a duplicate id is refused), `RemoveJob` drops
+  the job and every dependency other operations had on its operations,
+  `ChangeDueDate` sets the job's due date, and `ChangeSetupTime` scales the
+  target resource's sequence-dependent setup matrix — default and entries —
+  by a multiplier, and is refused for a resource without a matrix, since a
+  scenario that changes nothing would report the baseline's numbers as its
+  own. The scenario request now carries its own copy of the setup matrices so
+  that scaling one never touches the baseline.
+- `Operation.WithDependencies(params string[] operationIds)` — the builder
+  the `Dependencies` list never had.
+
 ## [1.1.0] - 2026-09-10
 
 ### Added

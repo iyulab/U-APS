@@ -132,6 +132,15 @@ public class Operation
         return this;
     }
 
+    /// <summary>
+    /// 선행 공정 — 이 공정은 나열한 공정들이 모두 끝난 뒤에 시작한다.
+    /// </summary>
+    public Operation WithDependencies(params string[] operationIds)
+    {
+        Dependencies.AddRange(operationIds);
+        return this;
+    }
+
     public Operation WithWorkers(int count)
     {
         RequiredResources.Add(new ResourceRequirement
