@@ -27,10 +27,10 @@ pub use scheduler::*;
 
 /// Manufacturing operation info for GA chromosome construction.
 ///
-/// Extends scheduling `ActivityInfo` with an `activity_id` field
-/// that maps back to the engine's `Operation.id`. This is a
-/// manufacturing-domain concept not present in the generic
-/// scheduling framework.
+/// Carries the engine's `Operation.id` alongside the fields the scheduling
+/// framework needs. The id is passed straight through to `ActivityInfo::id`;
+/// this type stays because its other fields are named in manufacturing terms
+/// and its `process_time_ms` is the engine's unit.
 #[derive(Debug, Clone)]
 pub struct OperationInfo {
     /// Parent job (task) ID.
@@ -49,6 +49,7 @@ impl OperationInfo {
     /// Converts to `ActivityInfo` for use with `ScheduleChromosome`.
     pub fn to_activity_info(&self) -> ActivityInfo {
         ActivityInfo {
+            id: self.activity_id.clone(),
             task_id: self.task_id.clone(),
             sequence: self.sequence,
             process_ms: self.process_time_ms,
