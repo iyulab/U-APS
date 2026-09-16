@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 u-metaheur = { version = "0.4", features = ["serde"] }
-u-schedule = "0.6"
+u-schedule = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
