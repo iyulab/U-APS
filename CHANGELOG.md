@@ -11,6 +11,14 @@ Versions here are the `UAPSVersion` shared by the `UAPS.SDK` and `UAPS.CLI`
 NuGet packages. The Rust engine carries its own crate version and is not
 published to a registry — it ships inside those packages.
 
+## [Unreleased]
+
+### Changed
+
+- The engine depends on `u-schedule` 0.8 (0.7 before). No change in
+  behaviour: the new minor changes only the TypeScript declarations of its
+  WebAssembly binding.
+
 ## [1.2.0] - 2026-09-15
 
 ### Added
