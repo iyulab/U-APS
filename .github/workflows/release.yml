@@ -108,14 +108,14 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
+      # Keyed on the OS, the target and a hash of engine/Cargo.lock, falling back
+      # to the newest cache for the same OS and target -- a fixed key never
+      # refreshed and never matched a partial hit.
       - name: Cache Rust dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            engine/target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-v1
+          workspaces: engine
+          key: ${{ matrix.target }}
 
       - name: Build Rust Engine
         working-directory: engine
@@ -383,3 +383,19 @@ jobs:
               --source https://nuget.pkg.github.com/iyulab/index.json \
               --skip-duplicate
           done
+
+  # The build artifacts only carry files to the release and the NuGet push.
+  # Once both are done they are storage nobody reads.
+  cleanup-artifacts:
+    name: Delete intermediate artifacts
+    needs: [create-release, publish-nuget]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: geekyeggo/delete-artifact@176a747ab7e287e3ff4787bf8a148716375ca118 # v6.0.0
+        with:
+          name: |
+            native-*
+            cli-*
+            nuget-packages
