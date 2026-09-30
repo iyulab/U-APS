@@ -15,9 +15,9 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- The engine depends on `u-schedule` 0.8 (0.7 before). No change in
-  behaviour: the new minor changes only the TypeScript declarations of its
-  WebAssembly binding.
+- The engine depends on `u-schedule` 0.9 (0.7 before). No change in
+  behaviour: 0.8 changed only the TypeScript declarations of its WebAssembly
+  binding, and 0.9 only makes that binding refuse a job id given twice.
 
 ## [1.2.0] - 2026-09-15
 
