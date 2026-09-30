@@ -15,9 +15,10 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- The engine depends on `u-schedule` 0.9 (0.7 before). No change in
-  behaviour: 0.8 changed only the TypeScript declarations of its WebAssembly
-  binding, and 0.9 only makes that binding refuse a job id given twice.
+- The engine depends on `u-schedule` 0.10 and `u-metaheur` 0.5 (`u-schedule` 0.7
+  before). No change in behaviour: the engine uses `u-schedule`'s dispatching
+  rules and GA operators, not the solver entry points 0.10 changed, and the
+  other changes in 0.8 to 0.10 are to their WebAssembly bindings.
 
 ## [1.2.0] - 2026-09-15
 
