@@ -519,6 +519,13 @@ impl DispatchingPreset {
     }
 }
 
+/// The WSPT/ATC weight of a job. A job's `priority` is lower-is-more-urgent
+/// (1 before 100), so the weight falls as the number rises: `1000 / (p + 1)`.
+/// Priorities below 0 count as 0, which keeps the weight finite and positive.
+fn job_weight(priority: i32) -> f64 {
+    1000.0 / (f64::from(priority.max(0)) + 1.0)
+}
+
 /// Convert Jobs to scheduling Tasks for rule evaluation
 pub fn jobs_to_tasks(jobs: &[Job], _current_time_ms: i64) -> Vec<u_schedule::models::Task> {
     jobs.iter()
@@ -526,7 +533,8 @@ pub fn jobs_to_tasks(jobs: &[Job], _current_time_ms: i64) -> Vec<u_schedule::mod
             let mut task = u_schedule::models::Task::new(&job.id)
                 .with_name(&job.id)
                 .with_category(job.product_name.clone().unwrap_or_default())
-                .with_priority(job.priority);
+                .with_priority(job.priority)
+                .with_weight(job_weight(job.priority));
 
             // Convert DateTime<Utc> to milliseconds
             if let Some(due) = job.due_date {
@@ -878,5 +886,22 @@ mod tests {
 
         assert!(above.evaluate(&ctx)); // 0.85 >= 0.80
         assert!(below.evaluate(&ctx)); // 0.50 < 0.60
+    }
+
+    /// WSPT ranks a more urgent job (lower priority number) first when the
+    /// processing times are equal, and every weight is finite and positive.
+    #[test]
+    fn wspt_prefers_the_more_urgent_job() {
+        let ctx = SchedulingContext::at_time(0);
+        let urgent = make_job("urgent", 1, 1000, None);
+        let routine = make_job("routine", 100, 1000, None);
+        let tasks = jobs_to_tasks(&[urgent, routine], 0);
+        let wspt = u_schedule::dispatching::rules::Wspt;
+        use u_schedule::dispatching::DispatchingRule;
+        assert!(wspt.evaluate(&tasks[0], &ctx) < wspt.evaluate(&tasks[1], &ctx));
+        for p in [i32::MIN, -1, 0, 1, 100, i32::MAX] {
+            let w = job_weight(p);
+            assert!(w.is_finite() && w > 0.0, "priority {p} -> weight {w}");
+        }
     }
 }

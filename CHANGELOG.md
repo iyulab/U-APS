@@ -15,10 +15,12 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- The engine depends on `u-schedule` 0.10 and `u-metaheur` 0.5 (`u-schedule` 0.7
-  before). No change in behaviour: the engine uses `u-schedule`'s dispatching
-  rules and GA operators, not the solver entry points 0.10 changed, and the
-  other changes in 0.8 to 0.10 are to their WebAssembly bindings.
+- The engine depends on `u-schedule` 0.11 and `u-metaheur` 0.5 (`u-schedule` 0.7
+  before). `u-schedule` 0.11's WSPT and ATC read a task's weight instead of
+  deriving it from its priority; the engine now hands them the weight its
+  priority convention (lower is more urgent) always meant, `1000 / (p + 1)`,
+  so the dispatching order does not change. A negative priority now counts as
+  0 for that weight; it used to produce an infinite or negative one.
 
 ## [1.2.0] - 2026-09-15
 
