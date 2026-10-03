@@ -956,12 +956,21 @@ mod tests {
             ..Default::default()
         };
         let scheduler = GaScheduler::new(params, GeneticOperators::default());
-        let start = std::time::Instant::now();
         let result = scheduler.schedule(&jobs, &resources, 0);
-        let elapsed = start.elapsed();
 
-        assert!(elapsed.as_millis() < 500, "Should timeout quickly");
-        assert!(result.timed_out || result.generations < 1000);
+        // The contract is that the time limit, not the generation cap, ends
+        // the run -- observable in the result. A wall-clock bound on the test
+        // itself measured the machine's load instead (it failed once under the
+        // full parallel suite and passed alone).
+        assert!(
+            result.timed_out,
+            "a 10 ms budget must end a 1000-generation run"
+        );
+        assert!(
+            result.generations < 1000,
+            "stopped at {}",
+            result.generations
+        );
         assert!(!result.schedule.assignments.is_empty());
     }
 
