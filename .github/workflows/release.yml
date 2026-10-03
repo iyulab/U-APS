@@ -65,9 +65,12 @@ jobs:
             if [ "$HTTP" = "200" ]; then
               echo "should_release=false" >> $GITHUB_OUTPUT
               echo "UAPS.SDK ${VERSION} already on nuget.org — skipping"
-            else
+            elif [ "$HTTP" = "404" ]; then
               echo "should_release=true" >> $GITHUB_OUTPUT
               echo "UAPS.SDK ${VERSION} not on nuget.org (HTTP ${HTTP}) — will release"
+            else
+              echo "::error::the registry answered HTTP ${HTTP}, so it is unknown whether this version is published; re-run once the registry responds"
+              exit 1
             fi
           fi
 
