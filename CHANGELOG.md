@@ -15,8 +15,9 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- The engine depends on `u-schedule` 0.11 and `u-metaheur` 0.5 (`u-schedule` 0.7
-  before). `u-schedule` 0.11's WSPT and ATC read a task's weight instead of
+- The engine depends on `u-schedule` 0.12 and `u-metaheur` 0.6 (`u-schedule` 0.7
+  and `u-metaheur` 0.4 before; their configuration builders now refuse an
+  out-of-range value instead of clamping it, and the engine passes none). `u-schedule` 0.11's WSPT and ATC read a task's weight instead of
   deriving it from its priority; the engine now hands them the weight its
   priority convention (lower is more urgent) always meant, `1000 / (p + 1)`,
   so the dispatching order does not change. A negative priority now counts as
