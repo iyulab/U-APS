@@ -15,7 +15,7 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- The engine depends on `u-schedule` 0.12 and `u-metaheur` 0.6 (`u-schedule` 0.7
+- The engine depends on `u-schedule` 0.16 and `u-metaheur` 0.8 (`u-schedule` 0.7
   and `u-metaheur` 0.4 before; their configuration builders now refuse an
   out-of-range value instead of clamping it, and the engine passes none). `u-schedule` 0.11's WSPT and ATC read a task's weight instead of
   deriving it from its priority; the engine now hands them the weight its
