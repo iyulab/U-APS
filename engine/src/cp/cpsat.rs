@@ -1,6 +1,9 @@
-//! CP-SAT Enhanced Solver
+//! Branch-and-bound scheduler over a CP model.
 //!
-//! 향상된 제약 전파 및 탐색 기반 CP 솔버
+//! Depth-first branch and bound with constraint propagation and a makespan
+//! lower bound -- this crate's own search, not OR-Tools CP-SAT. The result is
+//! `Optimal` only when the search finishes within the time limit; a search cut
+//! off by the limit reports `Feasible` (best found) or `Timeout` (none found).
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -171,10 +174,12 @@ impl CpSatScheduler {
         let solution = self.solve_internal(&model);
         let schedule = self.solution_to_schedule(&solution, jobs, resources, start_time_ms);
         let elapsed = start_instant.elapsed().as_millis() as i64;
-        let status = if solution.is_solution_found() {
-            CpSatStatus::Optimal
-        } else {
-            CpSatStatus::Infeasible
+        // The search says how it ended; a solution found is not a proof.
+        let status = match solution.status {
+            SolverStatus::Optimal => CpSatStatus::Optimal,
+            SolverStatus::Feasible => CpSatStatus::Feasible,
+            SolverStatus::Timeout => CpSatStatus::Timeout,
+            _ => CpSatStatus::Infeasible,
         };
         CpSatResult {
             schedule,
@@ -252,8 +257,12 @@ impl CpSatScheduler {
         let mut best_makespan = i64::MAX;
         let mut stack = vec![initial_node];
         let mut num_nodes = 0u64;
+        // Optimality (or infeasibility) is proven only by a search that ran out
+        // of nodes; one stopped by the deadline proves neither.
+        let mut cut_off = false;
         while let Some(node) = stack.pop() {
             if Instant::now() > deadline {
+                cut_off = true;
                 break;
             }
             num_nodes += 1;
@@ -277,7 +286,11 @@ impl CpSatScheduler {
         }
         let elapsed = start_time.elapsed().as_millis() as i64;
         if let Some(node) = best_solution {
-            let mut solution = CpSolution::empty(SolverStatus::Optimal);
+            let mut solution = CpSolution::empty(if cut_off {
+                SolverStatus::Feasible
+            } else {
+                SolverStatus::Optimal
+            });
             for (name, interval) in &model.intervals {
                 let start = node.start_domains[name].value().unwrap_or(0);
                 let duration = interval.duration.fixed.unwrap_or(interval.duration.min);
@@ -296,7 +309,11 @@ impl CpSatScheduler {
             solution.num_nodes = num_nodes;
             solution
         } else {
-            let mut solution = CpSolution::empty(SolverStatus::Infeasible);
+            let mut solution = CpSolution::empty(if cut_off {
+                SolverStatus::Timeout
+            } else {
+                SolverStatus::Infeasible
+            });
             solution.solve_time_ms = elapsed;
             solution.num_nodes = num_nodes;
             solution
@@ -643,9 +660,14 @@ mod tests {
     fn test_cpsat_basic() {
         let jobs = create_test_jobs();
         let resources = create_test_resources();
-        let scheduler = CpSatScheduler::new(CpSatConfig::default());
+        // The search does not finish on this instance within any short limit,
+        // so the best schedule found is reported as Feasible, not Optimal.
+        let scheduler = CpSatScheduler::new(CpSatConfig {
+            time_limit_ms: 1000,
+            ..Default::default()
+        });
         let result = scheduler.schedule(&jobs, &resources, 0);
-        assert_eq!(result.status, CpSatStatus::Optimal);
+        assert_eq!(result.status, CpSatStatus::Feasible);
         assert!(result.schedule.makespan_ms > 0);
         assert_eq!(result.schedule.assignments.len(), 5);
     }
@@ -665,9 +687,14 @@ mod tests {
             );
         let jobs = vec![job];
         let resources = create_test_resources();
-        let scheduler = CpSatScheduler::new(CpSatConfig::default());
+        // The search does not finish on this instance within any short limit,
+        // so the best schedule found is reported as Feasible, not Optimal.
+        let scheduler = CpSatScheduler::new(CpSatConfig {
+            time_limit_ms: 1000,
+            ..Default::default()
+        });
         let result = scheduler.schedule(&jobs, &resources, 0);
-        assert_eq!(result.status, CpSatStatus::Optimal);
+        assert_eq!(result.status, CpSatStatus::Feasible);
         let o1 = result
             .schedule
             .assignments
@@ -704,12 +731,12 @@ mod tests {
         ];
         let resources = vec![Resource::equipment("M1").with_efficiency(1.0)];
         let scheduler = CpSatScheduler::new(CpSatConfig {
-            time_limit_ms: 5000,
+            time_limit_ms: 1000,
             propagation_strength: PropagationStrength::Extended,
             ..Default::default()
         });
         let result = scheduler.schedule(&jobs, &resources, 0);
-        assert_eq!(result.status, CpSatStatus::Optimal);
+        assert_eq!(result.status, CpSatStatus::Feasible);
         assert_eq!(result.schedule.assignments.len(), 3);
         assert!(result.schedule.makespan_ms >= 30000);
     }

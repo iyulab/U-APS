@@ -13,6 +13,15 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `CpSat` scheduler reported `Optimal` for any schedule it found and
+  `Infeasible` whenever it found none, whether or not its search had finished.
+  It now reports `Optimal` / `Infeasible` only when the branch-and-bound search
+  ran to completion within the time limit, and `Feasible` (best schedule found)
+  or `Timeout` (none found) when the limit cut it off. The documentation no
+  longer calls it CP-SAT or "exact": it is this engine's own branch and bound.
+
 ### Changed
 
 - The engine depends on `u-schedule` 0.16 and `u-metaheur` 0.8 (`u-schedule` 0.7

@@ -114,7 +114,7 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | **GeneticAlgorithm** | Metaheuristic | Medium problems (30-200 ops) |
 | **Production** | GA + extensions | Real manufacturing with setup/split/overlap |
 | **Dynamic** | Time-fence | Rescheduling with frozen horizons |
-| **CpSat** | Constraint Programming | Exact solutions for small problems |
+| **CpSat** | Branch and bound (own search, not OR-Tools CP-SAT) | Small problems — optimal when the search finishes within the time limit |
 | **Hybrid** | GA + SA | Large problems needing escape from local optima |
 | **Auto** | Adaptive | Selects algorithm based on problem characteristics |
 
