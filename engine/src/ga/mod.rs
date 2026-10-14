@@ -52,7 +52,7 @@ impl OperationInfo {
             id: self.activity_id.clone(),
             task_id: self.task_id.clone(),
             sequence: self.sequence,
-            process_ms: self.process_time_ms,
+            duration: u_schedule::models::ActivityDuration::fixed(self.process_time_ms),
             candidates: self.candidates.clone(),
         }
     }
