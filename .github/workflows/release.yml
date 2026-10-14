@@ -130,12 +130,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          # By the library's extension, not the runner name: the runner image is
+          # pinned per platform (ubuntu-24.04 for its glibc) and its name moves.
+          if [ "${{ matrix.ext }}" == "dll" ]; then
             cp engine/target/${{ matrix.target }}/release/uaps_engine.dll artifacts/uaps_engine-${{ matrix.rid }}.dll
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            cp engine/target/${{ matrix.target }}/release/libuaps_engine.so artifacts/uaps_engine-${{ matrix.rid }}.so
           else
-            cp engine/target/${{ matrix.target }}/release/libuaps_engine.dylib artifacts/uaps_engine-${{ matrix.rid }}.dylib
+            cp engine/target/${{ matrix.target }}/release/libuaps_engine.${{ matrix.ext }} artifacts/uaps_engine-${{ matrix.rid }}.${{ matrix.ext }}
           fi
 
       - name: Upload native library
