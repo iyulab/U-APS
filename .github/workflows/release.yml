@@ -358,7 +358,9 @@ jobs:
   publish-nuget:
     needs: [extract-version, build-dotnet, create-release]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.force_release == 'true'
+    # The registry decides (`should_release`, also true when forced) -- not the
+    # event: a manual run of a version nuget.org lacks must publish it too.
+    if: needs.extract-version.outputs.should_release == 'true'
     permissions:
       packages: write
     steps:
