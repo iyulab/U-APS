@@ -447,58 +447,56 @@ mod tests {
     }
 
     #[test]
-    fn test_production_100_benchmark() {
+    fn test_production_100_schedules() {
         let result = benchmark_production_100();
 
         assert_eq!(result.job_count, 100);
         assert!(result.makespan_ms > 0);
-
-        // 성능 기준: 1분 이내
-        println!("{}", result.format());
-        assert!(
-            result.passed,
-            "Production 100 jobs should complete within 1 minute"
-        );
     }
 
     #[test]
-    fn test_simple_500_benchmark() {
+    fn test_simple_500_schedules() {
         let result = benchmark_simple_500();
 
         assert_eq!(result.job_count, 500);
         assert!(result.makespan_ms > 0);
-
-        // 성능 기준: 10초 이내
-        println!("{}", result.format());
-        assert!(
-            result.passed,
-            "Simple 500 jobs should complete within 10 seconds"
-        );
     }
 
     #[test]
-    fn test_ga_50_benchmark() {
+    fn test_ga_50_schedules() {
         let result = benchmark_ga_50();
 
         assert_eq!(result.job_count, 50);
         assert!(result.makespan_ms > 0);
-
-        // 성능 기준: 1분 이내
-        println!("{}", result.format());
-        assert!(result.passed, "GA 50 jobs should complete within 1 minute");
     }
 
     #[test]
-    fn test_ga_100_benchmark() {
+    fn test_ga_100_schedules() {
         let result = benchmark_ga_100();
 
         assert_eq!(result.job_count, 100);
         assert!(result.makespan_ms > 0);
+    }
 
-        println!("{}", result.format());
+    /// Time budgets of the default-scale scenarios. Wall-clock, so it is
+    /// ignored by default: run it alone (`cargo test --release -- --ignored
+    /// --test-threads=1 time_budgets`) — under a parallel suite it measures
+    /// the load of the other tests.
+    #[test]
+    #[ignore]
+    fn test_default_scale_time_budgets() {
+        let results = [
+            benchmark_production_100(),
+            benchmark_simple_500(),
+            benchmark_ga_50(),
+            benchmark_ga_100(),
+        ];
+        for result in &results {
+            println!("{}", result.format());
+        }
         assert!(
-            result.passed,
-            "GA 100 jobs should complete within 2 minutes"
+            results.iter().all(|r| r.passed),
+            "every default-scale scenario should finish within its budget"
         );
     }
 
