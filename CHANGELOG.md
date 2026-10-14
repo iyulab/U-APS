@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-14
+
 ### Fixed
 
 - The `CpSat` scheduler reported `Optimal` for any schedule it found and
