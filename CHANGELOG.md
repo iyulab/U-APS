@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-17
+
 ### Changed
 
 - **The default (`Simple`) scheduler decides one operation at a time instead
