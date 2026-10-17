@@ -10,16 +10,16 @@
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
 
     <!-- Workbench Dependencies (WPF + Blazor Hybrid) -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.101" />
-    <PackageVersion Include="Radzen.Blazor" Version="11.3.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="10.0.110" />
+    <PackageVersion Include="Radzen.Blazor" Version="11.5.1" />
     <!-- Pin transitive dependency to fix GHSA-4cv2-4hjh-77rx vulnerability -->
     <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.6.1" />
 
     <!-- Test Dependencies -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <!-- AwesomeAssertions is the community fork of FluentAssertions 7, kept under
          the Apache 2.0 licence that FluentAssertions 8 left behind for a paid
          proprietary one. Namespace and package are renamed as of its v9. -->
