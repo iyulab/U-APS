@@ -194,4 +194,57 @@ public class ScheduleResultTests
         // Assert
         assignment.DurationMs.Should().Be(4000);
     }
+
+    /// <summary>
+    /// 다층 전략이 SDK 가 보내는 모양 그대로 엔진에 읽힌다: 첫 결정(t = 0)은 기본 규칙
+    /// LPT 로 가장 긴 작업을, 10 s 이후의 결정은 TimeAfter 전환 규칙으로 SPT 를 쓴다.
+    /// 엔진 쪽 같은 시나리오는 Rust 시험이 고정하고, 이 시험은 SDK 의 DTO 변환이 그
+    /// JSON 모양을 실제로 내는지를 고정한다.
+    /// </summary>
+    [Fact]
+    public void Schedule_MultiLayerStrategy_SwitchesRulesAtTheDecision()
+    {
+        // Arrange
+        using var client = new SchedulerClient();
+
+        static Job JobOf(string id, long ms) =>
+            Job.Create(id).WithOperation(
+                Operation.Create($"{id}-1", id, 1)
+                    .WithTime(0, ms, 0)
+                    .WithEquipment("EQP-001"));
+
+        var request = new ScheduleRequest
+        {
+            Jobs = [JobOf("A", 20000), JobOf("B", 30000), JobOf("C", 10000), JobOf("D", 40000)],
+            Resources = [Resource.Equipment("EQP-001")],
+            DispatchingConfig = new DispatchingConfig
+            {
+                PrimaryRule = "FIFO",
+                MultiLayer = new MultiLayerDispatchingConfig
+                {
+                    DefaultRule = "LPT",
+                    SwitchRules =
+                    [
+                        new RuleSwitchRule
+                        {
+                            Condition = RuleSwitchCondition.TimeAfter(10000),
+                            TargetRule = "SPT",
+                            Priority = 1
+                        }
+                    ]
+                }
+            }
+        };
+
+        // Act
+        var result = client.Schedule(request);
+
+        // Assert: t = 0 LPT -> D; t = 40 s SPT -> C, then A, then B
+        result.Success.Should().BeTrue(result.Error ?? "No error message");
+        long Start(string op) => result.Schedule!.GetAssignmentForOperation(op)!.StartMs;
+        Start("D-1").Should().Be(0);
+        Start("C-1").Should().Be(40000);
+        Start("A-1").Should().Be(50000);
+        Start("B-1").Should().Be(70000);
+    }
 }
