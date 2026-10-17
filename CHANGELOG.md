@@ -28,12 +28,17 @@ published to a registry — it ships inside those packages.
   were sorted once on an empty context and each was booked whole: LWKR behaved
   as SPT, MWKR as LPT, WINQ and LPUL as input order, CR and ATC could not see
   the clock, and a machine idled for a job that was not ready while another
-  waited. On Taillard's job-shop instances the same change took MWKR from a
-  55.3 % to a 21.9 % makespan gap in the underlying library. A schedule you
-  rely on may now differ in the order operations take a shared resource,
-  their start times and the makespan; the placement of one operation —
-  resource choice, efficiency, skills, calendars, set-ups, materials, crews,
-  sites — is the same code as before.
+  waited. On Taillard's 40 job-shop instances (`engine/examples/taillard.rs`:
+  one equipment per machine, no workers, calendars or set-ups) the mean
+  makespan gap to the best known bound was 805–809 % whichever rule ran — a
+  job was booked from its first operation to its last before the next was
+  looked at, so with differing routings the schedule came out almost serial
+  and the rules could not help — and is now 21.9 % with MWKR, 28.4 % FIFO,
+  30.3 % SPT, 47.9 % LWKR and 42.0 % with no rule (every job had the same
+  priority). A schedule you rely on may now differ in the order operations
+  take a shared resource, their start times and the makespan; the placement
+  of one operation — resource choice, efficiency, skills, calendars,
+  set-ups, materials, crews, sites — is the same code as before.
 - A job's `earliest_start` is kept: none of its operations starts before it.
   It used to be ignored.
 - Violations for due dates are reported in input order of the jobs (they were
