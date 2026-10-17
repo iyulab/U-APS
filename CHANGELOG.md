@@ -13,6 +13,42 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- **The default (`Simple`) scheduler decides one operation at a time instead
+  of one job at a time, so its schedules change.** Every unfinished job offers
+  its next operation, placed at its earliest start; the earliest start is the
+  decision time and the offers that can start then compete. The dispatching
+  rule (or, with none, the job priority — lower value first) picks one on a
+  context filled for that decision: the time, each job's work left, when it
+  joined the queue, how many other waiting jobs want its next machine, the
+  competitors' average operation and each resource's utilization. Before, jobs
+  were sorted once on an empty context and each was booked whole: LWKR behaved
+  as SPT, MWKR as LPT, WINQ and LPUL as input order, CR and ATC could not see
+  the clock, and a machine idled for a job that was not ready while another
+  waited. On Taillard's job-shop instances the same change took MWKR from a
+  55.3 % to a 21.9 % makespan gap in the underlying library. A schedule you
+  rely on may now differ in the order operations take a shared resource,
+  their start times and the makespan; the placement of one operation —
+  resource choice, efficiency, skills, calendars, set-ups, materials, crews,
+  sites — is the same code as before.
+- A job's `earliest_start` is kept: none of its operations starts before it.
+  It used to be ignored.
+- Violations for due dates are reported in input order of the jobs (they were
+  in the order the rule sorted them).
+
+### Fixed
+
+- `DispatchingConfig.MultiLayer`, which the SDK sends, was dropped without a
+  word. It is now used: at each decision the strategy picks the rule —
+  `default_rule` or the first (highest `priority`) switch rule whose condition
+  holds on the decision's state (time, delayed waiting jobs, queue length,
+  most urgent priority, a resource's utilization), or the weighted `layers`.
+  A switch condition is read as the SDK sends it (`{ "type": "TimeAfter",
+  "threshold": 3600000 }`, `{ "type": "UtilizationAbove", "resource_id":
+  "EQP-1", "threshold": 0.8 }`, `{ "type": "Always" }`); a name it does not
+  know, a missing `resource_id` or a fractional count is refused.
+
 ## [1.2.1] - 2026-10-14
 
 ### Fixed

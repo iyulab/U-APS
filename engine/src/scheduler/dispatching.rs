@@ -141,6 +141,12 @@ pub struct DispatchingConfig {
     pub primary_rule: DispatchingRuleName,
     /// Optional tie-breaker rule
     pub tie_breaker: Option<DispatchingRuleName>,
+    /// Multi-layer dispatching: when set, every decision picks its rule from
+    /// this (`default_rule` or the first switch rule whose condition holds at
+    /// that decision, or the weighted layers) and `primary_rule` / `tie_breaker`
+    /// are not read.
+    #[serde(default)]
+    pub multi_layer: Option<MultiLayerDispatchingConfig>,
 }
 
 impl DispatchingConfig {
@@ -148,12 +154,31 @@ impl DispatchingConfig {
         Self {
             primary_rule: rule,
             tie_breaker: None,
+            multi_layer: None,
+        }
+    }
+
+    /// The configuration of a multi-layer dispatching strategy.
+    pub fn multi_layer(config: MultiLayerDispatchingConfig) -> Self {
+        let simple = config.to_simple_config();
+        Self {
+            multi_layer: Some(config),
+            ..simple
         }
     }
 
     pub fn with_tie_breaker(mut self, rule: DispatchingRuleName) -> Self {
         self.tie_breaker = Some(rule);
         self
+    }
+
+    /// The rule engine for one decision: the multi-layer strategy's pick at that
+    /// decision (`context`) when there is one, else [`build_engine`](Self::build_engine).
+    pub fn engine_for(&self, context: &DispatchingContext) -> RuleEngine {
+        match &self.multi_layer {
+            Some(multi) => multi.build_engine(context),
+            None => self.build_engine(),
+        }
     }
 
     /// Build a RuleEngine from this configuration
@@ -207,8 +232,125 @@ impl DispatchingLayer {
     }
 }
 
-/// 동적 규칙 전환 조건
+/// A switch condition on the wire, as the SDK sends it: the condition's name,
+/// the number it compares with, and the resource it is about, if any.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuleSwitchConditionWire {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    threshold: f64,
+    #[serde(default)]
+    resource_id: Option<String>,
+}
+
+impl TryFrom<RuleSwitchConditionWire> for RuleSwitchCondition {
+    type Error = String;
+
+    fn try_from(wire: RuleSwitchConditionWire) -> Result<Self, String> {
+        let RuleSwitchConditionWire {
+            kind,
+            threshold,
+            resource_id,
+        } = wire;
+        let whole = |what: &str| -> Result<i64, String> {
+            if threshold.is_finite() && threshold.fract() == 0.0 {
+                Ok(threshold as i64)
+            } else {
+                Err(format!(
+                    "switch condition {kind}: threshold must be a whole number, got {threshold} ({what})"
+                ))
+            }
+        };
+        let resource = |kind: &str| -> Result<String, String> {
+            resource_id
+                .clone()
+                .ok_or_else(|| format!("switch condition {kind} needs a resource_id"))
+        };
+        Ok(match kind.as_str() {
+            "TimeAfter" => Self::TimeAfter {
+                threshold_ms: whole("milliseconds")?,
+            },
+            "TimeBefore" => Self::TimeBefore {
+                threshold_ms: whole("milliseconds")?,
+            },
+            "DelayedJobsExceed" => Self::DelayedJobsExceed {
+                count: usize::try_from(whole("a count")?)
+                    .map_err(|_| format!("switch condition {kind}: count cannot be negative"))?,
+            },
+            "UtilizationAbove" => Self::UtilizationAbove {
+                resource_id: resource(&kind)?,
+                threshold,
+            },
+            "UtilizationBelow" => Self::UtilizationBelow {
+                resource_id: resource(&kind)?,
+                threshold,
+            },
+            "QueueLengthAbove" => Self::QueueLengthAbove {
+                threshold: usize::try_from(whole("a count")?).map_err(|_| {
+                    format!("switch condition {kind}: threshold cannot be negative")
+                })?,
+            },
+            "HasUrgentJobs" => Self::HasUrgentJobs {
+                priority_threshold: i32::try_from(whole("a priority")?).map_err(|_| {
+                    format!("switch condition {kind}: priority threshold out of range")
+                })?,
+            },
+            "Always" => Self::Always,
+            other => {
+                return Err(format!(
+                    "unknown switch condition '{other}'; one of TimeAfter, TimeBefore, \
+                     DelayedJobsExceed, UtilizationAbove, UtilizationBelow, QueueLengthAbove, \
+                     HasUrgentJobs, Always"
+                ))
+            }
+        })
+    }
+}
+
+impl From<RuleSwitchCondition> for RuleSwitchConditionWire {
+    fn from(condition: RuleSwitchCondition) -> Self {
+        let named = |kind: &str, threshold: f64, resource_id: Option<String>| Self {
+            kind: kind.to_string(),
+            threshold,
+            resource_id,
+        };
+        match condition {
+            RuleSwitchCondition::TimeAfter { threshold_ms } => {
+                named("TimeAfter", threshold_ms as f64, None)
+            }
+            RuleSwitchCondition::TimeBefore { threshold_ms } => {
+                named("TimeBefore", threshold_ms as f64, None)
+            }
+            RuleSwitchCondition::DelayedJobsExceed { count } => {
+                named("DelayedJobsExceed", count as f64, None)
+            }
+            RuleSwitchCondition::UtilizationAbove {
+                resource_id,
+                threshold,
+            } => named("UtilizationAbove", threshold, Some(resource_id)),
+            RuleSwitchCondition::UtilizationBelow {
+                resource_id,
+                threshold,
+            } => named("UtilizationBelow", threshold, Some(resource_id)),
+            RuleSwitchCondition::QueueLengthAbove { threshold } => {
+                named("QueueLengthAbove", threshold as f64, None)
+            }
+            RuleSwitchCondition::HasUrgentJobs { priority_threshold } => {
+                named("HasUrgentJobs", f64::from(priority_threshold), None)
+            }
+            RuleSwitchCondition::Always => named("Always", 0.0, None),
+        }
+    }
+}
+
+/// 동적 규칙 전환 조건
+///
+/// On the wire (JSON): `{ "type": "TimeAfter", "threshold": 3600000 }`,
+/// `{ "type": "UtilizationAbove", "resource_id": "EQP-1", "threshold": 0.8 }`,
+/// `{ "type": "Always" }` -- the shape the SDK sends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RuleSwitchConditionWire", into = "RuleSwitchConditionWire")]
 pub enum RuleSwitchCondition {
     /// 시간 기반: 특정 시간 이후 규칙 변경
     TimeAfter { threshold_ms: i64 },
@@ -423,6 +565,7 @@ impl MultiLayerDispatchingConfig {
         DispatchingConfig {
             primary_rule: primary,
             tie_breaker,
+            multi_layer: None,
         }
     }
 }
