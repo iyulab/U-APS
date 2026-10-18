@@ -49,6 +49,16 @@ published to a registry — it ships inside those packages.
   each other and their jobs' order, and is replaced by the next item. A
   request that splits or overlaps operations still goes to the previous
   genetic algorithm with any of the three, with the same warning.
+- **`Auto` picks `CpSat` only for a request its model states whole** — a
+  plain job shop: one machine per operation, processing times only, no
+  workers, calendars, release times, set-ups or other extensions. A small
+  request with any of them goes to `Production` (the search). `Auto` used to
+  pick `CpSat` for every request of up to 50 operations × resources, and its
+  schedule broke whatever else the request asked. `Hybrid` likewise runs its
+  `CpSat` phase only for such a request, and is then the genetic algorithm
+  alone (no longer spending its time limit on a phase whose schedule could
+  not be kept). `CpSat` chosen by name says in a warning which of the
+  request's features its schedule does not keep.
 - **A pegging engine's material availability is a release time for every
   algorithm**: an operation waits for its pegged materials, as for a
   material manager's arrival. Only `Dynamic` read it before, and only after

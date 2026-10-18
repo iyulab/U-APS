@@ -480,30 +480,6 @@ impl SchedulingEngine {
         }
     }
 
-    /// 선택된 알고리즘이 지원하지 않는 확장 필드가 채워져 있으면 경고 로그를 남긴다.
-    /// 채워둔 값이 조용히 무시되는 것과, 로그로 드러나는 무시는 호출자 입장에서
-    /// 완전히 다른 신뢰도를 준다 — 스케줄링 결과 자체는 바꾸지 않는다.
-    fn warn_unsupported_extensions(&mut self, unsupported: &[(&str, bool)]) {
-        let ignored: Vec<&str> = unsupported
-            .iter()
-            .filter(|(_, is_set)| *is_set)
-            .map(|(name, _)| *name)
-            .collect();
-        if ignored.is_empty() {
-            return;
-        }
-        let algorithm = self.config.algorithm;
-        self.log(
-            LogLevel::Warn,
-            &format!(
-                "{:?} does not use: {} (value set on EngineConfig but ignored by this algorithm)",
-                algorithm,
-                ignored.join(", ")
-            ),
-            None,
-        );
-    }
-
     /// A search over the default scheduler's order within `params`' budget,
     /// or — for a request that splits or overlaps operations — this engine's
     /// own GA. The genetic algorithm, Production and Dynamic all run here:
@@ -591,31 +567,19 @@ impl SchedulingEngine {
 
             SchedulingAlgorithm::CpSat => {
                 self.log(LogLevel::Debug, "Using CP-SAT scheduler", None);
-                self.warn_unsupported_extensions(&[
-                    ("setup_matrices", !self.config.setup_matrices.is_empty()),
-                    ("site_transitions", !self.config.site_transitions.is_empty()),
-                    ("calendars", !self.config.calendars.is_empty()),
-                    ("skill_matrix", self.config.skill_matrix.is_some()),
-                    (
-                        "worker_time_override",
-                        self.config.worker_time_override.is_some(),
-                    ),
-                    (
-                        "dispatching_config",
-                        self.config.dispatching_config.is_some(),
-                    ),
-                    ("material_manager", self.config.material_manager.is_some()),
-                    (
-                        "certification_matrix",
-                        self.config.certification_matrix.is_some(),
-                    ),
-                    ("crew_manager", self.config.crew_manager.is_some()),
-                    ("pegging_engine", self.config.pegging_engine.is_some()),
-                    (
-                        "outsourcing_manager",
-                        self.config.outsourcing_manager.is_some(),
-                    ),
-                ]);
+                let unstated = cp_unstated(jobs, resources, &self.config);
+                if !unstated.is_empty() {
+                    self.log(
+                        LogLevel::Warn,
+                        &format!(
+                            "CpSat states each operation as its processing time on one machine; \
+                             this request also has {}, which its schedule does not keep \
+                             (reported as violations)",
+                            unstated.join(", ")
+                        ),
+                        None,
+                    );
+                }
                 let config = self.effective_cpsat_config();
                 let scheduler = CpSatScheduler::new(config);
                 let result = scheduler.schedule(jobs, resources, start_time_ms);
@@ -624,7 +588,11 @@ impl SchedulingEngine {
 
             SchedulingAlgorithm::Auto => {
                 let operation_count: usize = jobs.iter().map(|j| j.operations.len()).sum();
-                let selected = select_algorithm(operation_count, resources.len());
+                let selected = select_algorithm(
+                    operation_count,
+                    resources.len(),
+                    cp_unstated(jobs, resources, &self.config).is_empty(),
+                );
                 self.log(
                     LogLevel::Info,
                     &format!(
@@ -651,7 +619,21 @@ impl SchedulingEngine {
             SchedulingAlgorithm::Hybrid => {
                 self.log(LogLevel::Info, "Hybrid scheduling: CP-SAT → GA", None);
 
-                // Phase 1: CP-SAT with short time limit
+                // Phase 1: CP-SAT, when its model states the whole request —
+                // otherwise its schedule breaks the request and is never kept.
+                let unstated = cp_unstated(jobs, resources, &self.config);
+                if !unstated.is_empty() {
+                    self.log(
+                        LogLevel::Info,
+                        &format!(
+                            "CP-SAT phase skipped: the request has {}",
+                            unstated.join(", ")
+                        ),
+                        None,
+                    );
+                    let params = self.effective_ga_params();
+                    return self.run_ga(jobs, resources, start_time_ms, params);
+                }
                 let cpsat_config = self.effective_cpsat_config();
                 let cpsat_scheduler = CpSatScheduler::new(cpsat_config);
                 let cpsat_result = cpsat_scheduler.schedule(jobs, resources, start_time_ms);
@@ -750,11 +732,109 @@ impl SchedulingEngine {
     }
 }
 
-/// 문제 특성 기반 알고리즘 자동 선택
-fn select_algorithm(operation_count: usize, resource_count: usize) -> SchedulingAlgorithm {
+/// What a request has that the CP-SAT model does not state — it states each
+/// operation as its processing time on the first candidate of its first
+/// requirement, in its job's list order, from the start time. Empty when the
+/// model is the whole request (a plain job shop).
+fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> Vec<&'static str> {
+    use crate::ResourceType;
+    let ops = || jobs.iter().flat_map(|j| &j.operations);
+    let mut has = Vec::new();
+    let mut note = |what: &'static str, yes: bool| {
+        if yes {
+            has.push(what);
+        }
+    };
+    note(
+        "alternative or several resources",
+        ops().any(|o| {
+            o.required_resources.len() > 1
+                || o.required_resources.iter().any(|r| r.candidates.len() != 1)
+        }),
+    );
+    note(
+        "worker requirements",
+        ops().any(|o| {
+            o.required_resources
+                .iter()
+                .any(|r| r.resource_type == ResourceType::Worker)
+        }),
+    );
+    note(
+        "operations without resources",
+        ops().any(|o| o.required_resources.is_empty()),
+    );
+    note(
+        "set-up or wait times",
+        ops().any(|o| o.time.setup_ms > 0 || o.time.wait_ms > 0),
+    );
+    note(
+        "operations out of sequence order",
+        jobs.iter().any(|j| {
+            j.operations
+                .windows(2)
+                .any(|w| w[0].sequence > w[1].sequence)
+        }),
+    );
+    note(
+        "release times or time windows",
+        jobs.iter().any(|j| j.earliest_start.is_some()) || ops().any(|o| o.time_window.is_some()),
+    );
+    note("dependencies", ops().any(|o| !o.dependencies.is_empty()));
+    note(
+        "daily work windows",
+        ops().any(|o| o.daily_work_window.is_some()),
+    );
+    note(
+        "splitting or overlap",
+        ops().any(|o| o.is_splittable || o.overlap_config.is_some()),
+    );
+    note(
+        "materials",
+        ops().any(|o| !o.material_requirements.is_empty())
+            || config.material_manager.is_some()
+            || config.pegging_engine.is_some(),
+    );
+    note(
+        "outsourcing",
+        ops().any(|o| o.outsourcing_config.is_some()) || config.outsourcing_manager.is_some(),
+    );
+    note("crews", ops().any(|o| o.crew_id.is_some()));
+    note(
+        "target sites",
+        jobs.iter().any(|j| j.target_site_id.is_some()),
+    );
+    note(
+        "resource efficiencies or capacities",
+        resources
+            .iter()
+            .any(|r| r.efficiency != 1.0 || r.capacity > 1),
+    );
+    note(
+        "calendars",
+        !config.calendars.is_empty() || resources.iter().any(|r| r.calendar_id.is_some()),
+    );
+    note("set-up matrices", !config.setup_matrices.is_empty());
+    note("site transitions", !config.site_transitions.is_empty());
+    note(
+        "skill or certification matrices",
+        config.skill_matrix.is_some()
+            || config.certification_matrix.is_some()
+            || config.worker_time_override.is_some(),
+    );
+    has
+}
+
+/// 문제 특성 기반 알고리즘 자동 선택 — CP-SAT 는 그 모델이 요청 전부를 말할 때만
+/// (`cp_unstated` 가 빔), 아니면 같은 크기에서 탐색.
+fn select_algorithm(
+    operation_count: usize,
+    resource_count: usize,
+    cp_fits: bool,
+) -> SchedulingAlgorithm {
     let complexity = operation_count * resource_count;
 
-    if complexity <= 50 {
+    if complexity <= 50 && cp_fits {
         SchedulingAlgorithm::CpSat
     } else if complexity <= 500 {
         SchedulingAlgorithm::Production
@@ -949,7 +1029,7 @@ mod tests {
             result
                 .logs
                 .iter()
-                .any(|l| l.level == "WARN" && l.message.contains("setup_matrices")),
+                .any(|l| l.level == "WARN" && l.message.contains("set-up matrices")),
             "expected a WARN log naming setup_matrices as unsupported, got: {:?}",
             result.logs
         );
@@ -973,20 +1053,76 @@ mod tests {
 
     #[test]
     fn test_select_algorithm_heuristic() {
-        // 소규모 (complexity <= 50): CpSat
-        assert_eq!(select_algorithm(5, 5), SchedulingAlgorithm::CpSat);
-        assert_eq!(select_algorithm(10, 5), SchedulingAlgorithm::CpSat);
+        // 소규모 (complexity <= 50): CpSat, when its model is the whole request
+        assert_eq!(select_algorithm(5, 5, true), SchedulingAlgorithm::CpSat);
+        assert_eq!(select_algorithm(10, 5, true), SchedulingAlgorithm::CpSat);
+        assert_eq!(
+            select_algorithm(5, 5, false),
+            SchedulingAlgorithm::Production
+        );
 
         // 중규모 (50 < complexity <= 500): Production
-        assert_eq!(select_algorithm(20, 10), SchedulingAlgorithm::Production);
-        assert_eq!(select_algorithm(50, 10), SchedulingAlgorithm::Production);
+        assert_eq!(
+            select_algorithm(20, 10, true),
+            SchedulingAlgorithm::Production
+        );
+        assert_eq!(
+            select_algorithm(50, 10, true),
+            SchedulingAlgorithm::Production
+        );
 
         // 대규모 (complexity > 500): GA
         assert_eq!(
-            select_algorithm(100, 10),
+            select_algorithm(100, 10, true),
             SchedulingAlgorithm::GeneticAlgorithm
         );
     }
+    #[test]
+    fn cp_sat_is_chosen_or_tried_only_for_a_request_its_model_states() {
+        let plain = vec![Job::new("J1").with_operation(
+            Operation::new("O1", "J1", 1)
+                .with_time(0, 3000, 0)
+                .with_equipment(vec!["M1".to_string()]),
+        )];
+        let resources = vec![Resource::equipment("M1"), Resource::worker("W1")];
+        assert!(cp_unstated(&plain, &resources[..1], &EngineConfig::default()).is_empty());
+        let mut crewed = plain.clone();
+        crewed[0].operations[0] = crewed[0].operations[0].clone().with_workers(1);
+        assert_eq!(
+            cp_unstated(&crewed, &resources, &EngineConfig::default()),
+            ["alternative or several resources", "worker requirements"]
+        );
+
+        let quick = Some(GaParams {
+            max_generations: 5,
+            ..GaParams::default()
+        });
+        for (algorithm, expected) in [
+            (
+                SchedulingAlgorithm::Auto,
+                "Auto-selected algorithm: Production",
+            ),
+            (SchedulingAlgorithm::Hybrid, "CP-SAT phase skipped"),
+        ] {
+            let mut engine = SchedulingEngine::new(EngineConfig {
+                algorithm,
+                ga_params: quick.clone(),
+                production_config: Some(ProductionConfig {
+                    ga_params: quick.clone().expect("set"),
+                    ..ProductionConfig::default()
+                }),
+                ..Default::default()
+            });
+            let result = engine.schedule(&crewed, &resources, 0).unwrap();
+            assert!(
+                result.logs.iter().any(|l| l.message.contains(expected)),
+                "{algorithm:?}: {:?}",
+                result.logs
+            );
+            assert!(result.schedule.violations.is_empty(), "{algorithm:?}");
+        }
+    }
+
     #[test]
     fn test_hybrid_scheduling() {
         let jobs = vec![
@@ -1259,10 +1395,16 @@ mod tests {
         // 회귀 가드: `Auto`는 내부적으로 새 `SchedulingEngine`을 만들어 위임한다 — 그
         // 내부 엔진이 남긴 로그(예: 이 경고)를 병합하지 않으면 호출자에게는 아무
         // 로그도 보이지 않는다.
-        let (jobs, resources) = create_test_scenario();
+        // A splittable operation: the selected search warns that the
+        // previous genetic algorithm takes the request.
+        let (mut jobs, resources) = create_test_scenario();
+        jobs[0].operations[0].is_splittable = true;
         let config = EngineConfig {
             algorithm: SchedulingAlgorithm::Auto,
-            skill_matrix: Some(SkillMatrix::new()),
+            ga_params: Some(GaParams {
+                max_generations: 5,
+                ..GaParams::default()
+            }),
             ..Default::default()
         };
         let mut engine = SchedulingEngine::new(config);
@@ -1272,7 +1414,7 @@ mod tests {
             result
                 .logs
                 .iter()
-                .any(|l| l.level == "WARN" && l.message.contains("skill_matrix")),
+                .any(|l| l.level == "WARN" && l.message.contains("splits or overlaps")),
             "Auto delegates to an inner engine — its warnings must surface in the outer result: {:?}",
             result.logs
         );
