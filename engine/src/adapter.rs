@@ -37,8 +37,6 @@ pub enum Unsupported {
     /// Resources taken together: a robot that occupies its linked cell, a
     /// crew.
     ResourceBundle,
-    /// Work that pauses over a calendar break and resumes after it.
-    ResumableActivity,
     /// A set-up charged before a resource's first activity.
     InitialSetup,
     /// A release for one operation rather than the whole job (a material
@@ -90,9 +88,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 unsupported.insert(Unsupported::ResourceBundle);
             }
             if let Some(calendar) = r.calendar_id.as_deref().and_then(|id| calendars.get(id)) {
-                if !calendar.breaks.is_empty() || !calendar.shifts.is_empty() {
-                    unsupported.insert(Unsupported::ResumableActivity);
-                }
                 out = out.with_calendar(windows(calendar, request.start_time_ms));
             }
             if r.kind == ResourceKind::Worker {
@@ -153,10 +148,17 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 {
                     unsupported.insert(Unsupported::ActivityShape);
                 }
-                let mut activity = Activity::new(&op.id, &job.id, op.sequence).with_duration(
-                    // A u-aps wait holds the resource after processing.
-                    ActivityDuration::new(op.time.setup_ms, op.time.process_ms, op.time.wait_ms),
-                );
+                let mut activity = Activity::new(&op.id, &job.id, op.sequence)
+                    .with_duration(
+                        // A u-aps wait holds the resource after processing.
+                        ActivityDuration::new(
+                            op.time.setup_ms,
+                            op.time.process_ms,
+                            op.time.wait_ms,
+                        ),
+                    )
+                    // u-aps splits every operation at its calendar's breaks.
+                    .resumable();
                 for req in &op.required_resources {
                     if req.load_factor < 1.0 {
                         unsupported.insert(Unsupported::FractionalResourceUse);

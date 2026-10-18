@@ -78,14 +78,12 @@
   "g08_calendar_spans_lunch_and_night": {
     "makespan_ms": {
       "u_aps": 1706011200000,
-      "u_schedule": 1705939200000
+      "u_schedule": 1706011200000
     },
-    "placements_differing": 3,
-    "same_schedule": false,
-    "u_schedule_violations": 1,
-    "unsupported": [
-      "ResumableActivity"
-    ]
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 0,
+    "unsupported": []
   },
   "g09_skill_proficiency": {
     "makespan_ms": {
