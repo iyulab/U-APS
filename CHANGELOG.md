@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-18
+
 ### Changed
 
 - **`GeneticAlgorithm` now searches the order the default scheduler takes
