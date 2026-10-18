@@ -29,6 +29,7 @@ struct Features {
     calendar: bool,
     switching: bool,
     materials: bool,
+    time_only: bool,
 }
 
 impl Features {
@@ -44,6 +45,7 @@ impl Features {
         calendar: true,
         switching: true,
         materials: true,
+        time_only: true,
     };
 }
 
@@ -102,13 +104,16 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                     let i = rng.random_range(0..candidates.len());
                     candidates.remove(i);
                 }
-                let mut op = Operation::new(format!("{id}-{k}"), &id, k + 1)
-                    .with_time(
-                        rng.random_range(0..3) * 60_000,
-                        rng.random_range(1..12) * 10 * 60_000,
-                        0,
-                    )
-                    .with_equipment(candidates);
+                let mut op = Operation::new(format!("{id}-{k}"), &id, k + 1).with_time(
+                    rng.random_range(0..3) * 60_000,
+                    rng.random_range(1..12) * 10 * 60_000,
+                    0,
+                );
+                // A step that holds nothing (a cure, a wait).
+                let time_only = f.time_only && rng.random_bool(0.25);
+                if !time_only {
+                    op = op.with_equipment(candidates);
+                }
                 if f.materials && rng.random_bool(0.4) {
                     let mut need = MaterialRequirement::new(
                         ["STEEL", "BOLT"][rng.random_range(0..2)],
@@ -124,7 +129,7 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                     }
                     op = op.with_material(need);
                 }
-                if n_workers > 0 && rng.random_bool(0.5) {
+                if !time_only && n_workers > 0 && rng.random_bool(0.5) {
                     op = if rng.random_bool(0.5) {
                         op.with_workers_load(1, [0.25, 0.5][rng.random_range(0..2)])
                     } else {
@@ -240,6 +245,36 @@ fn first_difference(path: &str, a: &Value, b: &Value) -> Option<String> {
     }
 }
 
+/// The engine's schedule in u-schedule's terms, for its feasibility check:
+/// an assignment per resource, an operation without resources (`NONE`) as a
+/// time-only span.
+fn as_u_schedule(s: &Schedule) -> u_schedule::models::Schedule {
+    use u_schedule::models::{Assignment as USAssignment, TimeOnlySpan};
+    let mut us = u_schedule::models::Schedule::new();
+    for a in &s.assignments {
+        if a.resource_id == "NONE" {
+            us.time_only.push(TimeOnlySpan::new(
+                &a.operation_id,
+                &a.job_id,
+                a.start_ms,
+                a.end_ms,
+            ));
+        } else {
+            us.add_assignment(
+                USAssignment::new(
+                    &a.operation_id,
+                    &a.job_id,
+                    &a.resource_id,
+                    a.start_ms,
+                    a.end_ms,
+                )
+                .with_setup(a.setup_ms),
+            );
+        }
+    }
+    us
+}
+
 /// Requests with `f`'s features: how many schedule the same, and the first
 /// differences.
 fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
@@ -269,7 +304,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 12] = [
+    let alone: [(&str, Features); 13] = [
         ("plain", plain),
         (
             "alternatives",
@@ -343,6 +378,14 @@ fn differences_by_feature() {
                 ..plain
             },
         ),
+        (
+            "time-only",
+            Features {
+                time_only: true,
+                calendar: true,
+                ..plain
+            },
+        ),
     ];
     for (name, f) in alone.into_iter().chain([("all", Features::ALL)]) {
         let (same, differing, not_rebased) = compare(f, 300);
@@ -362,7 +405,6 @@ fn differences_by_feature() {
 #[test]
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn quality_of_both_schedules() {
-    use u_schedule::models::Assignment as USAssignment;
     use u_schedule::scheduler::{check_schedule, FeasibilityInput};
 
     let mut rng = SmallRng::seed_from_u64(20261018);
@@ -379,21 +421,8 @@ fn quality_of_both_schedules() {
         let adapted = uaps_engine::adapter::to_problem(&request);
         let problem = adapted.problem.expect("adapted");
         let judge = |s: &Schedule| {
-            let mut us = u_schedule::models::Schedule::new();
-            for a in &s.assignments {
-                us.add_assignment(
-                    USAssignment::new(
-                        &a.operation_id,
-                        &a.job_id,
-                        &a.resource_id,
-                        a.start_ms,
-                        a.end_ms,
-                    )
-                    .with_setup(a.setup_ms),
-                );
-            }
             check_schedule(
-                &us,
+                &as_u_schedule(s),
                 &FeasibilityInput {
                     tasks: problem.tasks(),
                     resources: problem.resources(),
@@ -449,7 +478,6 @@ fn quality_of_both_schedules() {
 /// engine's schedule is read back.
 #[test]
 fn rebased_schedules_keep_random_requests() {
-    use u_schedule::models::Assignment as USAssignment;
     use u_schedule::scheduler::{check_schedule, FeasibilityInput};
 
     let mut rng = SmallRng::seed_from_u64(7);
@@ -461,21 +489,8 @@ fn rebased_schedules_keep_random_requests() {
         let problem = uaps_engine::adapter::to_problem(&request)
             .problem
             .expect("adapted");
-        let mut us = u_schedule::models::Schedule::new();
-        for a in &schedule.assignments {
-            us.add_assignment(
-                USAssignment::new(
-                    &a.operation_id,
-                    &a.job_id,
-                    &a.resource_id,
-                    a.start_ms,
-                    a.end_ms,
-                )
-                .with_setup(a.setup_ms),
-            );
-        }
         let broken: Vec<_> = check_schedule(
-            &us,
+            &as_u_schedule(&schedule),
             &FeasibilityInput {
                 tasks: problem.tasks(),
                 resources: problem.resources(),

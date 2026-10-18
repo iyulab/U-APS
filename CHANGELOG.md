@@ -13,6 +13,21 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- An operation without resources is now scheduled by the default scheduler's
+  new path too (it used to send the whole request to the previous
+  scheduler). It still runs on the request's first calendar and is reported
+  on `NONE`.
+
+### Fixed
+
+- An operation without resources that runs into a break no longer starts
+  over after it: it pauses and resumes, as operations with resources always
+  have. Before, the work done before the break was thrown away while the
+  reported start stayed before it, so the operation and its job ended up to
+  the length of that work later.
+
 ## [1.4.0] - 2026-10-18
 
 ### Changed

@@ -33,9 +33,6 @@ const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 /// general capability it needs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unsupported {
-    /// An operation with no resource, which u-aps still places in time on
-    /// the request's first calendar.
-    TimeOnlyActivity,
     /// A requirement no resource can fill — a job's target site has none of
     /// the operation's equipment; u-aps schedules the operation without it.
     UnfillableRequirement,
@@ -102,6 +99,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         })
         .collect();
 
+    // u-aps runs an operation without resources on the request's first
+    // calendar.
+    let default_calendar = request
+        .calendars
+        .first()
+        .map(|c| windows(c, request.start_time_ms));
+
     let qualified_by_type =
         request.skill_matrix.is_some() || request.certification_matrix.is_some();
     if request.pegging_engine.is_some() || request.outsourcing_manager.is_some() {
@@ -143,9 +147,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         op_release = Some(at);
                     }
                 }
-                if op.required_resources.is_empty() {
-                    unsupported.insert(Unsupported::TimeOnlyActivity);
-                }
                 // u-aps takes an operational crew whole, in place of the
                 // operation's worker requirements.
                 let crew = op
@@ -177,6 +178,11 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     .resumable();
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
+                }
+                if op.required_resources.is_empty() {
+                    if let Some(calendar) = &default_calendar {
+                        activity = activity.with_calendar(calendar.clone());
+                    }
                 }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {

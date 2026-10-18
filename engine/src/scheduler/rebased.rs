@@ -4,8 +4,9 @@
 //! scheduled by its `SimpleScheduler`, and read back into this engine's
 //! [`Schedule`]: an assignment per resource with its site (a linked resource
 //! u-schedule books as a companion is not reported, as before), the
-//! operation's work split at its calendar's breaks into tasks, and the
-//! material and due-date violations.
+//! operation's work split at its calendar's breaks into tasks (an operation
+//! without resources as one on `NONE`, split on the request's first
+//! calendar, as before), and the material and due-date violations.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -83,13 +84,44 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
 
     let mut schedule = Schedule::new();
 
-    // Placements in the order u-schedule made them, one operation at a time.
-    let mut order: Vec<&str> = Vec::new();
+    // Placements in the order u-schedule made them, one operation at a time
+    // — by start, since it decides at the earliest start each time. An
+    // operation without resources competes for nothing; it goes where its
+    // start falls, as this engine records it, after the placements starting
+    // no later (after the operation before it, too), jobs in input order.
+    let job_index: HashMap<&str, usize> = request
+        .jobs
+        .iter()
+        .enumerate()
+        .map(|(i, j)| (j.id.as_str(), i))
+        .collect();
+    let mut order: Vec<(&str, (i64, usize))> = Vec::new();
     for a in &placed.assignments {
-        if !order.contains(&a.activity_id.as_str()) {
-            order.push(&a.activity_id);
+        if !order.iter().any(|(id, _)| *id == a.activity_id) {
+            order.push((&a.activity_id, (a.start_ms, job_index[a.task_id.as_str()])));
         }
     }
+    let mut time_only: Vec<(&str, (i64, usize))> = placed
+        .time_only
+        .iter()
+        .map(|s| {
+            (
+                s.activity_id.as_str(),
+                (s.start_ms, job_index[s.task_id.as_str()]),
+            )
+        })
+        .collect();
+    time_only.sort_by_key(|&(_, key)| key);
+    for (id, key) in time_only {
+        // At a common start the decisions went by rule; jobs in input order
+        // is how this engine breaks ties.
+        let at = order
+            .iter()
+            .position(|&(_, k)| k > key)
+            .unwrap_or(order.len());
+        order.insert(at, (id, key));
+    }
+    let order: Vec<&str> = order.into_iter().map(|(id, _)| id).collect();
     let activities: HashMap<&str, &u_schedule::models::Activity> = problem
         .tasks()
         .iter()
@@ -130,6 +162,31 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
                     available,
                 )),
             }
+        }
+        if let Some(span) = placed.time_only_for_activity(op_id) {
+            reached.insert(job.id.as_str(), span.end_ms);
+            schedule.add_assignment(Assignment::new(
+                op_id,
+                &job.id,
+                "NONE",
+                span.start_ms,
+                span.end_ms,
+            ));
+            let split = split_operation_by_calendar(
+                op_id,
+                &job.id,
+                job.product_name.as_deref(),
+                span.start_ms,
+                op.time.setup_ms,
+                op.time.process_ms + op.time.wait_ms,
+                op.is_splittable,
+                request.calendars.first(),
+                op.daily_work_window,
+            );
+            for task in split.tasks {
+                schedule.add_task(task);
+            }
+            continue;
         }
         let all: Vec<&u_schedule::models::Assignment> = placed
             .assignments
