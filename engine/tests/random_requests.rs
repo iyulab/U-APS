@@ -334,3 +334,103 @@ fn schedules_keep_random_requests() {
         assert!(broken.is_empty(), "case {case}: {broken:?}");
     }
 }
+
+/// The other algorithms (`SchedulingEngine` with `algorithm` set) on random
+/// requests using only what every one of them reads — alternatives,
+/// efficiencies, workers, set-ups, priorities, due dates, release times —
+/// judged by the same check: how many schedules break the request, and how.
+#[test]
+#[ignore = "measurement: run with --ignored --nocapture"]
+fn algorithms_on_random_requests() {
+    use u_schedule::scheduler::{check_schedule, FeasibilityInput};
+
+    let features = Features {
+        alternatives: true,
+        efficiency: true,
+        workers: true,
+        setups: true,
+        priority: true,
+        due: true,
+        release: true,
+        ..Features::default()
+    };
+    let algorithms = [
+        SchedulingAlgorithm::Simple,
+        SchedulingAlgorithm::GeneticAlgorithm,
+        SchedulingAlgorithm::Production,
+        SchedulingAlgorithm::Dynamic,
+        SchedulingAlgorithm::CpSat,
+        SchedulingAlgorithm::Hybrid,
+    ];
+    // UAPS_MEASURE_ALGORITHMS=CpSat,Hybrid picks the algorithms — CP-SAT and
+    // Hybrid run only when named (each request takes CP-SAT's time limit).
+    let only = std::env::var("UAPS_MEASURE_ALGORITHMS").ok();
+    let cases: usize = std::env::var("UAPS_MEASURE_CASES")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(100);
+    for algorithm in algorithms {
+        let named = |names: &String| names.split(',').any(|n| n == format!("{algorithm:?}"));
+        let slow = matches!(
+            algorithm,
+            SchedulingAlgorithm::CpSat | SchedulingAlgorithm::Hybrid
+        );
+        if only.as_ref().map_or(slow, |names| !named(names)) {
+            continue;
+        }
+        let mut rng = SmallRng::seed_from_u64(20261018);
+        let started = std::time::Instant::now();
+        let (mut broken, mut failed, mut makespan) = (0, 0, 0i64);
+        let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
+        for _ in 0..cases {
+            let request = random_request(&mut rng, features);
+            let config = EngineConfig {
+                algorithm,
+                ga_params: Some(GaParams {
+                    population_size: 20,
+                    max_generations: 20,
+                    ..GaParams::default()
+                }),
+                setup_matrices: request.setup_matrices.clone(),
+                validate_input: false,
+                ..EngineConfig::default()
+            };
+            let mut engine = SchedulingEngine::new(config);
+            let Ok(result) =
+                engine.schedule(&request.jobs, &request.resources, request.start_time_ms)
+            else {
+                failed += 1;
+                continue;
+            };
+            let schedule = result.schedule;
+            // The latest end (CP-SAT's `makespan_ms` is not on the same clock).
+            let end = schedule.assignments.iter().map(|a| a.end_ms).max();
+            makespan += end.map_or(0, |e| e - request.start_time_ms);
+            let problem = uaps_engine::adapter::to_problem(&request)
+                .problem
+                .expect("adapted");
+            let reported = reported_unfilled(&schedule);
+            let violations: Vec<_> = check_schedule(
+                &as_u_schedule(&schedule),
+                &FeasibilityInput {
+                    tasks: problem.tasks(),
+                    resources: problem.resources(),
+                    constraints: &[],
+                },
+            )
+            .into_iter()
+            .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
+            .filter(|v| !reported.contains(&v.entity_id))
+            .collect();
+            for v in &violations {
+                *kinds.entry(format!("{:?}", v.violation_type)).or_default() += 1;
+            }
+            broken += usize::from(!violations.is_empty());
+        }
+        eprintln!(
+            "{algorithm:>16?}: broken {broken:>3}/{cases} · failed {failed} · mean makespan {:.1} h · {:.1} s · {kinds:?}",
+            makespan as f64 / 3.6e6 / cases as f64,
+            started.elapsed().as_secs_f64()
+        );
+    }
+}
