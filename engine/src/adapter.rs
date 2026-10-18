@@ -34,8 +34,7 @@ pub enum Unsupported {
     /// A resource used at less than its whole capacity (a worker's load
     /// factor).
     FractionalResourceUse,
-    /// Resources taken together: a robot that occupies its linked cell, a
-    /// crew.
+    /// Resources taken together as a team (a crew).
     ResourceBundle,
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
@@ -82,8 +81,9 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 ResourceKind::Worker => "Worker",
             };
             let mut out = USResource::new(&r.id, kind).with_capacity(r.capacity.max(1));
-            if r.linked_resource_id.is_some() {
-                unsupported.insert(Unsupported::ResourceBundle);
+            // A robot occupies the cell it is linked to.
+            if let Some(linked) = &r.linked_resource_id {
+                out = out.with_companion(linked);
             }
             if let Some(calendar) = r.calendar_id.as_deref().and_then(|id| calendars.get(id)) {
                 out = out.with_calendar(windows(calendar, request.start_time_ms));

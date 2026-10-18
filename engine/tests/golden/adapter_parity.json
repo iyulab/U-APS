@@ -64,14 +64,12 @@
   "g07_linked_robot": {
     "makespan_ms": {
       "u_aps": 50000,
-      "u_schedule": 30000
+      "u_schedule": 50000
     },
-    "placements_differing": 2,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "ResourceBundle"
-    ]
+    "unsupported": []
   },
   "g08_calendar_spans_lunch_and_night": {
     "makespan_ms": {

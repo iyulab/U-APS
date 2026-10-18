@@ -626,14 +626,27 @@ fn adapter_parity() {
                     scheduler = scheduler.with_rule_engine(engine);
                 }
                 let schedule = scheduler.schedule(&problem, adapted.start_time_ms);
-                let us = placements(schedule.assignments.iter().map(|a| {
-                    (
-                        a.activity_id.clone(),
-                        a.resource_id.clone(),
-                        a.start_ms,
-                        a.end_ms,
-                    )
-                }));
+                // u-aps reports a linked resource it holds (a robot's cell)
+                // without an assignment; u-schedule books it as a companion.
+                // Compared as u-aps reports.
+                let companion = |a: &u_schedule::models::Assignment| {
+                    schedule.assignments.iter().any(|p| {
+                        p.activity_id == a.activity_id
+                            && problem.resources().iter().any(|r| {
+                                r.id == p.resource_id && r.companions.contains(&a.resource_id)
+                            })
+                    })
+                };
+                let us = placements(schedule.assignments.iter().filter(|a| !companion(a)).map(
+                    |a| {
+                        (
+                            a.activity_id.clone(),
+                            a.resource_id.clone(),
+                            a.start_ms,
+                            a.end_ms,
+                        )
+                    },
+                ));
                 json!({
                     "unsupported": unsupported,
                     "same_schedule": us == uaps,
