@@ -122,10 +122,23 @@ jobs:
         working-directory: engine
 
   sdk-build:
-    name: SDK Build
+    name: SDK Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: engine
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The SDK tests run against this commit's engine: UAPS.SDK.Tests copies
+      # the cargo build output next to the tests (CARGO_TARGET_DIR, else
+      # engine/target), and fails rather than fall back to a published engine.
+      - name: Build engine
+        run: cargo build
+        working-directory: engine
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -136,6 +149,9 @@ jobs:
         run: dotnet restore -p:AuditPipeline=true -p:EnableWindowsTargeting=true
         working-directory: sdk
       - run: dotnet build -c Release -p:EnableWindowsTargeting=true --no-restore
+        working-directory: sdk
+      - name: Test SDK against the engine
+        run: dotnet test UAPS.SDK.Tests -p:EnableWindowsTargeting=true
         working-directory: sdk
 
   changelog:
