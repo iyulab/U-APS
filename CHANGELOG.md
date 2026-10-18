@@ -13,6 +13,12 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- The engine builds on u-schedule 0.30. Requests schedule as before: the
+  operation overlap and lot splitting that release adds are not yet read from
+  UAPS requests, which still take the separate path they took.
+
 ## [1.6.0] - 2026-10-18
 
 ### Fixed
