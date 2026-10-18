@@ -139,7 +139,7 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 - **Resource Constraints**: Equipment, workers, calendars, shifts
 - **Material Constraints**: BOM, stock levels, safety stock, lead times
 - **Time Constraints**: Due dates, earliest start, time windows
-- **Setup Optimization**: Setup matrices, campaign scheduling
+- **Setup Optimization**: Setup matrices (changeover times the search weighs)
 - **Multi-Site Scheduling**: Site transitions with inter-site transit times
 
 ### Advanced Features

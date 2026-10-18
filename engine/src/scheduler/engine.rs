@@ -463,7 +463,7 @@ impl SchedulingEngine {
 
     /// Production 설정 해석 — 호출자가 `production_config`를 명시하지 않았다면 엔진
     /// `timeout_ms`를 내부 GA의 `time_limit_ms`로 승계한다(명시된 `production_config`는
-    /// 그대로 존중). `ProductionScheduler`는 내부적으로 GA를 돌리므로 `ProductionConfig`가
+    /// 그대로 존중). Production 은 탐색을 돌리므로 `ProductionConfig`가
     /// 기본값일 때(`ga_params: GaParams::default()`, `time_limit_ms: None`) 이 승계가
     /// 없으면 `SchedulingAlgorithm::Production`(엔진 기본 알고리즘)이 엔진 타임아웃과
     /// 무관하게 무제한 실행된다.
@@ -484,7 +484,8 @@ impl SchedulingEngine {
     /// or — for a request that splits or overlaps operations — this engine's
     /// own GA. The genetic algorithm, Production and Dynamic all run here:
     /// each differed from the others only in steps that left the schedule as
-    /// the GA made it (Production's campaign order, which the GA re-sorted)
+    /// the GA made it (Production's campaign order, which the GA re-sorted —
+    /// the campaign planner is gone)
     /// or broke it (Dynamic's shift of each assignment to its material
     /// arrival, which now reaches every algorithm as a release time).
     fn run_ga(
@@ -1109,7 +1110,6 @@ mod tests {
                 ga_params: quick.clone(),
                 production_config: Some(ProductionConfig {
                     ga_params: quick.clone().expect("set"),
-                    ..ProductionConfig::default()
                 }),
                 ..Default::default()
             });
@@ -1249,7 +1249,6 @@ mod tests {
                     time_limit_ms: Some(999),
                     ..GaParams::default()
                 },
-                ..ProductionConfig::default()
             }),
             ..Default::default()
         };
@@ -1263,9 +1262,8 @@ mod tests {
 
     #[test]
     fn test_dynamic_algorithm_forwards_pegging_engine() {
-        // 회귀 가드: `EngineConfig.pegging_engine`가 `SchedulingAlgorithm::Dynamic`
-        // 경로에서 한때 조용히 버려지고 있었다 — `DynamicScheduler`는 자재 페깅을
-        // 지원하지만 `run_scheduling`이 `.with_pegging_engine()`을 호출하지 않았음.
+        // 회귀 가드: `EngineConfig.pegging_engine`가 한때 조용히 버려졌다 — 이제
+        // 어댑터가 페깅 가용 시각을 모든 배치 알고리즘의 릴리스 시각으로 쓴다.
         use crate::scheduler::pegging::{
             MaterialDemand, MaterialSupply, PeggingMaterial, SupplyType,
         };

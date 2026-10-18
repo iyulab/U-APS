@@ -15,14 +15,8 @@ pub use u_schedule::ga::ActivityInfo;
 pub use u_schedule::ga::ScheduleChromosome;
 
 // Manufacturing domain-specific modules
-pub mod auto_tuner;
-pub mod hybrid_sa;
-pub mod nsga2;
 mod scheduler;
 
-pub use auto_tuner::*;
-pub use hybrid_sa::*;
-pub use nsga2::*;
 pub use scheduler::*;
 
 /// Manufacturing operation info for GA chromosome construction.

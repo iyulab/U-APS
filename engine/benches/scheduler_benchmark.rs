@@ -194,118 +194,6 @@ fn bench_whatif(c: &mut Criterion) {
     group.finish();
 }
 
-/// Auto-Tuning 벤치마크
-fn bench_auto_tuner(c: &mut Criterion) {
-    let mut group = c.benchmark_group("AutoTuner");
-
-    // 다양한 문제 규모에 대한 자동 튜닝 속도 테스트
-    for (jobs_count, ops_per_job, machines) in [(10, 2, 3), (30, 3, 5), (80, 4, 10), (150, 5, 15)] {
-        let machine_ids: Vec<String> = (0..machines).map(|i| format!("M{}", i)).collect();
-        let jobs = create_jobs(jobs_count, ops_per_job, &machine_ids);
-        let resources = create_resources(machines);
-
-        group.bench_with_input(
-            BenchmarkId::new(
-                "analyze_characteristics",
-                format!("{}j_{}o", jobs_count, ops_per_job),
-            ),
-            &(&jobs, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let chars = ProblemCharacteristics::analyze(jobs, res);
-                    black_box(chars)
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("tune_params", format!("{}j_{}o", jobs_count, ops_per_job)),
-            &(&jobs, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let chars = ProblemCharacteristics::analyze(jobs, res);
-                    let params = GaAutoTuner::tune(&chars);
-                    let operators = GaAutoTuner::tune_operators(&chars);
-                    black_box((params, operators))
-                })
-            },
-        );
-    }
-
-    group.finish();
-}
-
-/// Hybrid GA-SA 벤치마크
-fn bench_hybrid_ga_sa(c: &mut Criterion) {
-    let mut group = c.benchmark_group("HybridGaSa");
-    group.sample_size(10); // Hybrid는 시간이 오래 걸리므로 샘플 수 줄임
-
-    // 소규모 테스트로 자동 튜닝 Hybrid 알고리즘 성능 측정
-    for (jobs_count, machines) in [(10, 3), (20, 5)] {
-        let machine_ids: Vec<String> = (0..machines).map(|i| format!("M{}", i)).collect();
-        let jobs = create_jobs(jobs_count, 2, &machine_ids);
-        let resources = create_resources(machines);
-
-        group.bench_with_input(
-            BenchmarkId::new("auto_tune_config", format!("{}j_{}m", jobs_count, machines)),
-            &(&jobs, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let config = HybridGaSaConfig::auto_tune(jobs, res);
-                    black_box(config)
-                })
-            },
-        );
-
-        // 자동 튜닝된 설정으로 스케줄링 실행
-        group.bench_with_input(
-            BenchmarkId::new(
-                "schedule_with_auto_tune",
-                format!("{}j_{}m", jobs_count, machines),
-            ),
-            &(&jobs, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let mut config = HybridGaSaConfig::auto_tune(jobs, res);
-                    // 벤치마크용으로 제한
-                    config.ga_params.max_generations = 20;
-                    config.sa_params.iterations_per_temperature = 5;
-                    config.ga_params.time_limit_ms = Some(2000);
-
-                    let scheduler = HybridGaSaScheduler::new(config, GeneticOperators::default());
-                    black_box(scheduler.optimize(jobs, res, 0))
-                })
-            },
-        );
-    }
-
-    group.finish();
-}
-
-/// TuningReport 생성 벤치마크
-fn bench_tuning_report(c: &mut Criterion) {
-    let mut group = c.benchmark_group("TuningReport");
-
-    for (jobs_count, machines) in [(20, 5), (50, 10), (100, 15)] {
-        let machine_ids: Vec<String> = (0..machines).map(|i| format!("M{}", i)).collect();
-        let jobs = create_jobs(jobs_count, 3, &machine_ids);
-        let resources = create_resources(machines);
-
-        group.bench_with_input(
-            BenchmarkId::new("generate", format!("{}j_{}m", jobs_count, machines)),
-            &(&jobs, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let report = TuningReport::generate(jobs, res);
-                    black_box(report)
-                })
-            },
-        );
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_simple_scheduler,
@@ -314,8 +202,5 @@ criterion_group!(
     bench_setup_matrix,
     bench_validation,
     bench_whatif,
-    bench_auto_tuner,
-    bench_hybrid_ga_sa,
-    bench_tuning_report,
 );
 criterion_main!(benches);

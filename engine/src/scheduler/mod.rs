@@ -3,8 +3,6 @@
 //! ## Core Schedulers
 //!
 //! - [`SimpleScheduler`] — Dispatching-rule-based greedy scheduler
-//! - [`ProductionScheduler`] — GA-based with setup matrices, split operations, overlap
-//! - [`DynamicScheduler`] — Time-fence-aware rescheduling
 //! - [`SchedulingEngine`] — Unified entry point for all 7 algorithms
 //!
 //! ## Features
@@ -14,13 +12,11 @@
 //! - [`ctp`] — Capable-to-Promise / Available-to-Promise queries
 //! - [`whatif`] — What-if scenario analysis
 //! - [`analytics`] — Schedule analytics and bottleneck detection
-//! - [`campaign`] — Campaign scheduling (batch grouping)
 //! - [`pegging`] — Order pegging engine
 //! - [`dispatching`] — Dispatching rule engine (SPT, EDD, etc.)
 //! - [`time_fence`] — Frozen/slushy/free time fence management
 
 pub mod analytics;
-pub mod campaign;
 mod constraint;
 pub mod ctp;
 pub mod dispatching;
@@ -37,7 +33,6 @@ pub mod time_fence;
 pub mod whatif;
 
 pub use analytics::*;
-pub use campaign::*;
 pub use constraint::*;
 pub use ctp::*;
 pub use dispatching::*;

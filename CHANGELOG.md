@@ -85,6 +85,16 @@ published to a registry — it ships inside those packages.
 
 - The engine's `scheduler::task_splitter` module, which nothing used any
   more.
+- From the engine's Rust API, what no algorithm used any more: the
+  `ProductionScheduler` and `DynamicScheduler` (with their result types),
+  the campaign planner (`scheduler::campaign`, and `ProductionConfig`'s
+  `campaign_config`, `enable_parallel` and `verbose`, which did not change a
+  schedule), `DynamicSchedulerConfig`'s `fence_config`,
+  `enable_material_constraints` and `default_reschedule_strategy` (read only
+  by methods no algorithm called; rescheduling is the `Rescheduler`'s), the
+  `ga::hybrid_sa`, `ga::nsga2` and `ga::auto_tuner` modules (used by no
+  algorithm, only by benchmarks), and `cp::ga_solution_to_cp_initial`. The
+  SDK and CLI did not reach any of them.
 
 ### Known limitations
 
