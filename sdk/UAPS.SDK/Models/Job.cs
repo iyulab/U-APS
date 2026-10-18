@@ -14,7 +14,7 @@ public class Job
     public DateTime? EarliestStart { get; set; }
     public int Quantity { get; set; } = 1;
     /// <summary>
-    /// 작업 단위 로트 분할 허용 — 엔진이 아직 적용하지 않는다(공정 단위는 <see cref="Operation.IsSplittable"/>).
+    /// 작업 단위 로트 분할 허용 — 이 작업의 모든 공정이 <see cref="Operation.IsSplittable"/> 처럼 분할될 수 있다.
     /// </summary>
     public bool IsSplittable { get; set; }
 

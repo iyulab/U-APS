@@ -194,18 +194,42 @@ impl Validator {
                 result.add_warning(format!("Operation {} has no resource requirements", op.id));
             }
 
-            // 분할 설정 검사
-            if op.is_splittable {
-                if let Some(ref config) = op.split_config {
-                    if config.min_split_size_ms <= 0 {
-                        result.add_error(
-                            UapsError::new(
-                                ErrorCode::InvalidInput,
-                                format!("Operation {} has invalid split config", op.id),
-                            )
-                            .with_entity(&op.id),
-                        );
-                    }
+            // 분할 설정 검사 — 공정이나 그 작업이 분할을 허용할 때 쓰인다:
+            // 조각 하나 이상, 조각 최소 · 조각당 추가 시간은 음수가 아님.
+            let splittable =
+                op.is_splittable || jobs.iter().any(|j| j.id == op.job_id && j.is_splittable);
+            if let (true, Some(config)) = (splittable, &op.split_config) {
+                if config.max_splits == 0
+                    || config.min_split_size_ms < 0
+                    || config.split_setup_overhead_ms < 0
+                {
+                    result.add_error(
+                        UapsError::new(
+                            ErrorCode::InvalidInput,
+                            format!(
+                                "Operation {} has invalid split config: max_splits must be at least 1, \
+                                 min_split_size_ms and split_setup_overhead_ms not negative",
+                                op.id
+                            ),
+                        )
+                        .with_entity(&op.id),
+                    );
+                }
+            }
+
+            // 중첩 설정 검사 — 진행 비율은 0 ~ 1.
+            if let Some(config) = &op.overlap_config {
+                if !(0.0..=1.0).contains(&config.min_predecessor_completion) {
+                    result.add_error(
+                        UapsError::new(
+                            ErrorCode::InvalidInput,
+                            format!(
+                                "Operation {} has invalid overlap config: min_predecessor_completion must be within 0 and 1",
+                                op.id
+                            ),
+                        )
+                        .with_entity(&op.id),
+                    );
                 }
             }
         }

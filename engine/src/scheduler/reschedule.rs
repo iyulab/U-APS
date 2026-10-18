@@ -793,6 +793,7 @@ mod tests {
                     end_ms: 10_000,
                     setup_ms: 0,
                     site_id: None,
+                    part: None,
                 },
                 Assignment {
                     operation_id: "op2".into(),
@@ -802,6 +803,7 @@ mod tests {
                     end_ms: 20_000,
                     setup_ms: 0,
                     site_id: None,
+                    part: None,
                 },
                 Assignment {
                     operation_id: "op3".into(),
@@ -811,6 +813,7 @@ mod tests {
                     end_ms: 15_000,
                     setup_ms: 0,
                     site_id: None,
+                    part: None,
                 },
             ],
             makespan_ms: 20_000,

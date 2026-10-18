@@ -13,11 +13,40 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- `Job.IsSplittable` is applied: every operation of the job may be split, as
+  with `Operation.IsSplittable` (it was accepted and ignored).
+- Each assignment of a split operation carries `part` — which part
+  (`index`, from 0) and how much of the processing it does (`work_ms`); the
+  parts' `work_ms` add up to the operation's processing time. Assignments of
+  an operation that runs whole carry none.
+
 ### Changed
 
-- The engine builds on u-schedule 0.30. Requests schedule as before: the
-  operation overlap and lot splitting that release adds are not yet read from
-  UAPS requests, which still take the separate path they took.
+- The engine builds on u-schedule 0.30, and every algorithm that places by
+  the default scheduler (`Simple`, `GeneticAlgorithm`, `Production`,
+  `Dynamic`) now applies lot splitting and overlap with everything else it
+  keeps — workers, calendars, release times, set-ups. A request that splits
+  or overlaps operations no longer goes to the previous genetic algorithm
+  (one machine per operation, no workers, calendars or release times), and
+  its warning is gone.
+- Lot splitting chooses how many parts (1 to `SplitConfig.max_splits`, each
+  at least `min_split_size_ms` of work) by when the operation ends: the work
+  is shared so the parts end together, and an operation runs whole when that
+  ends no later. It was always split as many ways as allowed, evenly, even
+  when that ended later.
+- An overlap (`OverlapConfig.min_predecessor_completion` on an operation)
+  lets the next operation start once this one is that far along, by the time
+  it actually takes, and the next operation no longer ends before this one.
+- Tasks of a split operation are numbered across its parts, each on its
+  part's equipment. A part was reported as an assignment of an operation
+  `<id>_split_<n>` that the request does not have.
+
+### Known limitations
+
+`OverlapConfig.transfer_batch_size` is not read (there is no quantity model).
+`CpSat` states neither splitting nor overlap and says so in its warning.
 
 ## [1.6.0] - 2026-10-18
 

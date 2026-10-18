@@ -20,6 +20,7 @@ let job = Job::new("job-001", 1)
 - `priority: i32` - 우선순위 (높을수록 우선)
 - `due_date_ms: Option<i64>` - 납기일 (밀리초)
 - `earliest_start_ms: Option<i64>` - 최조 시작 가능 시점
+- `is_splittable: bool` - 작업 단위 로트 분할 허용 — 이 작업의 모든 공정이 공정의 `is_splittable` 과 같이 분할될 수 있다
 
 ### Operation
 공정 단위
@@ -38,8 +39,8 @@ let op = Operation::new("op-001", "job-001", 1)
 - `time: OperationTime` - 시간 정보
 - `required_resources: Vec<ResourceRequirement>` - 필요 자원
 - `is_splittable: bool` - 로트 분할 허용(`split_config` 와 함께). 근무 시간 밖에서 멈췄다 잇는 것은 이 값과 무관하다 — 작업 조각(task)은 공정이 실제로 일한 구간마다 하나
-- `split_config: Option<SplitConfig>` - 분할 설정
-- `overlap_config: Option<OverlapConfig>` - 중첩 설정
+- `split_config: Option<SplitConfig>` - 분할 설정(없으면 기본값 — 최대 4 조각, 조각 ≥ 1 분). 조각은 공정의 후보 설비에서 동시에 또는 따로 돌고, 둘째 조각부터 `split_setup_overhead_ms` 가 붙는다. 조각 수(1 … `max_splits`)는 스케줄러가 공정의 끝이 가장 이른 쪽으로 고른다 — 통짜가 빠르면 나누지 않는다. 배정마다 `part`(`index` · `work_ms`)가 몇 번째 조각이고 처리 시간 중 얼마를 맡았는지 말한다
+- `overlap_config: Option<OverlapConfig>` - 중첩 설정 — **이 공정 다음** 공정이 이 공정의 `min_predecessor_completion` 비율만큼 진행한 시각부터 시작할 수 있고, 이 공정보다 먼저 끝나지는 않는다. `transfer_batch_size` 는 읽지 않는다(수량 모델 없음)
 - `dependencies: Vec<String>` - 선행 공정 ID(다른 작업의 공정도) — 모두 끝난 뒤 시작한다
 
 ### Resource

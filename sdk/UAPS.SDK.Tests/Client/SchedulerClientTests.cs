@@ -202,6 +202,32 @@ public class ScheduleResultTests
     /// JSON 모양을 실제로 내는지를 고정한다.
     /// </summary>
     [Fact]
+    public void Schedule_SplittableJob_RunsInPartsOnItsEquipment()
+    {
+        using var client = new SchedulerClient();
+        var job = Job.Create("A").WithOperation(
+            Operation.Create("A-1", "A", 1)
+                .WithTime(0, 8 * 3_600_000, 0)
+                .WithEquipment("EQP-001", "EQP-002"));
+        job.IsSplittable = true;
+        var request = new ScheduleRequest
+        {
+            Jobs = [job],
+            Resources = [Resource.Equipment("EQP-001"), Resource.Equipment("EQP-002")]
+        };
+
+        var result = client.Schedule(request);
+
+        result.Success.Should().BeTrue(result.Error ?? "No error message");
+        var parts = result.Schedule!.Assignments.Where(a => a.OperationId == "A-1").ToList();
+        parts.Should().HaveCount(2);
+        parts.Select(a => a.ResourceId).Should().BeEquivalentTo(["EQP-001", "EQP-002"]);
+        parts.Select(a => a.Part!.Index).Should().BeEquivalentTo([0, 1]);
+        parts.Sum(a => a.Part!.WorkMs).Should().Be(8 * 3_600_000);
+        parts.Max(a => a.EndMs).Should().Be(4 * 3_600_000);
+    }
+
+    [Fact]
     public void Schedule_MultiLayerStrategy_SwitchesRulesAtTheDecision()
     {
         // Arrange

@@ -3,7 +3,8 @@
 //! efficiencies, workers whole or at a load factor, set-up matrices,
 //! priorities, due dates, release times, dispatching rules and rule
 //! switching, materials, shift calendars and daily work windows, operations
-//! without resources, target sites and outsourcing. Each schedule is judged
+//! without resources, target sites, outsourcing, lot splitting and overlap.
+//! Each schedule is judged
 //! by u-schedule's own feasibility check.
 
 use rand::rngs::SmallRng;
@@ -32,10 +33,14 @@ struct Features {
     daily: bool,
     sites: bool,
     outsourcing: bool,
+    split: bool,
+    overlap: bool,
 }
 
 impl Features {
     const ALL: Features = Features {
+        split: true,
+        overlap: true,
         alternatives: true,
         efficiency: true,
         workers: true,
@@ -159,7 +164,25 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                         _ => DailyWorkWindow::from_hm(22, 0, 6, 0),
                     };
                     op = op.with_daily_work_window(window);
-                    op.is_splittable = rng.random_bool(0.5);
+                }
+                if f.split && !time_only && rng.random_bool(0.3) {
+                    // Lot splitting over its candidates, by its own settings
+                    // or the default.
+                    op.is_splittable = true;
+                    if rng.random_bool(0.5) {
+                        op.split_config = Some(SplitConfig {
+                            min_split_size_ms: rng.random_range(0..3) * 10 * 60_000,
+                            max_splits: rng.random_range(1..=3),
+                            split_setup_overhead_ms: rng.random_range(0..3) * 5 * 60_000,
+                        });
+                    }
+                }
+                if f.overlap && rng.random_bool(0.3) {
+                    // The next operation may start once this one is that far.
+                    op.overlap_config = Some(OverlapConfig {
+                        min_predecessor_completion: [0.0, 0.25, 0.5, 1.0][rng.random_range(0..4)],
+                        transfer_batch_size: 1,
+                    });
                 }
                 if !time_only && n_workers > 0 && rng.random_bool(0.5) {
                     op = if rng.random_bool(0.5) {
@@ -169,6 +192,9 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                     };
                 }
                 job = job.with_operation(op);
+            }
+            if f.split && rng.random_bool(0.15) {
+                job = job.splittable();
             }
             job
         })
@@ -275,16 +301,21 @@ fn as_u_schedule(s: &Schedule) -> u_schedule::models::Schedule {
                 a.end_ms,
             ));
         } else {
-            us.add_assignment(
-                USAssignment::new(
-                    &a.operation_id,
-                    &a.job_id,
-                    &a.resource_id,
-                    a.start_ms,
-                    a.end_ms,
-                )
-                .with_setup(a.setup_ms),
-            );
+            let mut assignment = USAssignment::new(
+                &a.operation_id,
+                &a.job_id,
+                &a.resource_id,
+                a.start_ms,
+                a.end_ms,
+            )
+            .with_setup(a.setup_ms);
+            if let Some(part) = a.part {
+                assignment = assignment.with_part(u_schedule::models::Part {
+                    index: part.index,
+                    work_ms: part.work_ms,
+                });
+            }
+            us.add_assignment(assignment);
         }
     }
     us
@@ -310,11 +341,13 @@ fn schedules_keep_random_requests() {
     use u_schedule::scheduler::{check_schedule, FeasibilityInput};
 
     let mut rng = SmallRng::seed_from_u64(7);
+    let mut split = 0;
     for case in 0..200 {
         let request = random_request(&mut rng, Features::ALL);
         let schedule = SimpleScheduler::new()
             .schedule(&request)
             .unwrap_or_else(|e| panic!("case {case}: {e}"));
+        split += usize::from(schedule.assignments.iter().any(|a| a.part.is_some()));
         let problem = uaps_engine::adapter::to_problem(&request)
             .problem
             .expect("adapted");
@@ -333,6 +366,8 @@ fn schedules_keep_random_requests() {
         .collect();
         assert!(broken.is_empty(), "case {case}: {broken:?}");
     }
+    // Lot splitting is exercised, not merely allowed.
+    assert!(split >= 10, "{split} of 200 schedules split an operation");
 }
 
 /// The other algorithms (`SchedulingEngine` with `algorithm` set) on random
@@ -352,6 +387,8 @@ fn algorithms_on_random_requests() {
         priority: true,
         due: true,
         release: true,
+        split: std::env::var("UAPS_MEASURE_SPLIT").is_ok(),
+        overlap: std::env::var("UAPS_MEASURE_SPLIT").is_ok(),
         ..Features::default()
     };
     let algorithms = [

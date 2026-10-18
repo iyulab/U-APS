@@ -21,6 +21,17 @@ pub struct Assignment {
     /// 사이트/공장 ID (multi-site 스케줄링용)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub site_id: Option<String>,
+    /// 로트 분할된 공정의 몇 번째 조각인지와 그 조각이 하는 일 — 분할되지 않은 공정은 없음.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part: Option<AssignmentPart>,
+}
+
+/// 로트 분할된 공정의 한 조각: 몇 번째인지(0 부터)와 그 조각이 맡은 처리 시간(ms — 설비 효율을
+/// 적용하기 전의 공정 처리 시간). 조각들의 `work_ms` 합 = 공정의 처리 시간.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssignmentPart {
+    pub index: i32,
+    pub work_ms: i64,
 }
 
 impl Assignment {
@@ -39,6 +50,7 @@ impl Assignment {
             end_ms,
             setup_ms: 0,
             site_id: None,
+            part: None,
         }
     }
 
@@ -59,6 +71,7 @@ impl Assignment {
             end_ms,
             setup_ms,
             site_id: None,
+            part: None,
         }
     }
 

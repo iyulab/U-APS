@@ -462,14 +462,6 @@ fn g15_reschedule_machine_breakdown() {
     assert_golden("g15_reschedule_machine_breakdown", &response);
 }
 
-/// SDK fields the engine reads past today (CHANGELOG «Known limitations»),
-/// each with what the scheduler lacks. Removing an entry makes the guard count
-/// that field again. Matched as a path suffix.
-const KNOWN_GAPS: &[(&str, &str)] = &[(
-    "].is_splittable",
-    "job-level splitting: the engine splits operations, not jobs",
-)];
-
 /// The request the C# SDK writes (pinned by the SDK's
 /// `RequestWireContractTests`), read by the engine section by section so a
 /// failure names every section the engine cannot read, then scheduled whole.
@@ -516,11 +508,7 @@ fn sdk_request_fixture_is_accepted() {
                 Ok(read) => {
                     let mut lost = Vec::new();
                     dropped(key, value, &to_json(&read), &mut lost);
-                    errors.extend(
-                        lost.into_iter()
-                            .filter(|p| !KNOWN_GAPS.iter().any(|(suffix, _)| p.ends_with(suffix)))
-                            .map(|p| format!("{p}: sent, not kept")),
-                    );
+                    errors.extend(lost.into_iter().map(|p| format!("{p}: sent, not kept")));
                 }
             }
         }

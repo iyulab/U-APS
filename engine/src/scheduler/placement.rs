@@ -15,7 +15,9 @@ use u_metaheur::brkga::BrkgaConfig;
 use u_schedule::models::joint_working_spans;
 use u_schedule::scheduler::{DispatchSearch, SimpleScheduler as USScheduler};
 
-use super::{Assignment, ConstraintType, Schedule, ScheduleError, SimpleScheduler, Violation};
+use super::{
+    Assignment, AssignmentPart, ConstraintType, Schedule, ScheduleError, SimpleScheduler, Violation,
+};
 use crate::adapter::{job_ready_ms, material_delays, outsourced, to_problem, MaterialDelay};
 use crate::models::{SplitReason, Task, WorkingWindowEndReason};
 use crate::{ResourceKind, ScheduleRequest};
@@ -67,16 +69,21 @@ pub(crate) fn breaks(
                 a.end_ms,
             ));
         } else {
-            us.add_assignment(
-                USAssignment::new(
-                    &a.operation_id,
-                    &a.job_id,
-                    &a.resource_id,
-                    a.start_ms,
-                    a.end_ms,
-                )
-                .with_setup(a.setup_ms),
-            );
+            let mut assignment = USAssignment::new(
+                &a.operation_id,
+                &a.job_id,
+                &a.resource_id,
+                a.start_ms,
+                a.end_ms,
+            )
+            .with_setup(a.setup_ms);
+            if let Some(part) = a.part {
+                assignment = assignment.with_part(u_schedule::models::Part {
+                    index: part.index,
+                    work_ms: part.work_ms,
+                });
+            }
+            us.add_assignment(assignment);
         }
     }
     let reported: BTreeSet<&str> = schedule
@@ -310,76 +317,94 @@ fn place(
             }
             continue;
         }
-        let all: Vec<&u_schedule::models::Assignment> = placed
-            .assignments
-            .iter()
-            .filter(|a| a.activity_id == op_id)
-            .collect();
-        // A resource held as a companion of another the operation runs on.
-        let held: Vec<&u_schedule::models::Assignment> = all
-            .iter()
-            .copied()
-            .filter(|a| {
-                !all.iter().any(|p| {
-                    companions_of
-                        .get(p.resource_id.as_str())
-                        .is_some_and(|c| c.contains(&a.resource_id))
-                })
-            })
-            .collect();
-        let (start, end) = (held[0].start_ms, held[0].end_ms);
-        reached.insert(job.id.as_str(), end);
-        let setup = held.iter().map(|a| a.setup_ms).max().unwrap_or(0);
-        for a in &held {
-            let mut assignment =
-                Assignment::with_setup(op_id, &job.id, &a.resource_id, start, end, setup);
-            assignment.site_id = resources
-                .get(a.resource_id.as_str())
-                .and_then(|r| r.site_id.clone());
-            schedule.add_assignment(assignment);
+        // The operation whole, or each part of it a split placed — a part
+        // holds its own resources over its own span.
+        let mut parts: Vec<(
+            Option<u_schedule::models::Part>,
+            Vec<&u_schedule::models::Assignment>,
+        )> = Vec::new();
+        for a in placed.assignments.iter().filter(|a| a.activity_id == op_id) {
+            match parts.iter_mut().find(|(p, _)| *p == a.part) {
+                Some((_, group)) => group.push(a),
+                None => parts.push((a.part, vec![a])),
+            }
         }
-
-        // The work in the stretches it runs in: while every resource held
-        // and the operation's own hours work together, as u-schedule placed it.
-        let primary = held[0].resource_id.as_str();
-        let calendar = resources
-            .get(primary)
-            .and_then(|r| r.calendar_id.as_deref())
-            .and_then(|id| calendars.get(id).copied());
-        let joint: Vec<&u_schedule::models::Calendar> = all
-            .iter()
-            .filter_map(|a| us_calendars.get(a.resource_id.as_str()).copied())
-            .chain(activities[op_id].calendar.as_ref())
-            .collect();
-        let pieces = tasks_of(
-            job,
-            op,
-            joint_working_spans(&joint, start, end),
-            setup,
-            calendar,
-        );
-        // u-aps names the workers it picked by requirement, not a crew's.
-        let workers: Vec<String> = if op.crew_id.is_some() && is_crewed(request, op) {
-            Vec::new()
-        } else {
-            held.iter()
+        parts.sort_by_key(|(p, _)| p.map(|p| p.index));
+        let mut pieces = Vec::new();
+        let mut op_end = i64::MIN;
+        for (part, all) in &parts {
+            // A resource held as a companion of another the part runs on.
+            let held: Vec<&u_schedule::models::Assignment> = all
+                .iter()
+                .copied()
                 .filter(|a| {
-                    resources
-                        .get(a.resource_id.as_str())
-                        .is_some_and(|r| r.kind == ResourceKind::Worker)
+                    !all.iter().any(|p| {
+                        companions_of
+                            .get(p.resource_id.as_str())
+                            .is_some_and(|c| c.contains(&a.resource_id))
+                    })
                 })
-                .map(|a| a.resource_id.clone())
-                .collect()
-        };
-        for mut task in pieces {
-            task = task.with_equipment(primary);
+                .collect();
+            let (start, end) = (held[0].start_ms, held[0].end_ms);
+            op_end = op_end.max(end);
+            let setup = held.iter().map(|a| a.setup_ms).max().unwrap_or(0);
+            for a in &held {
+                let mut assignment =
+                    Assignment::with_setup(op_id, &job.id, &a.resource_id, start, end, setup);
+                assignment.site_id = resources
+                    .get(a.resource_id.as_str())
+                    .and_then(|r| r.site_id.clone());
+                assignment.part = part.map(|p| AssignmentPart {
+                    index: p.index,
+                    work_ms: p.work_ms,
+                });
+                schedule.add_assignment(assignment);
+            }
+
+            // The work in the stretches it runs in: while every resource
+            // held and the operation's own hours work together, as u-schedule
+            // placed it.
+            let primary = held[0].resource_id.as_str();
+            let calendar = resources
+                .get(primary)
+                .and_then(|r| r.calendar_id.as_deref())
+                .and_then(|id| calendars.get(id).copied());
+            let joint: Vec<&u_schedule::models::Calendar> = all
+                .iter()
+                .filter_map(|a| us_calendars.get(a.resource_id.as_str()).copied())
+                .chain(activities[op_id].calendar.as_ref())
+                .collect();
+            // u-aps names the workers it picked by requirement, not a crew's.
+            let workers: Vec<String> = if op.crew_id.is_some() && is_crewed(request, op) {
+                Vec::new()
+            } else {
+                held.iter()
+                    .filter(|a| {
+                        resources
+                            .get(a.resource_id.as_str())
+                            .is_some_and(|r| r.kind == ResourceKind::Worker)
+                    })
+                    .map(|a| a.resource_id.clone())
+                    .collect()
+            };
+            for (span, setup, reason) in
+                stretches(joint_working_spans(&joint, start, end), setup, calendar)
+            {
+                pieces.push((span, setup, reason, primary, workers.clone()));
+            }
+        }
+        reached.insert(job.id.as_str(), op_end);
+        let required = op
+            .required_resources
+            .iter()
+            .find(|r| r.resource_type == crate::ResourceType::Worker)
+            .map_or(0, |r| r.quantity as u32);
+        let total = pieces.len() as u32;
+        for (k, (span, setup, reason, primary, workers)) in pieces.into_iter().enumerate() {
+            let mut task =
+                task_of(job, op, k as u32, total, span, setup, reason).with_equipment(primary);
             if !workers.is_empty() {
-                let required = op
-                    .required_resources
-                    .iter()
-                    .find(|r| r.resource_type == crate::ResourceType::Worker)
-                    .map_or(0, |r| r.quantity as u32);
-                task = task.with_workers(workers.clone(), required);
+                task = task.with_workers(workers, required);
             }
             schedule.add_task(task);
         }
@@ -425,15 +450,31 @@ fn tasks_of(
     setup_ms: i64,
     calendar: Option<&crate::Calendar>,
 ) -> Vec<Task> {
-    let total = spans.len() as u32;
+    let stretches = stretches(spans, setup_ms, calendar);
+    let total = stretches.len() as u32;
+    stretches
+        .into_iter()
+        .enumerate()
+        .map(|(k, (span, setup, reason))| task_of(job, op, k as u32, total, span, setup, reason))
+        .collect()
+}
+
+/// Each of `spans` with the set-up it carries (the set-up first, in as many
+/// stretches as it takes) and why it ends — as [`tasks_of`] reads them.
+fn stretches(
+    spans: Vec<(i64, i64)>,
+    setup_ms: i64,
+    calendar: Option<&crate::Calendar>,
+) -> Vec<((i64, i64), i64, SplitReason)> {
+    let last = spans.len().saturating_sub(1);
     let mut setup_left = setup_ms;
     spans
-        .iter()
+        .into_iter()
         .enumerate()
-        .map(|(k, &(begin, end))| {
+        .map(|(k, (begin, end))| {
             let setup = setup_left.min(end - begin);
             setup_left -= setup;
-            let reason = if k + 1 == spans.len() {
+            let reason = if k == last {
                 SplitReason::None
             } else {
                 match calendar.and_then(|c| c.find_working_window_end(begin)) {
@@ -446,23 +487,36 @@ fn tasks_of(
                     _ => SplitReason::ShiftEnd,
                 }
             };
-            let mut task = Task::new(
-                format!("{}-T{:03}", op.id, k + 1),
-                &op.id,
-                &job.id,
-                begin,
-                end,
-            )
-            .with_setup(setup)
-            .with_process(end - begin - setup)
-            .with_splittable(op.is_splittable)
-            .with_split_info(k as u32, total, reason);
-            if let Some(name) = &job.product_name {
-                task = task.with_product_name(name);
-            }
-            task
+            ((begin, end), setup, reason)
         })
         .collect()
+}
+
+/// The `k`-th of `total` tasks of `op`: `<operation>-T00k+1` over `span`.
+fn task_of(
+    job: &crate::Job,
+    op: &crate::Operation,
+    k: u32,
+    total: u32,
+    (begin, end): (i64, i64),
+    setup: i64,
+    reason: SplitReason,
+) -> Task {
+    let mut task = Task::new(
+        format!("{}-T{:03}", op.id, k + 1),
+        &op.id,
+        &job.id,
+        begin,
+        end,
+    )
+    .with_setup(setup)
+    .with_process(end - begin - setup)
+    .with_splittable(op.is_splittable || job.is_splittable)
+    .with_split_info(k, total, reason);
+    if let Some(name) = &job.product_name {
+        task = task.with_product_name(name);
+    }
+    task
 }
 
 /// Whether `op`'s crew takes the operation (operational, as u-aps reads it).

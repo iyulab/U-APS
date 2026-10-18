@@ -602,6 +602,7 @@ impl CpSatScheduler {
                         end_ms: interval_sol.end,
                         setup_ms: 0,
                         site_id: None,
+                        part: None,
                     });
                 }
             }

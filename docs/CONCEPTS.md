@@ -28,7 +28,8 @@
 | `wait_time` | Duration | 공정후 대기시간 | |
 | `time_variance` | TimeVariance | 시간 편차 (min/max) | 공정전/중/후 각각 |
 | `required_resources` | ResourceReq[] | 필요 자원 목록 | 장비, 작업자 |
-| `is_splittable` | bool | 로트 분할 허용 (`split_config` 와 함께) | 근무 시간 밖에서 멈췄다 잇는 것은 이 값과 무관하게 모든 공정이 한다 |
+| `is_splittable` | bool | 로트 분할 허용 (`split_config` 또는 기본값) — 후보 설비에 조각으로 나눠 동시에/따로, 조각 수는 끝이 가장 이른 쪽 | 근무 시간 밖에서 멈췄다 잇는 것은 이 값과 무관하게 모든 공정이 한다. 작업(Job)의 `is_splittable` 은 그 작업의 모든 공정 |
+| `overlap_config` | OverlapConfig? | 다음 공정이 이 공정의 `min_predecessor_completion` 비율 진행 뒤 시작 | 다음 공정은 이 공정보다 먼저 끝나지 않는다 · `transfer_batch_size` 는 읽지 않음 |
 | `allow_parallel` | bool | 병렬 처리 가능 | |
 | `earliest_start` | DateTime? | 시작 가능 시간 | |
 | `transit_time` | Duration | 다음 공정 이동시간 | |

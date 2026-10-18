@@ -25,6 +25,10 @@ pub struct Job {
     /// 대상 사이트/공장 ID (multi-site 스케줄링용)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_site_id: Option<String>,
+    /// 작업 단위 로트 분할 허용 — 이 작업의 모든 공정을 분할할 수 있다(공정 자신의
+    /// `is_splittable` 과 같은 뜻, 공정의 `split_config` 가 없으면 기본값).
+    #[serde(default)]
+    pub is_splittable: bool,
 }
 
 impl Job {
@@ -38,7 +42,14 @@ impl Job {
             earliest_start: None,
             quantity: 1,
             target_site_id: None,
+            is_splittable: false,
         }
+    }
+
+    /// Builder: 작업 단위 로트 분할 허용
+    pub fn splittable(mut self) -> Self {
+        self.is_splittable = true;
+        self
     }
 
     /// Builder: 제품명 설정

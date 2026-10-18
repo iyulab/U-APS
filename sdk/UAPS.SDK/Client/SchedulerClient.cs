@@ -125,7 +125,8 @@ public class SchedulerClient : IDisposable
                 OperationId = a.OperationId,
                 ResourceId = a.ResourceId,
                 StartMs = a.StartMs,
-                EndMs = a.EndMs
+                EndMs = a.EndMs,
+                Part = a.Part is { } p ? new AssignmentPart(p.Index, p.WorkMs) : null
             }).ToList(),
             Violations = dto.Violations.Select(v => new Violation
             {
@@ -620,8 +621,17 @@ public class Assignment
     public long StartMs { get; set; }
     public long EndMs { get; set; }
 
+    /// <summary>로트 분할된 공정의 몇 번째 조각인지와 맡은 처리 시간 — 통짜 공정은 null.</summary>
+    public AssignmentPart? Part { get; set; }
+
     public long DurationMs => EndMs - StartMs;
 }
+
+/// <summary>
+/// 로트 분할된 공정의 한 조각: 몇 번째인지(0 부터)와 그 조각이 맡은 처리 시간(ms — 설비 효율 적용 전).
+/// 한 공정의 조각들의 <see cref="WorkMs"/> 합은 공정의 처리 시간이다.
+/// </summary>
+public sealed record AssignmentPart(int Index, long WorkMs);
 
 /// <summary>
 /// Task 분할 이유
@@ -804,6 +814,13 @@ internal class AssignmentDto
     public string ResourceId { get; set; } = string.Empty;
     public long StartMs { get; set; }
     public long EndMs { get; set; }
+    public AssignmentPartDto? Part { get; set; }
+}
+
+internal class AssignmentPartDto
+{
+    public int Index { get; set; }
+    public long WorkMs { get; set; }
 }
 
 internal class TaskDto

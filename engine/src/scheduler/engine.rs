@@ -8,7 +8,7 @@
 
 use crate::cp::{CpSatConfig, CpSatScheduler};
 use crate::error::Result;
-use crate::ga::{GaParams, GaScheduler, GeneticOperators};
+use crate::ga::GaParams;
 use crate::models::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
     SetupMatrixCollection, SiteTransitions, SkillMatrix, WorkerTimeOverride,
@@ -480,9 +480,10 @@ impl SchedulingEngine {
         }
     }
 
-    /// A search over the default scheduler's order within `params`' budget,
-    /// or — for a request that splits or overlaps operations — this engine's
-    /// own GA. The genetic algorithm, Production and Dynamic all run here:
+    /// A search over the default scheduler's order within `params`' budget —
+    /// each order placed by that scheduler, so a search keeps everything it
+    /// keeps (splits and overlaps too). The genetic algorithm, Production and
+    /// Dynamic all run here:
     /// each differed from the others only in steps that left the schedule as
     /// the GA made it (Production's campaign order, which the GA re-sorted —
     /// the campaign planner is gone)
@@ -495,36 +496,8 @@ impl SchedulingEngine {
         start_time_ms: i64,
         params: GaParams,
     ) -> Result<Schedule> {
-        // TODO(upstream: lot splitting and overlap on u-schedule —
-        // ISSUE-u-aps-20261018-algorithm-paths-ignore-requirements):
-        // only this engine's own GA splits an operation across
-        // machines or overlaps it with the one before, and it holds
-        // one machine per operation (no workers, calendars or
-        // releases). Remove once u-schedule states both.
-        let splits_or_overlaps = jobs
-            .iter()
-            .flat_map(|j| &j.operations)
-            .any(|op| op.is_splittable || op.overlap_config.is_some());
-        if !splits_or_overlaps {
-            let request = self.build_schedule_request(jobs, resources, start_time_ms);
-            return Ok(SimpleScheduler::new().search(&request, &params)?);
-        }
-        self.log(
-            LogLevel::Warn,
-            &format!(
-                "{:?} splits or overlaps operations with the previous genetic algorithm, \
-                 which holds one machine per operation: worker requirements, calendars \
-                 and release times are not applied",
-                self.config.algorithm
-            ),
-            None,
-        );
-        let operators = GeneticOperators::default();
-        let scheduler = GaScheduler::new(params, operators)
-            .with_setup_matrices(self.config.setup_matrices.clone())
-            .with_site_transitions(self.config.site_transitions.clone());
-        let result = scheduler.schedule(jobs, resources, start_time_ms);
-        Ok(result.schedule)
+        let request = self.build_schedule_request(jobs, resources, start_time_ms);
+        Ok(SimpleScheduler::new().search(&request, &params)?)
     }
 
     fn run_scheduling(
@@ -788,7 +761,8 @@ fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> V
     );
     note(
         "splitting or overlap",
-        ops().any(|o| o.is_splittable || o.overlap_config.is_some()),
+        jobs.iter().any(|j| j.is_splittable)
+            || ops().any(|o| o.is_splittable || o.overlap_config.is_some()),
     );
     note(
         "materials",
@@ -1393,11 +1367,11 @@ mod tests {
         // 회귀 가드: `Auto`는 내부적으로 새 `SchedulingEngine`을 만들어 위임한다 — 그
         // 내부 엔진이 남긴 로그(예: 이 경고)를 병합하지 않으면 호출자에게는 아무
         // 로그도 보이지 않는다.
-        // A splittable operation: the selected search warns that the
-        // previous genetic algorithm takes the request.
-        let (mut jobs, resources) = create_test_scenario();
-        jobs[0].operations[0].is_splittable = true;
+        // The selected algorithm's engine names itself ("Using … scheduler",
+        // a debug entry).
+        let (jobs, resources) = create_test_scenario();
         let config = EngineConfig {
+            verbose_logging: true,
             algorithm: SchedulingAlgorithm::Auto,
             ga_params: Some(GaParams {
                 max_generations: 5,
@@ -1412,7 +1386,7 @@ mod tests {
             result
                 .logs
                 .iter()
-                .any(|l| l.level == "WARN" && l.message.contains("splits or overlaps")),
+                .any(|l| l.message.starts_with("Using ") && l.message.ends_with(" scheduler")),
             "Auto delegates to an inner engine — its warnings must surface in the outer result: {:?}",
             result.logs
         );

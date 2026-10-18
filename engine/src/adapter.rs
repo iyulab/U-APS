@@ -12,8 +12,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use u_schedule::dispatching::{rules, Decision, RuleEngine, RulePolicy};
 use u_schedule::models::{
-    Activity, ActivityDuration, Calendar as USCalendar, Resource as USResource,
-    ResourceRequirement as USRequirement, Task, TransitionMatrix, TransitionMatrixCollection,
+    Activity, ActivityDuration, Calendar as USCalendar, Overlap, Resource as USResource,
+    ResourceRequirement as USRequirement, Split, Task, TransitionMatrix,
+    TransitionMatrixCollection,
 };
 use u_schedule::validation::ValidationError;
 use u_schedule::Problem;
@@ -163,10 +164,7 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         crew = None;
                     }
                 }
-                // The dispatching scheduler reads none of an operation's
-                // `split_config`, `overlap_config` or `time_window` (the GA
-                // does), and `is_splittable` only in how the work is split
-                // into tasks, which reading the schedule back does too.
+                // An operation's `time_window` is not stated (u-aps never read it).
                 let mut activity = Activity::new(&op.id, &job.id, op.sequence)
                     .with_duration(
                         // A u-aps wait holds the resource after processing.
@@ -185,6 +183,12 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 for dependency in &op.dependencies {
                     activity = activity.with_predecessor(dependency);
                 }
+                // u-aps states an overlap on the operation before: this one
+                // may start once that one is that far along.
+                let overlap = overlap_after(job, op);
+                if let Some(overlap) = overlap {
+                    activity = activity.with_overlap(overlap);
+                }
                 // An outsourced operation holds nothing here: it takes its
                 // lead time from when the job reaches it, whatever the hour.
                 if let Some((_, lead_ms)) = outsourced(request, op) {
@@ -196,8 +200,14 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     for dependency in &op.dependencies {
                         away = away.with_predecessor(dependency);
                     }
+                    if let Some(overlap) = overlap {
+                        away = away.with_overlap(overlap);
+                    }
                     task = task.with_activity(away);
                     continue;
+                }
+                if let Some(split) = split_of(job, op) {
+                    activity = activity.with_split(split);
                 }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
@@ -308,6 +318,34 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         rule_policy,
         unfilled,
     }
+}
+
+/// How `op` may overlap the operation before it in `job` (by sequence): u-aps
+/// states the overlap on that operation — `op` may start once it is
+/// `min_predecessor_completion` of the way through — and `op` ends no earlier
+/// than it. `transfer_batch_size` is not read: there is no quantity model.
+fn overlap_after(job: &crate::Job, op: &crate::Operation) -> Option<Overlap> {
+    let before = job
+        .operations
+        .iter()
+        .filter(|o| o.sequence < op.sequence)
+        .max_by_key(|o| o.sequence)?;
+    let config = before.overlap_config.as_ref()?;
+    Some(Overlap::new(config.min_predecessor_completion))
+}
+
+/// How `op` may be split into parts on its candidates: when it, or its whole
+/// job, is splittable — by its `split_config`, else u-aps' default.
+fn split_of(job: &crate::Job, op: &crate::Operation) -> Option<Split> {
+    if !(op.is_splittable || job.is_splittable) {
+        return None;
+    }
+    let config = op.split_config.clone().unwrap_or_default();
+    Some(
+        Split::new(i32::try_from(config.max_splits).unwrap_or(i32::MAX))
+            .with_min_part(config.min_split_size_ms)
+            .with_part_overhead(config.split_setup_overhead_ms),
+    )
 }
 
 /// Who an outsourced operation goes to and for how long: its own lead time,

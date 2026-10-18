@@ -741,6 +741,7 @@ mod tests {
             due_date,
             earliest_start: None,
             quantity: 1,
+            is_splittable: false,
             operations: vec![Operation {
                 id: format!("{}-OP1", id),
                 job_id: id.to_string(),
