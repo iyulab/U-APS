@@ -34,6 +34,9 @@ pub enum Unsupported {
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
     ActivityRelease,
+    /// An operation with no resource, which u-aps still places in time on
+    /// the request's first calendar.
+    TimeOnlyActivity,
     /// A requirement no resource can fill — a job's target site has none of
     /// the operation's equipment; u-aps schedules the operation without it.
     UnfillableRequirement,
@@ -119,15 +122,27 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
             }
             let mut release = job.earliest_start.map(|t| t.timestamp_millis());
             for (i, op) in job.operations.iter().enumerate() {
-                for m in &op.material_requirements {
-                    if let Some(at) = m.availability_date {
-                        if i == 0 {
-                            let at = at.timestamp_millis();
+                // u-aps checks an operation's materials against the material
+                // manager when the job reaches it, and waits for the latest
+                // to arrive.
+                if request.material_manager.is_some() && op.has_material_requirements() {
+                    if i == 0 {
+                        let ready = job_ready_ms(request, job);
+                        let arrival = material_delays(request, op, ready)
+                            .filter_map(|d| match d {
+                                MaterialDelay::Until { at_ms, .. } => Some(at_ms),
+                                MaterialDelay::Short { .. } => None,
+                            })
+                            .max();
+                        if let Some(at) = arrival {
                             release = Some(release.map_or(at, |r| r.max(at)));
-                        } else {
-                            unsupported.insert(Unsupported::ActivityRelease);
                         }
+                    } else {
+                        unsupported.insert(Unsupported::ActivityRelease);
                     }
+                }
+                if op.required_resources.is_empty() {
+                    unsupported.insert(Unsupported::TimeOnlyActivity);
                 }
                 // u-aps takes an operational crew whole, in place of the
                 // operation's worker requirements.
@@ -158,9 +173,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     )
                     // u-aps splits every operation at its calendar's breaks.
                     .resumable();
-                if let Some(crew) = crew {
-                    activity = with_crew(activity, request, op, crew);
-                }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
                         continue;
@@ -186,6 +198,10 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         }
                     }
                     activity = activity.with_requirement(requirement);
+                }
+                // After the equipment, as u-aps lists the resources.
+                if let Some(crew) = crew {
+                    activity = with_crew(activity, request, op, crew);
                 }
                 task = task.with_activity(activity);
             }
@@ -355,6 +371,61 @@ fn add_rule(engine: RuleEngine, rule: DispatchingRuleName, weight: f64) -> RuleE
         // higher-first rule keeps u-aps' lower-first order.
         R::Priority => engine.with_weighted_rule(rules::Priority, weight),
     }
+}
+
+/// When `job` can first start: the schedule start, or its earliest start if
+/// later.
+pub(crate) fn job_ready_ms(request: &ScheduleRequest, job: &crate::Job) -> i64 {
+    job.earliest_start.map_or(request.start_time_ms, |t| {
+        t.timestamp_millis().max(request.start_time_ms)
+    })
+}
+
+/// What a material of an operation does to it at `at_ms`, by the material
+/// manager.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum MaterialDelay {
+    /// It arrives later — the operation waits until then.
+    Until { material_id: String, at_ms: i64 },
+    /// There is not enough of it, with no arrival to wait for.
+    Short {
+        material_id: String,
+        required: f64,
+        available: f64,
+    },
+}
+
+/// The materials `op` lacks at `at_ms` ([`MaterialDelay`]); none without a
+/// material manager.
+pub(crate) fn material_delays<'r>(
+    request: &'r ScheduleRequest,
+    op: &'r crate::Operation,
+    at_ms: i64,
+) -> impl Iterator<Item = MaterialDelay> + 'r {
+    let check_time =
+        chrono::DateTime::from_timestamp_millis(at_ms).unwrap_or_else(chrono::Utc::now);
+    let result = request
+        .material_manager
+        .as_ref()
+        .map(|m| m.check_availability(&op.material_requirements, check_time));
+    result
+        .into_iter()
+        .filter(|r| !r.is_available)
+        .flat_map(|r| r.shortages)
+        .filter_map(move |s| match s.available_date {
+            Some(date) => {
+                let at = date.timestamp_millis();
+                (at > at_ms).then_some(MaterialDelay::Until {
+                    material_id: s.material_id,
+                    at_ms: at,
+                })
+            }
+            None => Some(MaterialDelay::Short {
+                material_id: s.material_id,
+                required: s.required,
+                available: s.available,
+            }),
+        })
 }
 
 /// How much of a resource `req` takes: a worker's load factor in

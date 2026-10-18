@@ -538,7 +538,7 @@ impl SimpleScheduler {
         }
 
         // 납기 위반 체크
-        self.check_due_dates(&mut schedule, &request.jobs);
+        Self::check_due_dates(&mut schedule, &request.jobs);
 
         schedule
     }
@@ -1249,7 +1249,7 @@ impl SimpleScheduler {
     }
 
     /// 납기 위반 체크
-    fn check_due_dates(&self, schedule: &mut Schedule, jobs: &[Job]) {
+    pub(crate) fn check_due_dates(schedule: &mut Schedule, jobs: &[Job]) {
         for job in jobs {
             if let Some(due_date) = job.due_date {
                 let due_ms = due_date.timestamp_millis();

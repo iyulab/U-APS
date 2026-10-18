@@ -30,6 +30,7 @@ pub mod engine;
 pub mod kpi;
 pub mod pegging;
 pub mod production;
+pub mod rebased;
 pub mod reschedule;
 mod schedule;
 mod simple;

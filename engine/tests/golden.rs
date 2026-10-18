@@ -670,6 +670,63 @@ fn adapter_parity() {
     assert_golden("adapter_parity", &Value::Object(table));
 }
 
+/// The engine's response schedule against the same request scheduled on
+/// u-schedule and read back ([`uaps_engine::rebased::schedule`]): which
+/// scenarios it schedules, and the first place each differs from the pinned
+/// response. Pinned in `tests/golden/rebased_parity.json`.
+#[test]
+fn rebased_parity() {
+    use uaps_engine::ffi::schedule_request_from_json;
+    use uaps_engine::rebased::{schedule, NotRebased};
+
+    /// The first path at which `a` and `b` differ, if any.
+    fn first_difference(path: &str, a: &Value, b: &Value) -> Option<String> {
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => {
+                let keys: std::collections::BTreeSet<&String> = x.keys().chain(y.keys()).collect();
+                keys.into_iter().find_map(|k| {
+                    first_difference(
+                        &format!("{path}.{k}"),
+                        x.get(k).unwrap_or(&Value::Null),
+                        y.get(k).unwrap_or(&Value::Null),
+                    )
+                })
+            }
+            (Value::Array(x), Value::Array(y)) if x.len() == y.len() => x
+                .iter()
+                .zip(y)
+                .enumerate()
+                .find_map(|(i, (p, q))| first_difference(&format!("{path}[{i}]"), p, q)),
+            _ if a == b => None,
+            _ => Some(format!("{path}: {a} vs {b}")),
+        }
+    }
+
+    let mut table = serde_json::Map::new();
+    for (name, request) in schedule_scenarios() {
+        let golden: Value = serde_json::from_str(
+            &std::fs::read_to_string(golden_path(name)).expect("golden exists"),
+        )
+        .expect("golden is JSON");
+        let parsed =
+            schedule_request_from_json(&request.to_string()).expect("scenario request parses");
+        let row = match schedule(&parsed) {
+            Ok(rebased) => {
+                let rebased = serde_json::to_value(&rebased).expect("schedule serializes");
+                match first_difference("schedule", &golden["schedule"], &rebased) {
+                    None => json!("same"),
+                    Some(at) => json!({ "differs": at }),
+                }
+            }
+            Err(NotRebased::Unsupported(u)) => json!({ "unsupported": format!("{u:?}") }),
+            Err(NotRebased::Refused(e)) => json!({ "refused": format!("{e:?}") }),
+            Err(NotRebased::Infeasible(v)) => json!({ "infeasible": v.len() }),
+        };
+        table.insert(name.to_string(), row);
+    }
+    assert_golden("rebased_parity", &Value::Object(table));
+}
+
 /// The scheduling scenarios, by golden name.
 fn schedule_scenarios() -> Vec<(&'static str, Value)> {
     vec![
