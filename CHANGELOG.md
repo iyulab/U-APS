@@ -15,6 +15,14 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- **The previous dispatching scheduler is gone.** Every request the default
+  scheduler takes is placed on u-schedule; nothing falls back any more. In
+  the engine's Rust API `SimpleScheduler::schedule` returns
+  `Result<Schedule, ScheduleError>`: `Refused` when the request is malformed
+  (the FFI answers `success: false`, as for other scheduling errors),
+  `Broken` for a defect in the engine. A job without operations is skipped,
+  as before.
+
 - The default scheduler's new path now takes requests with operations
   without resources, daily work windows, `IsSplittable`, `SplitConfig`,
   `OverlapConfig` or `TimeWindow` (they used to go to the previous

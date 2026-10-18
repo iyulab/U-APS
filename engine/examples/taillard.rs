@@ -107,7 +107,9 @@ fn main() {
                 );
             }
             let started = Instant::now();
-            let schedule = SimpleScheduler::new().schedule(&request);
+            let schedule = SimpleScheduler::new()
+                .schedule(&request)
+                .expect("schedules");
             let ms = started.elapsed().as_millis();
             let makespan = schedule.makespan_ms as f64;
             let reference = best.get(name).copied();

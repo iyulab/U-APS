@@ -1,14 +1,13 @@
-//! The engine's dispatching schedule against the same request scheduled on
-//! u-schedule ([`uaps_engine::rebased::schedule`]), on random requests that
-//! mix what the golden scenarios test one at a time: alternative equipment
-//! at different efficiencies, workers whole or at a load factor, set-up
-//! matrices, priorities, due dates, release times, dispatching rules and
-//! shift calendars.
+//! The dispatching scheduler on random requests that mix what the golden
+//! scenarios test one at a time: alternative equipment at different
+//! efficiencies, workers whole or at a load factor, set-up matrices,
+//! priorities, due dates, release times, dispatching rules and rule
+//! switching, materials, shift calendars and daily work windows, operations
+//! without resources, target sites and outsourcing. Each schedule is judged
+//! by u-schedule's own feasibility check.
 
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use serde_json::Value;
-use uaps_engine::rebased::schedule as rebased;
 use uaps_engine::*;
 
 const HOUR: i64 = 3_600_000;
@@ -261,29 +260,6 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
     request
 }
 
-/// The first path at which `a` and `b` differ, if any.
-fn first_difference(path: &str, a: &Value, b: &Value) -> Option<String> {
-    match (a, b) {
-        (Value::Object(x), Value::Object(y)) => {
-            let keys: std::collections::BTreeSet<&String> = x.keys().chain(y.keys()).collect();
-            keys.into_iter().find_map(|k| {
-                first_difference(
-                    &format!("{path}.{k}"),
-                    x.get(k).unwrap_or(&Value::Null),
-                    y.get(k).unwrap_or(&Value::Null),
-                )
-            })
-        }
-        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => x
-            .iter()
-            .zip(y)
-            .enumerate()
-            .find_map(|(i, (p, q))| first_difference(&format!("{path}[{i}]"), p, q)),
-        _ if a == b => None,
-        _ => Some(format!("{path}: {a} vs {b}")),
-    }
-}
-
 /// The engine's schedule in u-schedule's terms, for its feasibility check:
 /// an assignment per resource, an operation without resources (`NONE`) or
 /// away at a provider (`OUTSOURCE:…`) as a time-only span.
@@ -324,256 +300,21 @@ fn reported_unfilled(s: &Schedule) -> std::collections::BTreeSet<String> {
         .collect()
 }
 
-/// Requests with `f`'s features: how many schedule the same (apart from the
-/// new path's `UnfilledRequirement` reports), and the first differences.
-fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
-    let mut rng = SmallRng::seed_from_u64(20261018);
-    let (mut same, mut not_rebased) = (0, 0);
-    let mut differing: Vec<(usize, String)> = Vec::new();
-    for case in 0..cases {
-        let request = random_request(&mut rng, f);
-        let legacy =
-            serde_json::to_value(SimpleScheduler::new().schedule(&request)).expect("serializes");
-        match rebased(&request) {
-            Ok(mut schedule) => {
-                schedule
-                    .violations
-                    .retain(|v| !matches!(v.constraint_type, ConstraintType::UnfilledRequirement));
-                let schedule = serde_json::to_value(schedule).expect("serializes");
-                match first_difference("schedule", &legacy, &schedule) {
-                    None => same += 1,
-                    Some(at) => differing.push((case, at)),
-                }
-            }
-            Err(_) => not_rebased += 1,
-        }
-    }
-    (same, differing, not_rebased)
-}
-
-/// Each feature alone over plain requests, then all together.
+/// Every random request is scheduled, and the schedule keeps it: no
+/// resource beyond its capacity, every operation after the one before it and
+/// in working time — judged by u-schedule's own check, as the engine's
+/// schedule is read back — apart from the operations it reports it could
+/// not fill or place.
 #[test]
-#[ignore = "measurement: run with --ignored --nocapture"]
-fn differences_by_feature() {
-    let plain = Features::default();
-    let alone: [(&str, Features); 17] = [
-        ("plain", plain),
-        (
-            "alternatives",
-            Features {
-                alternatives: true,
-                ..plain
-            },
-        ),
-        (
-            "efficiency",
-            Features {
-                alternatives: true,
-                efficiency: true,
-                ..plain
-            },
-        ),
-        (
-            "workers",
-            Features {
-                workers: true,
-                ..plain
-            },
-        ),
-        (
-            "setups",
-            Features {
-                setups: true,
-                ..plain
-            },
-        ),
-        (
-            "priority",
-            Features {
-                priority: true,
-                ..plain
-            },
-        ),
-        ("due", Features { due: true, ..plain }),
-        (
-            "release",
-            Features {
-                release: true,
-                ..plain
-            },
-        ),
-        (
-            "rule",
-            Features {
-                rule: true,
-                ..plain
-            },
-        ),
-        (
-            "calendar",
-            Features {
-                calendar: true,
-                ..plain
-            },
-        ),
-        (
-            "switching",
-            Features {
-                switching: true,
-                ..plain
-            },
-        ),
-        (
-            "materials",
-            Features {
-                materials: true,
-                ..plain
-            },
-        ),
-        (
-            "daily",
-            Features {
-                daily: true,
-                ..plain
-            },
-        ),
-        (
-            "daily+calendar",
-            Features {
-                daily: true,
-                calendar: true,
-                time_only: true,
-                ..plain
-            },
-        ),
-        (
-            "sites",
-            Features {
-                sites: true,
-                ..plain
-            },
-        ),
-        (
-            "outsourcing",
-            Features {
-                outsourcing: true,
-                calendar: true,
-                ..plain
-            },
-        ),
-        (
-            "time-only",
-            Features {
-                time_only: true,
-                calendar: true,
-                ..plain
-            },
-        ),
-    ];
-    for (name, f) in alone.into_iter().chain([("all", Features::ALL)]) {
-        let started = std::time::Instant::now();
-        let (same, differing, not_rebased) = compare(f, 300);
-        eprintln!(
-            "{name:>14}: same {same:>3} · differing {:>3} · not rebased {not_rebased} · {:.1} s",
-            differing.len(),
-            started.elapsed().as_secs_f64()
-        );
-        for (case, at) in differing.iter().take(3) {
-            eprintln!("               case {case}: {at}");
-        }
-    }
-}
-
-/// Over random requests with every feature: both schedules judged by one
-/// checker (u-schedule's feasibility check on the adapted problem), and the
-/// makespan and total lateness of each.
-#[test]
-#[ignore = "measurement: run with --ignored --nocapture"]
-fn quality_of_both_schedules() {
-    use u_schedule::scheduler::{check_schedule, FeasibilityInput};
-
-    let mut rng = SmallRng::seed_from_u64(20261018);
-    let (mut legacy_broken, mut rebased_broken) = (0, 0);
-    let (mut better, mut worse, mut equal) = (0, 0, 0);
-    let (mut legacy_late, mut rebased_late) = (0i64, 0i64);
-    let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
-    for _ in 0..300 {
-        let request = random_request(&mut rng, Features::ALL);
-        let legacy = SimpleScheduler::new().schedule(&request);
-        let Ok(rebased) = rebased(&request) else {
-            continue;
-        };
-        let adapted = uaps_engine::adapter::to_problem(&request);
-        let problem = adapted.problem.expect("adapted");
-        // An operation the schedule reports it could not place is not judged.
-        let judge = |s: &Schedule| {
-            let reported = reported_unfilled(s);
-            check_schedule(
-                &as_u_schedule(s),
-                &FeasibilityInput {
-                    tasks: problem.tasks(),
-                    resources: problem.resources(),
-                    constraints: &[],
-                },
-            )
-            .into_iter()
-            .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
-            .filter(|v| !reported.contains(&v.entity_id))
-            .collect::<Vec<_>>()
-        };
-        let lv = judge(&legacy);
-        for v in &lv {
-            *kinds.entry(format!("{:?}", v.violation_type)).or_default() += 1;
-        }
-        legacy_broken += usize::from(!lv.is_empty());
-        rebased_broken += usize::from(!judge(&rebased).is_empty());
-        match rebased.makespan_ms.cmp(&legacy.makespan_ms) {
-            std::cmp::Ordering::Less => better += 1,
-            std::cmp::Ordering::Greater => worse += 1,
-            std::cmp::Ordering::Equal => equal += 1,
-        }
-        let late = |s: &Schedule| -> i64 {
-            request
-                .jobs
-                .iter()
-                .filter_map(|j| {
-                    let due = j.due_date?.timestamp_millis();
-                    let end = j
-                        .operations
-                        .iter()
-                        .filter_map(|o| s.assignment_for_operation(&o.id).map(|a| a.end_ms))
-                        .max()?;
-                    Some((end - due).max(0))
-                })
-                .sum()
-        };
-        legacy_late += late(&legacy);
-        rebased_late += late(&rebased);
-    }
-    eprintln!("broken schedules: legacy {legacy_broken} · rebased {rebased_broken}");
-    eprintln!("legacy violation kinds: {kinds:?}");
-    eprintln!("rebased makespan: shorter {better} · longer {worse} · equal {equal}");
-    eprintln!(
-        "total lateness (h): legacy {:.1} · rebased {:.1}",
-        legacy_late as f64 / 3.6e6,
-        rebased_late as f64 / 3.6e6
-    );
-}
-
-/// Every schedule u-schedule places for a random request keeps the
-/// request: no resource beyond its capacity, every operation after the one
-/// before it and in working time — judged by u-schedule's own check, as the
-/// engine's schedule is read back.
-#[test]
-fn rebased_schedules_keep_random_requests() {
+fn schedules_keep_random_requests() {
     use u_schedule::scheduler::{check_schedule, FeasibilityInput};
 
     let mut rng = SmallRng::seed_from_u64(7);
     for case in 0..200 {
         let request = random_request(&mut rng, Features::ALL);
-        let Ok(schedule) = rebased(&request) else {
-            continue;
-        };
+        let schedule = SimpleScheduler::new()
+            .schedule(&request)
+            .unwrap_or_else(|e| panic!("case {case}: {e}"));
         let problem = uaps_engine::adapter::to_problem(&request)
             .problem
             .expect("adapted");

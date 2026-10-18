@@ -54,12 +54,15 @@ let resource = Resource::new("cnc-001", "CNC Machine 1")
 ## Scheduling
 
 ### SimpleScheduler
-우선순위 기반 간단한 스케줄러
+공정 단위 비지연 디스패칭 스케줄러(규칙 · 우선순위). 배치는 u-schedule 이 한다.
 
 ```rust
 let scheduler = SimpleScheduler::new();
-let schedule = scheduler.schedule(&request);
+// Err: 요청이 잘못됨(ScheduleError::Refused) 또는 엔진 결함(ScheduleError::Broken)
+let schedule = scheduler.schedule(&request)?;
 ```
+
+채울 수 없거나 배치할 수 없는 공정은 `UnfilledRequirement` 위반으로 보고된다.
 
 ### GaScheduler
 Hybrid Genetic Algorithm 스케줄러

@@ -326,7 +326,7 @@ Writer → 출력 (Excel/JSON/Gantt)
 
 ### 완료된 기능 (Phase 1-4)
 - ✅ Core 데이터 모델 (Job, Operation, Resource)
-- ✅ SimpleScheduler (우선순위 기반)
+- ✅ SimpleScheduler (공정 단위 비지연 디스패칭, u-schedule 배치)
 - ✅ 제약 조건 (DueDate, Calendar)
 - ✅ SDST (Setup Time Matrix)
 - ✅ Multi-Resource Operations

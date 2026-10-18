@@ -31,7 +31,7 @@ mod level1_basic {
         // When: 스케줄링
         let request = ScheduleRequest::new(vec![job], vec![resource]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 1개 할당, 0시작 60_000종료
         assert_eq!(schedule.assignments.len(), 1);
@@ -64,7 +64,7 @@ mod level1_basic {
 
         let request = ScheduleRequest::new(vec![job1, job2], vec![resource]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // J2가 우선순위 높으므로 먼저 처리
         assert_eq!(schedule.assignments.len(), 2);
@@ -91,7 +91,7 @@ mod level1_basic {
 
         let request = ScheduleRequest::new(vec![job], vec![resource]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // O1 → O2 순차 처리
         assert_eq!(schedule.assignments.len(), 2);
@@ -130,7 +130,7 @@ mod level1_basic {
 
         let request = ScheduleRequest::new(vec![job1, job2], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // 병렬 처리로 Makespan = 60_000
         assert_eq!(schedule.assignments.len(), 2);
@@ -153,7 +153,7 @@ mod level1_basic {
 
         let request = ScheduleRequest::new(vec![job], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // M2가 더 효율적이므로 선택됨, 처리시간 = 60_000 / 1.5 = 40_000
         assert_eq!(schedule.assignments.len(), 1);
@@ -189,7 +189,7 @@ mod level2_constraints {
 
         let request = ScheduleRequest::new(vec![job], vec![resource]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // 납기 위반 발생 (완료시간 60000 > 납기 30000)
         assert!(!schedule.violations.is_empty());
@@ -226,7 +226,7 @@ mod level2_constraints {
             .with_setup_matrices(setup_matrices);
 
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // J2(30) → Setup(10) → J1(30) = 70
         assert_eq!(schedule.makespan_ms, 70_000);
@@ -504,7 +504,7 @@ mod level6_ga_scheduler {
 
         // Simple Scheduler
         let simple = SimpleScheduler::new();
-        let simple_schedule = simple.schedule(&request);
+        let simple_schedule = simple.schedule(&request).expect("schedules");
 
         // GA Scheduler
         let ga_params = GaParams {
@@ -575,7 +575,7 @@ mod level7_edge_cases {
     fn test_empty_jobs() {
         let request = ScheduleRequest::new(vec![], vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert!(schedule.assignments.is_empty());
         assert_eq!(schedule.makespan_ms, 0);
@@ -587,7 +587,7 @@ mod level7_edge_cases {
         let job = Job::new("J1").with_priority(1);
         let request = ScheduleRequest::new(vec![job], vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert!(schedule.assignments.is_empty());
     }
@@ -603,7 +603,7 @@ mod level7_edge_cases {
 
         let request = ScheduleRequest::new(vec![job], vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert_eq!(schedule.makespan_ms, 86_400_000);
     }
@@ -625,7 +625,7 @@ mod level7_edge_cases {
 
         let request = ScheduleRequest::new(jobs, vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert_eq!(schedule.assignments.len(), 5);
         assert_eq!(schedule.makespan_ms, 50_000);
@@ -650,7 +650,7 @@ mod level7_edge_cases {
 
         let request = ScheduleRequest::new(vec![job], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // 가장 효율적인 M9 선택 (efficiency 1.9)
         assert_eq!(schedule.assignments[0].resource_id, "M9");
@@ -665,7 +665,7 @@ mod level7_edge_cases {
 
         let request = ScheduleRequest::new(vec![job], vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert_eq!(schedule.assignments.len(), 1);
         assert_eq!(schedule.assignments[0].resource_id, "NONE");
@@ -704,7 +704,7 @@ mod level8_scalability {
 
         let request = ScheduleRequest::new(jobs, resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // 모든 Operation이 할당됨
         let expected_ops: usize = (0..20).map(|i| 2 + (i % 2)).sum();
@@ -739,7 +739,7 @@ mod level8_scalability {
 
         // Simple Scheduler
         let simple = SimpleScheduler::new();
-        let simple_schedule = simple.schedule(&request);
+        let simple_schedule = simple.schedule(&request).expect("schedules");
 
         assert_eq!(simple_schedule.assignments.len(), 50);
         assert!(simple_schedule.makespan_ms > 0);
@@ -771,7 +771,7 @@ mod level8_scalability {
 
         let request = ScheduleRequest::new(vec![job], vec![Resource::equipment("M1")]);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         assert_eq!(schedule.assignments.len(), 10);
 

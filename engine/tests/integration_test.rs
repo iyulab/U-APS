@@ -39,7 +39,7 @@ fn test_single_product_scheduling() {
     let scheduler = SimpleScheduler::new();
 
     // When
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     // Then
     assert_eq!(schedule.assignments.len(), 2);
@@ -85,7 +85,7 @@ fn test_multi_order_priority_scheduling() {
     let scheduler = SimpleScheduler::new();
 
     // When
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     // Then: 우선순위대로 스케줄링
     let op_u = schedule.assignment_for_operation("OP-U1").unwrap();
@@ -122,7 +122,7 @@ fn test_parallel_resource_utilization() {
     let scheduler = SimpleScheduler::new();
 
     // When
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     // Then: 병렬 실행으로 60분 완료 (순차면 120분)
     assert_eq!(schedule.makespan_ms, 60 * 60 * 1000);
@@ -154,7 +154,7 @@ fn test_due_date_violation_detection() {
     let scheduler = SimpleScheduler::new();
 
     // When
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     // Then: 15분 지연
     assert!(!schedule.is_on_time());
@@ -205,7 +205,7 @@ fn test_sequential_operations() {
     let scheduler = SimpleScheduler::new();
 
     // When
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     // Then
     assert_eq!(schedule.assignments.len(), 5);

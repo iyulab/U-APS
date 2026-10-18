@@ -1,4 +1,4 @@
-//! The dispatching schedule, placed by u-schedule.
+//! [`SimpleScheduler`]'s placement on u-schedule.
 //!
 //! The request is stated as a u-schedule problem ([`crate::adapter`]),
 //! scheduled by its `SimpleScheduler`, and read back into this engine's
@@ -11,27 +11,16 @@
 use std::collections::{BTreeSet, HashMap};
 
 use u_schedule::scheduler::SimpleScheduler as USScheduler;
-use u_schedule::validation::ValidationError;
 
 use super::task_splitter::split_operation_by_calendar;
-use super::{Assignment, Schedule, SimpleScheduler, Violation};
+use super::{Assignment, Schedule, ScheduleError, SimpleScheduler, Violation};
 use crate::adapter::{job_ready_ms, material_delays, outsourced, to_problem, MaterialDelay};
 use crate::{ResourceKind, ScheduleRequest};
 
-/// Why a request was not scheduled on u-schedule.
-#[derive(Debug)]
-pub enum NotRebased {
-    /// u-schedule refused the problem.
-    Refused(Vec<ValidationError>),
-    /// u-schedule's schedule breaks the problem (a requirement it could not
-    /// fill, …) — this engine schedules such a request its own way.
-    Infeasible(Vec<u_schedule::models::Violation>),
-}
-
-/// Schedules `request` on u-schedule, or says why it did not.
-pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
+/// Schedules `request` on u-schedule, or says why it cannot.
+pub(super) fn schedule(request: &ScheduleRequest) -> Result<Schedule, ScheduleError> {
     let adapted = to_problem(request);
-    let problem = adapted.problem.map_err(NotRebased::Refused)?;
+    let problem = adapted.problem.map_err(ScheduleError::Refused)?;
     let mut scheduler = USScheduler::new().with_transition_matrices(adapted.transition_matrices);
     if let Some(engine) = adapted.rule_engine {
         scheduler = scheduler.with_rule_engine(engine);
@@ -62,7 +51,7 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         .cloned()
         .collect();
     if !broken.is_empty() {
-        return Err(NotRebased::Infeasible(broken));
+        return Err(ScheduleError::Broken(broken));
     }
 
     let resources: HashMap<&str, &crate::Resource> = request

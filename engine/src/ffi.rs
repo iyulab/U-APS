@@ -249,23 +249,32 @@ pub unsafe extern "C" fn uaps_schedule(
                 site_transitions: ffi_request.site_transitions,
             };
 
-            // TODO(rebase P3): the engine's own scheduler takes a request
-            // u-schedule refuses or schedules wrongly (`rebased::NotRebased`);
-            // remove it once those are answered here.
-            let schedule = crate::rebased::schedule(&request)
-                .unwrap_or_else(|_| SimpleScheduler::new().schedule(&request));
-
-            let response = FfiScheduleResponse {
-                success: true,
-                schedule: Some(schedule),
-                kpi: None,
-                metrics: None,
-                warnings: None,
-                error: None,
-            };
-
-            *result_ptr = response_to_ptr(&response);
-            0
+            match SimpleScheduler::new().schedule(&request) {
+                Ok(schedule) => {
+                    let response = FfiScheduleResponse {
+                        success: true,
+                        schedule: Some(schedule),
+                        kpi: None,
+                        metrics: None,
+                        warnings: None,
+                        error: None,
+                    };
+                    *result_ptr = response_to_ptr(&response);
+                    0
+                }
+                Err(e) => {
+                    let response = FfiScheduleResponse {
+                        success: false,
+                        schedule: None,
+                        kpi: None,
+                        metrics: None,
+                        warnings: None,
+                        error: Some(format!("Scheduling error: {}", e)),
+                    };
+                    *result_ptr = response_to_ptr(&response);
+                    -2
+                }
+            }
         }
     }
 }

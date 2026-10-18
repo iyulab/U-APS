@@ -1,8 +1,11 @@
-//! What the u-schedule path reports about operations it cannot fill or place
-//! ([`uaps_engine::rebased::schedule`]).
+//! What the dispatching scheduler reports about operations it cannot fill or
+//! place.
 
-use uaps_engine::rebased::schedule as rebased;
 use uaps_engine::*;
+
+fn schedule(request: &ScheduleRequest) -> Schedule {
+    SimpleScheduler::new().schedule(request).expect("schedules")
+}
 
 /// 2024-01-22 (Monday) 00:00 UTC.
 const MONDAY: i64 = 1_705_881_600_000;
@@ -25,7 +28,7 @@ fn a_target_site_without_the_equipment_is_scheduled_without_it_and_reported() {
     );
     let request = ScheduleRequest::new(vec![job], vec![Resource::equipment("E1").with_site("S1")])
         .with_start_time(MONDAY);
-    let schedule = rebased(&request).expect("on the new path");
+    let schedule = schedule(&request);
     // As the previous scheduler did: without the equipment, in time only.
     assert_eq!(schedule.assignments.len(), 1);
     assert_eq!(schedule.assignments[0].resource_id, "NONE");
@@ -69,7 +72,7 @@ fn an_operation_that_can_never_run_is_left_out_and_reported() {
         Time::new(17, 0),
         weekdays,
     )));
-    let schedule = rebased(&request).expect("answered on the new path, not handed back");
+    let schedule = schedule(&request);
     assert!(schedule.assignment_for_operation("O1").is_none());
     assert!(schedule.assignment_for_operation("O2").is_some());
     assert_eq!(unfilled(&schedule), ["O1"]);

@@ -43,7 +43,7 @@ fn bench_simple_scheduler(c: &mut Criterion) {
             |b, req| {
                 b.iter(|| {
                     let scheduler = SimpleScheduler::new();
-                    black_box(scheduler.schedule(req))
+                    black_box(scheduler.schedule(req).expect("schedules"))
                 })
             },
         );
@@ -96,7 +96,7 @@ fn bench_kpi_calculation(c: &mut Criterion) {
         let request = ScheduleRequest::new(jobs.clone(), resources);
 
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         group.bench_with_input(
             BenchmarkId::new("calculate", size),
@@ -172,7 +172,7 @@ fn bench_whatif(c: &mut Criterion) {
     let request = ScheduleRequest::new(jobs.clone(), resources);
 
     let scheduler = SimpleScheduler::new();
-    let schedule = scheduler.schedule(&request);
+    let schedule = scheduler.schedule(&request).expect("schedules");
 
     let engine = WhatIfEngine::new(schedule, jobs, 500_000);
 

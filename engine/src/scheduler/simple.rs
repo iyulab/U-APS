@@ -1,113 +1,21 @@
-//! SimpleScheduler - 기본 스케줄러 (Phase 2)
+//! SimpleScheduler — the dispatching scheduler.
 //!
-//! 공정 단위 비지연(non-delay) 디스패칭
-//! - 아직 끝나지 않은 Job 마다 다음 Operation 을 자원 가용성 확인 후 가장 이른 시점에 배치해 제안
-//! - 가장 이른 시작 시각에 시작할 수 있는 제안들이 경쟁하고, 규칙(없으면 Job 우선순위)이 그 결정의
-//!   컨텍스트(시각 · 남은 작업 · 큐 · 활용률)로 하나를 고른다 -- 자원은 시작할 수 있는 일이 있는 동안
-//!   놀지 않는다
-//! - 다층 디스패칭(`MultiLayer`)은 결정마다 규칙을 고른다
-//! - 한 공정의 배치(자원 선택 · 효율 · 스킬 · 캘린더 · 준비 시간 · 자재 · 팀 · 사이트)는
-//!   `plan_operation` 이 상태를 건드리지 않고 계산하고, 고른 공정만 확정한다
+//! Operation-level, non-delay dispatching placed by u-schedule: the request
+//! is stated as a u-schedule problem ([`crate::adapter`]), scheduled by its
+//! `SimpleScheduler`, and read back into this engine's [`Schedule`]
+//! (`placement`). Every unfinished job offers its next operation at its
+//! earliest start; the offers that can start first compete, and the rule (or
+//! the job priority — lower value first) picks one on the state of that
+//! decision; a resource never idles while work it can start waits.
 //!
 //! Reference: Kolisch (1996), parallel schedule generation scheme.
-//!
-//! Phase 2.1 기능:
-//! - ManLoadFactor: 작업자 부하계수 기반 동시 작업 지원
-//! - RequiresOperator: 무인공정 지원
-//! - LinkedResource: 로봇-설비 연동 자원 동시 점유
-
-use std::collections::{HashMap, HashSet};
 
 use super::pegging::PeggingEngine;
-use super::{Assignment, Schedule, Violation};
+use super::{Schedule, Violation};
 use crate::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
-    ResourceType, SetupMatrixCollection, SiteTransitions, SkillMatrix, WorkerTimeOverride,
+    SetupMatrixCollection, SiteTransitions, SkillMatrix, WorkerTimeOverride,
 };
-use chrono::{DateTime, Utc};
-
-/// 작업자 부하 추적 (load_factor 기반 동시 작업 지원)
-#[derive(Debug, Clone)]
-struct WorkerLoadTracker {
-    /// 작업자별 시간대별 부하 [(시작, 종료, 부하)]
-    load_slots: HashMap<String, Vec<(i64, i64, f64)>>,
-}
-
-impl WorkerLoadTracker {
-    fn new() -> Self {
-        Self {
-            load_slots: HashMap::new(),
-        }
-    }
-
-    /// 특정 시간대에 작업자가 추가 부하를 수용할 수 있는지 확인
-    fn can_accept_load(
-        &self,
-        worker_id: &str,
-        start_ms: i64,
-        end_ms: i64,
-        load_factor: f64,
-    ) -> bool {
-        if let Some(slots) = self.load_slots.get(worker_id) {
-            // 해당 시간대의 총 부하 계산
-            let total_load: f64 = slots
-                .iter()
-                .filter(|(s, e, _)| *s < end_ms && *e > start_ms) // 겹치는 슬롯
-                .map(|(_, _, load)| load)
-                .sum();
-
-            total_load + load_factor <= 1.0 + f64::EPSILON
-        } else {
-            true // 아직 할당된 작업 없음
-        }
-    }
-
-    /// 작업자에게 부하 추가
-    fn add_load(&mut self, worker_id: &str, start_ms: i64, end_ms: i64, load_factor: f64) {
-        self.load_slots
-            .entry(worker_id.to_string())
-            .or_default()
-            .push((start_ms, end_ms, load_factor));
-    }
-
-    /// 특정 시간 이후로 작업자가 부하를 수용할 수 있는 가장 빠른 시간 찾기
-    fn find_earliest_available(
-        &self,
-        worker_id: &str,
-        after_ms: i64,
-        duration_ms: i64,
-        load_factor: f64,
-    ) -> i64 {
-        let mut candidate_start = after_ms;
-
-        // 최대 100회 반복으로 가용 시간 찾기
-        for _ in 0..100 {
-            let candidate_end = candidate_start + duration_ms;
-            if self.can_accept_load(worker_id, candidate_start, candidate_end, load_factor) {
-                return candidate_start;
-            }
-
-            // 겹치는 슬롯 중 가장 빨리 끝나는 시간으로 이동
-            if let Some(slots) = self.load_slots.get(worker_id) {
-                let next_end = slots
-                    .iter()
-                    .filter(|(s, e, _)| *s < candidate_end && *e > candidate_start)
-                    .map(|(_, e, _)| *e)
-                    .min();
-
-                if let Some(end) = next_end {
-                    candidate_start = end;
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        candidate_start
-    }
-}
 
 /// 스케줄링 요청
 #[derive(Debug, Clone, Default)]
@@ -246,121 +154,39 @@ impl ScheduleRequest {
     }
 }
 
-/// 공정이 쓰는 설비 후보
-fn equipment_candidates(op: &crate::Operation) -> Vec<&str> {
-    op.required_resources
-        .iter()
-        .find(|r| r.resource_type == ResourceType::Equipment)
-        .map(|r| r.candidates.iter().map(String::as_str).collect())
-        .unwrap_or_default()
+/// Why a request could not be scheduled.
+#[derive(Debug, Clone)]
+pub enum ScheduleError {
+    /// u-schedule refused the problem the request states (a duplicate id, a
+    /// negative time, …) — the request is malformed.
+    Refused(Vec<u_schedule::validation::ValidationError>),
+    /// The schedule breaks the request in a way it does not report — a
+    /// defect in this engine, not in the request.
+    Broken(Vec<u_schedule::models::Violation>),
 }
 
-/// 스케줄링 중 바뀌는 상태
-struct SchedulerState {
-    /// 자원별 다음 가용 시간
-    resource_next_available: HashMap<String, i64>,
-    /// 자원별 마지막 처리 제품 (Setup Matrix용)
-    resource_last_product: HashMap<String, String>,
-    /// 작업자 부하 (load_factor 기반 동시 작업 지원)
-    worker_load_tracker: WorkerLoadTracker,
-    /// 자원별 확정한 점유 시간 (활용률 계산용)
-    resource_busy_ms: HashMap<String, i64>,
-    /// 확정한 배정의 가장 늦은 종료 시각
-    latest_end_ms: i64,
-}
-
-impl SchedulerState {
-    fn new(request: &ScheduleRequest) -> Self {
-        Self {
-            resource_next_available: request
-                .resources
-                .iter()
-                .map(|r| (r.id.clone(), request.start_time_ms))
-                .collect(),
-            resource_last_product: HashMap::new(),
-            worker_load_tracker: WorkerLoadTracker::new(),
-            resource_busy_ms: HashMap::new(),
-            latest_end_ms: request.start_time_ms,
+impl std::fmt::Display for ScheduleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(errors) => {
+                let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
+                write!(f, "the request cannot be scheduled: {}", errors.join("; "))
+            }
+            Self::Broken(violations) => {
+                let violations: Vec<&str> = violations.iter().map(|v| v.message.as_str()).collect();
+                write!(
+                    f,
+                    "internal error: the schedule breaks the request ({})",
+                    violations.join("; ")
+                )
+            }
         }
     }
 }
 
-/// 요청에서 한 번 만드는 조회 표
-struct PlacementContext<'a> {
-    request: &'a ScheduleRequest,
-    /// 연결 자원 맵 (linked_resource_id -> 원본 자원)
-    linked_resource_map: HashMap<String, String>,
-    /// 자원별 캘린더 (resource_id -> Calendar)
-    resource_calendar_map: HashMap<&'a str, &'a Calendar>,
-    /// 자원별 사이트 (resource_id -> site_id)
-    resource_site_map: HashMap<&'a str, &'a str>,
-}
+impl std::error::Error for ScheduleError {}
 
-impl<'a> PlacementContext<'a> {
-    fn new(request: &'a ScheduleRequest) -> Self {
-        let linked_resource_map = request
-            .resources
-            .iter()
-            .filter_map(|r| {
-                r.linked_resource_id
-                    .as_ref()
-                    .map(|linked| (r.id.clone(), linked.clone()))
-            })
-            .collect();
-        // 캘린더 맵 구축 (calendar_id -> Calendar)
-        let calendar_map: HashMap<&str, &Calendar> = request
-            .calendars
-            .iter()
-            .map(|c| (c.id.as_str(), c))
-            .collect();
-        let resource_calendar_map = request
-            .resources
-            .iter()
-            .filter_map(|r| {
-                r.calendar_id.as_ref().and_then(|cal_id| {
-                    calendar_map
-                        .get(cal_id.as_str())
-                        .map(|cal| (r.id.as_str(), *cal))
-                })
-            })
-            .collect();
-        let resource_site_map = request
-            .resources
-            .iter()
-            .filter_map(|r| r.site_id.as_ref().map(|s| (r.id.as_str(), s.as_str())))
-            .collect();
-        Self {
-            request,
-            linked_resource_map,
-            resource_calendar_map,
-            resource_site_map,
-        }
-    }
-}
-
-/// 한 공정의 배치 결과: 확정하면 스케줄과 상태에 반영할 변경
-#[derive(Default)]
-struct OperationPlan {
-    /// 공정이 시작하는 시각 (비지연 결정의 기준)
-    start_ms: i64,
-    /// 공정이 끝나는 시각 (Job 의 다음 공정이 시작할 수 있는 가장 이른 시각)
-    end_ms: i64,
-    violations: Vec<Violation>,
-    assignments: Vec<Assignment>,
-    tasks: Vec<crate::Task>,
-    /// (자원, 다음 가용 시간)
-    availability: Vec<(String, i64)>,
-    /// (작업자, 시작, 종료, load_factor)
-    loads: Vec<(String, i64, i64, f64)>,
-    /// (설비, 처리한 제품)
-    last_product: Option<(String, String)>,
-    /// 이 공정을 수행한 사이트; `None` 이면 Job 의 이전 사이트를 그대로 둔다
-    last_site: Option<Option<String>>,
-    /// 배치를 정하는 데 읽은 자원 -- 이 중 하나가 바뀌면 이 제안은 다시 계산한다
-    considered: Vec<String>,
-}
-
-/// SimpleScheduler - 기본 FIFO 스케줄러
+/// The dispatching scheduler.
 pub struct SimpleScheduler;
 
 impl SimpleScheduler {
@@ -368,884 +194,11 @@ impl SimpleScheduler {
         Self
     }
 
-    /// 스케줄링 실행
-    /// 스케줄링 실행
-    ///
-    /// 공정 단위 비지연 디스패칭: 아직 끝나지 않은 Job 마다 다음 공정을 가장 이른 시작으로
-    /// 배치해 제안(offer)하고, 가장 이른 시작 시각에 시작할 수 있는 제안들이 경쟁한다.
-    /// 규칙(없으면 Job 우선순위, 낮은 값이 먼저)이 그 결정을 위해 채운 컨텍스트
-    /// (결정 시각 · 남은 작업 · 큐 도착 · 다음 설비 대기열 · 경쟁 공정 평균 · 자원 활용률)로
-    /// 하나를 고르고, 고른 공정을 확정한 뒤 반복한다. 동률은 입력 순서.
-    pub fn schedule(&self, request: &ScheduleRequest) -> Schedule {
-        let mut schedule = Schedule::new();
-        let cx = PlacementContext::new(request);
-        let mut state = SchedulerState::new(request);
-
-        // Job 마다: 공정(순서대로), 다음에 배치할 공정, 그 공정이 시작할 수 있는 가장 이른 시각,
-        // 이전 공정의 사이트(사이트 간 이동 시간 계산용)
-        let operations: Vec<Vec<&crate::Operation>> = request
-            .jobs
-            .iter()
-            .map(|job| {
-                let mut ops: Vec<&crate::Operation> = job.operations.iter().collect();
-                ops.sort_by_key(|op| op.sequence);
-                ops
-            })
-            .collect();
-        let mut cursor: Vec<usize> = vec![0; request.jobs.len()];
-        let mut ready: Vec<i64> = request
-            .jobs
-            .iter()
-            .map(|job| {
-                job.earliest_start.map_or(request.start_time_ms, |t| {
-                    t.timestamp_millis().max(request.start_time_ms)
-                })
-            })
-            .collect();
-        let mut last_site: Vec<Option<String>> = vec![None; request.jobs.len()];
-
-        let tasks = super::dispatching::jobs_to_tasks(&request.jobs, request.start_time_ms);
-        let dispatching = request.dispatching_config.clone().unwrap_or_else(|| {
-            super::dispatching::DispatchingConfig::new(
-                super::dispatching::DispatchingRuleName::Priority,
-            )
-        });
-        // 규칙이 결정마다 바뀌지 않으면 엔진은 한 번만 만든다
-        let fixed_engine = dispatching
-            .multi_layer
-            .is_none()
-            .then(|| dispatching.build_engine());
-
-        // 제안은 그 공정이 읽는 자원이 바뀔 때까지 유효하다
-        let mut offers: Vec<Option<OperationPlan>> = request.jobs.iter().map(|_| None).collect();
-
-        loop {
-            for j in 0..request.jobs.len() {
-                if offers[j].is_none() && cursor[j] < operations[j].len() {
-                    offers[j] = Some(self.plan_operation(
-                        &cx,
-                        &state,
-                        &request.jobs[j],
-                        operations[j][cursor[j]],
-                        ready[j],
-                        &last_site[j],
-                    ));
-                }
-            }
-            let waiting: Vec<usize> = (0..request.jobs.len())
-                .filter(|&j| offers[j].is_some())
-                .collect();
-            let Some(now) = waiting
-                .iter()
-                .filter_map(|&j| offers[j].as_ref().map(|o| o.start_ms))
-                .min()
-            else {
-                break;
-            };
-
-            // 비지연: 가장 이른 시작 시각에 시작할 수 있는 제안들이 경쟁한다
-            let conflict: Vec<usize> = waiting
-                .iter()
-                .copied()
-                .filter(|&j| offers[j].as_ref().is_some_and(|o| o.start_ms == now))
-                .collect();
-            let context = self.decision_context(
-                &tasks,
-                &operations,
-                &cursor,
-                &ready,
-                &waiting,
-                &conflict,
-                &state,
-                request.start_time_ms,
-                now,
-            );
-            let per_decision;
-            let engine = match &fixed_engine {
-                Some(engine) => engine,
-                None => {
-                    // 다층 디스패칭: 이 결정의 상태가 규칙을 고른다
-                    per_decision =
-                        dispatching.engine_for(&super::dispatching::DispatchingContext {
-                            current_time_ms: now,
-                            delayed_job_count: waiting
-                                .iter()
-                                .filter(|&&j| {
-                                    request.jobs[j]
-                                        .due_date
-                                        .is_some_and(|due| due.timestamp_millis() < now)
-                                })
-                                .count(),
-                            resource_utilization: context.resource_utilization.clone(),
-                            queue_length: waiting.len(),
-                            min_priority: waiting.iter().map(|&j| request.jobs[j].priority).min(),
-                        });
-                    &per_decision
-                }
-            };
-            let chosen = engine
-                .best_of(&tasks, &conflict, &context)
-                .expect("the conflict set is non-empty");
-            let plan = offers[chosen].take().expect("the chosen job made an offer");
-
-            // 확정
-            for violation in plan.violations {
-                schedule.add_violation(violation);
-            }
-            for assignment in plan.assignments {
-                *state
-                    .resource_busy_ms
-                    .entry(assignment.resource_id.clone())
-                    .or_insert(0) += assignment.end_ms - assignment.start_ms;
-                state.latest_end_ms = state.latest_end_ms.max(assignment.end_ms);
-                schedule.add_assignment(assignment);
-            }
-            for task in plan.tasks {
-                schedule.add_task(task);
-            }
-            let mut touched: HashSet<String> = HashSet::new();
-            for (res_id, start, end, load_factor) in plan.loads {
-                state
-                    .worker_load_tracker
-                    .add_load(&res_id, start, end, load_factor);
-                touched.insert(res_id);
-            }
-            for (res_id, end) in plan.availability {
-                touched.insert(res_id.clone());
-                state.resource_next_available.insert(res_id, end);
-            }
-            if let Some((res_id, product)) = plan.last_product {
-                touched.insert(res_id.clone());
-                state.resource_last_product.insert(res_id, product);
-            }
-            ready[chosen] = plan.end_ms;
-            if let Some(site) = plan.last_site {
-                last_site[chosen] = site;
-            }
-            cursor[chosen] += 1;
-
-            // 바뀐 자원을 읽던 제안은 다시 배치한다
-            if !touched.is_empty() {
-                for offer in offers.iter_mut() {
-                    if offer
-                        .as_ref()
-                        .is_some_and(|o| o.considered.iter().any(|r| touched.contains(r)))
-                    {
-                        *offer = None;
-                    }
-                }
-            }
-        }
-
-        // 납기 위반 체크
-        Self::check_due_dates(&mut schedule, &request.jobs);
-
-        schedule
-    }
-
-    /// 결정 시점의 컨텍스트: 규칙이 이 결정을 판단하는 상태.
-    ///
-    /// 기다리는 Job 마다 임박한 공정, 남은 작업, 큐에 든 시각, 다음 공정이 쓰는 설비를
-    /// 원하는 다른 기다리는 Job 수(WINQ); 경쟁 공정의 평균 길이(ATC 의 p̄); 자원별
-    /// 활용률(LPUL) = 확정한 점유 시간 ÷ 지금까지의 계획 구간.
-    #[allow(clippy::too_many_arguments)]
-    fn decision_context(
-        &self,
-        tasks: &[u_schedule::models::Task],
-        operations: &[Vec<&crate::Operation>],
-        cursor: &[usize],
-        ready: &[i64],
-        waiting: &[usize],
-        conflict: &[usize],
-        state: &SchedulerState,
-        start_time_ms: i64,
-        now: i64,
-    ) -> u_schedule::dispatching::SchedulingContext {
-        let mut context = u_schedule::dispatching::SchedulingContext::at_time(now);
-
-        let wanted: Vec<(usize, Vec<&str>)> = waiting
-            .iter()
-            .map(|&j| (j, equipment_candidates(operations[j][cursor[j]])))
-            .collect();
-
-        for &j in waiting {
-            let (task, c) = (&tasks[j], cursor[j]);
-            let remaining: i64 = task.activities[c..]
-                .iter()
-                .map(|a| a.duration.total_ms())
-                .sum();
-            let next_queue = operations[j][c + 1..]
-                .iter()
-                .map(|op| equipment_candidates(op))
-                .find(|eq| !eq.is_empty())
-                .map(|usable| {
-                    wanted
-                        .iter()
-                        .filter(|(k, eq)| *k != j && eq.iter().any(|r| usable.contains(r)))
-                        .count()
-                })
-                .unwrap_or(0);
-            context.imminent_activity.insert(task.id.clone(), c);
-            context.remaining_work.insert(task.id.clone(), remaining);
-            context.arrival_times.insert(task.id.clone(), ready[j]);
-            context
-                .next_queue_length
-                .insert(task.id.clone(), next_queue);
-        }
-
-        let competing: i64 = conflict
-            .iter()
-            .map(|&j| tasks[j].activities[cursor[j]].duration.total_ms())
-            .sum();
-        context.average_processing_time = Some(competing as f64 / conflict.len() as f64);
-
-        let span = state.latest_end_ms - start_time_ms;
-        if span > 0 {
-            for (res_id, busy) in &state.resource_busy_ms {
-                context
-                    .resource_utilization
-                    .insert(res_id.clone(), (*busy as f64 / span as f64).min(1.0));
-            }
-        }
-        context
-    }
-
-    /// 한 공정을 지금 상태에서 어디에, 언제 배치할지 계산한다 — 상태는 건드리지 않고,
-    /// 확정할 때 적용할 변경을 [`OperationPlan`] 으로 돌려준다.
-    fn plan_operation(
-        &self,
-        cx: &PlacementContext<'_>,
-        state: &SchedulerState,
-        job: &Job,
-        operation: &crate::Operation,
-        job_current_time: i64,
-        job_last_site: &Option<String>,
-    ) -> OperationPlan {
-        let request = cx.request;
-        let linked_resource_map = &cx.linked_resource_map;
-        let resource_calendar_map = &cx.resource_calendar_map;
-        let resource_site_map = &cx.resource_site_map;
-        let mut plan = OperationPlan {
-            start_ms: job_current_time,
-            end_ms: job_current_time,
-            ..OperationPlan::default()
-        };
-
-        // Multi-Resource: 모든 자원 요구사항 처리
-        let mut allocated_resources: Vec<String> = Vec::new();
-        let mut latest_available = job_current_time;
-        let mut total_setup_time = 0i64;
-        let mut primary_efficiency = 1.0f64;
-        // 할당된 작업자 ID 추적 (스킬 기반 시간 조정용)
-        let mut assigned_worker_id: Option<String> = None;
-
-        // 0. 자재 제약 검사 (MaterialManager 설정된 경우)
-        if let Some(ref material_manager) = request.material_manager {
-            if operation.has_material_requirements() {
-                // 현재 시점 기준 자재 가용성 검사
-                let check_time =
-                    DateTime::from_timestamp_millis(latest_available).unwrap_or_else(Utc::now);
-                let availability_result = material_manager
-                    .check_availability(&operation.material_requirements, check_time);
-
-                if !availability_result.is_available {
-                    for shortage in &availability_result.shortages {
-                        // 자재 가용일 미도래로 인한 지연
-                        if let Some(avail_date) = shortage.available_date {
-                            let avail_ms = avail_date.timestamp_millis();
-                            if avail_ms > latest_available {
-                                let delay = avail_ms - latest_available;
-                                plan.violations
-                                    .push(Violation::material_availability_violation(
-                                        &operation.id,
-                                        &shortage.material_id,
-                                        delay,
-                                    ));
-                                // 자재 가용일까지 시작 시간 지연
-                                latest_available = avail_ms;
-                            }
-                        } else {
-                            // 재고 부족 (가용일과 무관)
-                            plan.violations.push(Violation::material_shortage_violation(
-                                &operation.id,
-                                &shortage.material_id,
-                                shortage.required,
-                                shortage.available,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        // 0.5. 외주 공정 처리 (Outsourcing)
-        if operation.is_outsourced() {
-            if let Some(ref outsourcing_config) = operation.outsourcing_config {
-                // 외주 리드타임 계산
-                let lead_time = if let Some(ref mgr) = request.outsourcing_manager {
-                    outsourcing_config.lead_time_ms.unwrap_or_else(|| {
-                        mgr.get_provider(&outsourcing_config.provider_id)
-                            .map(|p| p.default_lead_time_ms)
-                            .unwrap_or(operation.time.process_ms)
-                    })
-                } else {
-                    outsourcing_config
-                        .lead_time_ms
-                        .unwrap_or(operation.time.process_ms)
-                };
-
-                // 외주 시작 시간 (현재 가용 시간 기준)
-                let outsourcing_start = latest_available;
-                let outsourcing_end = outsourcing_start + lead_time;
-
-                // 외주 assignment 생성 (resource_id = provider_id)
-                let outsourcing_assignment = Assignment {
-                    operation_id: operation.id.clone(),
-                    job_id: job.id.clone(),
-                    resource_id: format!("OUTSOURCE:{}", outsourcing_config.provider_id),
-                    start_ms: outsourcing_start,
-                    end_ms: outsourcing_end,
-                    setup_ms: 0,
-                    site_id: None,
-                };
-                plan.assignments.push(outsourcing_assignment);
-
-                plan.start_ms = outsourcing_start;
-                plan.end_ms = outsourcing_end;
-                return plan;
-            }
-        }
-
-        // 1. 장비 자원 처리 (Setup Time 및 효율성 적용)
-        if let Some(equipment_req) = operation
-            .required_resources
-            .iter()
-            .find(|r| r.resource_type == ResourceType::Equipment)
-        {
-            // Site 필터링: target_site_id가 지정되면 해당 사이트 리소스만 허용
-            let site_filtered_candidates: Vec<String> =
-                if let Some(ref target_site) = job.target_site_id {
-                    equipment_req
-                        .candidates
-                        .iter()
-                        .filter(|c| {
-                            // 리소스에 site_id가 없으면 허용 (하위 호환)
-                            resource_site_map
-                                .get(c.as_str())
-                                .is_none_or(|s| *s == target_site.as_str())
-                        })
-                        .cloned()
-                        .collect()
-                } else {
-                    equipment_req.candidates.clone()
-                };
-            plan.considered
-                .extend(site_filtered_candidates.iter().cloned());
-            let (resource_id, available_time, setup_time, efficiency) = self
-                .find_earliest_resource_with_setup(
-                    &site_filtered_candidates,
-                    &request.resources,
-                    &state.resource_next_available,
-                    &state.resource_last_product,
-                    &request.setup_matrices,
-                    job.product_name.as_deref(),
-                );
-
-            if let Some(res_id) = resource_id {
-                // Inter-site transition time 적용
-                if let Some(ref transitions) = request.site_transitions {
-                    let current_site = resource_site_map.get(res_id.as_str()).copied();
-                    let transition_time =
-                        transitions.get_transition_time(job_last_site.as_deref(), current_site);
-                    latest_available = latest_available.max(job_current_time + transition_time);
-                }
-                allocated_resources.push(res_id);
-                latest_available = latest_available.max(available_time);
-                total_setup_time = setup_time;
-                primary_efficiency = efficiency;
-            }
-        }
-
-        // 2. 팀 기반 할당 (crew_id 설정된 경우)
-        let mut crew_allocated = false;
-        if let Some(ref crew_id) = operation.crew_id {
-            if let Some(ref crew_manager) = request.crew_manager {
-                if let Some(crew) = crew_manager.get_crew(crew_id) {
-                    if crew.is_operational() {
-                        // crew의 모든 멤버를 할당
-                        for member in crew.members() {
-                            plan.considered.push(member.worker_id.clone());
-                            if !allocated_resources.contains(&member.worker_id) {
-                                allocated_resources.push(member.worker_id.clone());
-                                // 작업자 가용 시간 확인
-                                let worker_available = state
-                                    .resource_next_available
-                                    .get(&member.worker_id)
-                                    .copied()
-                                    .unwrap_or(0);
-                                latest_available = latest_available.max(worker_available);
-                            }
-                            if assigned_worker_id.is_none() {
-                                assigned_worker_id = Some(member.worker_id.clone());
-                            }
-                        }
-                        // 팀 효율 보정 적용
-                        primary_efficiency *= crew.efficiency_modifier;
-                        crew_allocated = true;
-                    }
-                }
-            }
-        }
-
-        // 작업자 할당 추적 (Task 생성 시 사용)
-        let mut worker_allocations: Vec<(String, f64)> = Vec::new();
-
-        // 3. 작업자 자원 처리 (requires_operator 체크, 팀 미할당 시)
-        if !crew_allocated && operation.requires_operator {
-            for worker_req in operation
-                .required_resources
-                .iter()
-                .filter(|r| r.resource_type == ResourceType::Worker)
-            {
-                let load_factor = worker_req.load_factor;
-                // 필요한 작업자 수만큼 할당
-                let mut assigned_workers = 0;
-
-                // 후보가 있으면 후보에서 선택
-                let process_duration =
-                    operation.time.process_ms + operation.time.setup_ms + operation.time.wait_ms;
-                // 작업 유형 (스킬 매트릭스 조회용)
-                let op_type_for_candidates =
-                    operation.operation_type.as_deref().unwrap_or(&operation.id);
-                if !worker_req.candidates.is_empty() {
-                    plan.considered
-                        .extend(worker_req.candidates.iter().cloned());
-                    // 후보를 **가용 시간 순**으로 고른다. 선언 순서대로 앞에서부터
-                    // 집으면, 한가한 후보를 두고 이미 바쁜 첫 후보를 다시 골라
-                    // 병렬로 돌 수 있는 작업이 직렬화된다. 후보 목록이 없는 아래
-                    // 분기는 처음부터 이 순서로 골랐고, 장비 쪽도
-                    // `find_earliest_resource_with_setup`으로 같은 기준을 쓴다 —
-                    // 후보가 주어졌을 때만 기준이 달랐다.
-                    let mut eligible: Vec<(String, i64)> = worker_req
-                        .candidates
-                        .iter()
-                        .filter(|candidate_id| {
-                            // 스킬 매트릭스 검증 (설정된 경우)
-                            request
-                                .skill_matrix
-                                .as_ref()
-                                .is_none_or(|m| m.can_perform(candidate_id, op_type_for_candidates))
-                        })
-                        .filter(|candidate_id| {
-                            // 인증 매트릭스 검증 (설정된 경우)
-                            request.certification_matrix.as_ref().is_none_or(|m| {
-                                m.is_certified(
-                                    candidate_id,
-                                    op_type_for_candidates,
-                                    request.start_time_ms,
-                                )
-                            })
-                        })
-                        .filter(|candidate_id| {
-                            request.resources.iter().any(|r| r.id == **candidate_id)
-                        })
-                        .map(|candidate_id| {
-                            // load_factor 기반 가용 시간 계산
-                            let available = if load_factor < 1.0 {
-                                // 부하 기반 스케줄링: 시작 시간부터 가용 시간 찾기
-                                state.worker_load_tracker.find_earliest_available(
-                                    candidate_id,
-                                    latest_available,
-                                    process_duration,
-                                    load_factor,
-                                )
-                            } else {
-                                // 전담 스케줄링: 다음 가용 시간 사용
-                                state
-                                    .resource_next_available
-                                    .get(candidate_id)
-                                    .copied()
-                                    .unwrap_or(0)
-                            };
-                            (candidate_id.clone(), available)
-                        })
-                        .collect();
-
-                    // 가용 시간 순 정렬. 동률이면 후보 목록에 적힌 순서가 남는다
-                    // (`sort_by_key`는 안정 정렬) — 입력이 같으면 결과도 같아야 한다.
-                    eligible.sort_by_key(|(_, avail)| *avail);
-
-                    for (candidate_id, available) in eligible {
-                        if assigned_workers >= worker_req.quantity {
-                            break;
-                        }
-                        // 같은 후보가 목록에 두 번 적혀 있어도 한 번만 센다
-                        if allocated_resources.contains(&candidate_id) {
-                            continue;
-                        }
-                        latest_available = latest_available.max(available);
-                        allocated_resources.push(candidate_id.clone());
-                        worker_allocations.push((candidate_id.clone(), load_factor));
-                        // 첫 번째 할당 작업자 기록 (스킬 기반 시간 조정용)
-                        if assigned_worker_id.is_none() {
-                            assigned_worker_id = Some(candidate_id.clone());
-                        }
-                        assigned_workers += 1;
-                    }
-                } else {
-                    // 후보가 없으면 Worker 타입 자원에서 선택
-                    // 작업 유형 (스킬 매트릭스 조회용)
-                    let op_type = operation.operation_type.as_deref().unwrap_or(&operation.id);
-                    plan.considered.extend(
-                        request
-                            .resources
-                            .iter()
-                            .filter(|r| r.kind == crate::ResourceKind::Worker)
-                            .map(|r| r.id.clone()),
-                    );
-                    let mut workers: Vec<_> = request
-                        .resources
-                        .iter()
-                        .filter(|r| r.kind == crate::ResourceKind::Worker)
-                        // 스킬 매트릭스 기반 필터링 (설정된 경우)
-                        .filter(|r| {
-                            if let Some(ref skill_matrix) = request.skill_matrix {
-                                skill_matrix.can_perform(&r.id, op_type)
-                            } else {
-                                true
-                            }
-                        })
-                        // 인증 매트릭스 기반 필터링 (설정된 경우)
-                        .filter(|r| {
-                            if let Some(ref cert_matrix) = request.certification_matrix {
-                                cert_matrix.is_certified(&r.id, op_type, request.start_time_ms)
-                            } else {
-                                true
-                            }
-                        })
-                        .map(|r| {
-                            // load_factor < 1.0이면 load_tracker 기반 스케줄링
-                            // load_factor == 1.0이면 기존 방식 (전담)
-                            let avail = if load_factor < 1.0 {
-                                // 부하 기반 스케줄링: 시작 시간부터 가용 시간 찾기
-                                state.worker_load_tracker.find_earliest_available(
-                                    &r.id,
-                                    latest_available,
-                                    process_duration,
-                                    load_factor,
-                                )
-                            } else {
-                                // 전담 스케줄링: 다음 가용 시간 사용
-                                state
-                                    .resource_next_available
-                                    .get(&r.id)
-                                    .copied()
-                                    .unwrap_or(0)
-                            };
-                            (r.id.clone(), avail, load_factor)
-                        })
-                        .collect();
-
-                    // 가용 시간 순 정렬
-                    workers.sort_by_key(|(_, avail, _)| *avail);
-
-                    for (worker_id, avail, lf) in workers {
-                        if assigned_workers >= worker_req.quantity {
-                            break;
-                        }
-                        if !allocated_resources.contains(&worker_id) {
-                            latest_available = latest_available.max(avail);
-                            allocated_resources.push(worker_id.clone());
-                            worker_allocations.push((worker_id.clone(), lf));
-                            // 첫 번째 할당 작업자 기록 (스킬 기반 시간 조정용)
-                            if assigned_worker_id.is_none() {
-                                assigned_worker_id = Some(worker_id);
-                            }
-                            assigned_workers += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. 연결 자원 처리 (로봇-설비 연동)
-        let mut linked_resources: Vec<String> = Vec::new();
-        for res_id in &allocated_resources {
-            if let Some(linked_id) = linked_resource_map.get(res_id) {
-                // 연결 자원의 가용 시간도 고려
-                plan.considered.push(linked_id.clone());
-                let linked_available = state
-                    .resource_next_available
-                    .get(linked_id)
-                    .copied()
-                    .unwrap_or(0);
-                latest_available = latest_available.max(linked_available);
-                linked_resources.push(linked_id.clone());
-            }
-        }
-
-        // 4. 할당 생성
-        if !allocated_resources.is_empty() {
-            let primary_resource = &allocated_resources[0];
-
-            // DailyWorkWindow 적용: 가용 시간을 윈도우 내 유효 시각으로 전진
-            let latest_available = if let Some(window) = operation.daily_work_window {
-                super::task_splitter::advance_to_daily_window(latest_available, window)
-            } else {
-                latest_available
-            };
-
-            // 캘린더 제약 적용: 시작 시간을 근무 시간으로 조정
-            let start_time =
-                if let Some(calendar) = resource_calendar_map.get(primary_resource.as_str()) {
-                    let cal_start = calendar.next_working_time(latest_available);
-                    // 캘린더 전진 후 DailyWorkWindow 재확인
-                    if let Some(window) = operation.daily_work_window {
-                        super::task_splitter::advance_to_daily_window(cal_start, window)
-                    } else {
-                        cal_start
-                    }
-                } else {
-                    latest_available
-                };
-
-            // 효율성 적용: 처리 시간 = base_time / efficiency
-            let mut adjusted_process_time =
-                (operation.time.process_ms as f64 / primary_efficiency) as i64;
-            let mut adjusted_setup_time = operation.time.setup_ms;
-            let mut adjusted_wait_time = operation.time.wait_ms;
-
-            // 시간 오버라이드/조정 우선순위:
-            // 1. WorkerTimeOverride (명시적 값) - 최우선
-            // 2. SkillMatrix (효율 기반 조정)
-            // 3. CertificationMatrix (인증 기반 조정)
-            // 4. 기본값
-            if let Some(ref worker_id) = assigned_worker_id {
-                let op_type = operation.operation_type.as_deref().unwrap_or(&operation.id);
-
-                // 1. WorkerTimeOverride 적용 (최우선)
-                let mut override_applied = false;
-                if let Some(ref override_matrix) = request.worker_time_override {
-                    if override_matrix.has_override(worker_id, op_type) {
-                        let (setup, process, wait) = override_matrix.calculate_times(
-                            worker_id,
-                            op_type,
-                            adjusted_setup_time,
-                            adjusted_process_time,
-                            adjusted_wait_time,
-                        );
-                        adjusted_setup_time = setup;
-                        adjusted_process_time = process;
-                        adjusted_wait_time = wait;
-                        override_applied = true;
-                    }
-                }
-
-                // 2, 3. SkillMatrix/CertificationMatrix는 override가 없을 때만 적용
-                if !override_applied {
-                    if let Some(ref skill_matrix) = request.skill_matrix {
-                        if let Some(skill_adjusted) = skill_matrix.calculate_process_time(
-                            worker_id,
-                            op_type,
-                            adjusted_process_time,
-                        ) {
-                            adjusted_process_time = skill_adjusted;
-                        }
-                    }
-                    // 인증 매트릭스 기반 처리 시간 보정 (인증 레벨에 따른 효율)
-                    if let Some(ref cert_matrix) = request.certification_matrix {
-                        if let Some(cert_adjusted) = cert_matrix.calculate_process_time(
-                            worker_id,
-                            op_type,
-                            adjusted_process_time,
-                            request.start_time_ms,
-                        ) {
-                            adjusted_process_time = cert_adjusted;
-                        }
-                    }
-                }
-            }
-
-            // Setup time: Operation 기본 setup + Matrix 기반 setup (둘 중 큰 값 사용)
-            let effective_setup = adjusted_setup_time.max(total_setup_time);
-            let process_time = adjusted_process_time + adjusted_wait_time;
-            let total_duration = effective_setup + process_time;
-
-            // Task 생성 (Calendar + DailyWorkWindow 기반 분할) — Assignment의 end_time도 여기서 결정
-            let calendar = resource_calendar_map
-                .get(primary_resource.as_str())
-                .copied();
-            let split_result = super::task_splitter::split_operation_by_calendar(
-                &operation.id,
-                &job.id,
-                job.product_name.as_deref(),
-                start_time,
-                effective_setup,
-                process_time,
-                operation.is_splittable,
-                calendar,
-                operation.daily_work_window,
-            );
-
-            // 실제 종료 시간: DailyWorkWindow가 있으면 splitter의 final_end를 사용
-            // (윈도우 경계에서 다음 날로 넘어갈 수 있으므로 단순 calendar.calculate_end_time 불가)
-            let end_time = if operation.daily_work_window.is_some() {
-                split_result.final_end_ms
-            } else if let Some(cal) = calendar {
-                cal.calculate_end_time(start_time, total_duration)
-            } else {
-                start_time + total_duration
-            };
-
-            // Assignment 생성 - 모든 할당된 자원에 대해 생성
-            for res_id in &allocated_resources {
-                let mut assignment = Assignment::with_setup(
-                    &operation.id,
-                    &job.id,
-                    res_id,
-                    start_time,
-                    end_time,
-                    effective_setup,
-                );
-                assignment.site_id = resource_site_map
-                    .get(res_id.as_str())
-                    .map(|s| s.to_string());
-                plan.assignments.push(assignment);
-            }
-
-            // Task에 자원 정보 설정 후 추가
-            for mut task in split_result.tasks {
-                if !allocated_resources.is_empty() {
-                    task = task.with_equipment(allocated_resources[0].clone());
-                }
-                // 작업자 정보 추가
-                let worker_ids: Vec<String> = worker_allocations
-                    .iter()
-                    .map(|(id, _)| id.clone())
-                    .collect();
-                if !worker_ids.is_empty() {
-                    task = task.with_workers(
-                        worker_ids,
-                        operation
-                            .required_resources
-                            .iter()
-                            .filter(|r| r.resource_type == ResourceType::Worker)
-                            .map(|r| r.quantity as u32)
-                            .next()
-                            .unwrap_or(0),
-                    );
-                }
-                plan.tasks.push(task);
-            }
-
-            // 모든 할당된 자원의 가용 시간 업데이트
-            for res_id in &allocated_resources {
-                // 작업자의 경우 load_factor 기반 부하 추적
-                if let Some(resource) = request.resources.iter().find(|r| r.id == *res_id) {
-                    if resource.kind == crate::ResourceKind::Worker {
-                        // 해당 작업자의 load_factor 찾기
-                        let load_factor = operation
-                            .required_resources
-                            .iter()
-                            .filter(|r| r.resource_type == ResourceType::Worker)
-                            .map(|r| r.load_factor)
-                            .next()
-                            .unwrap_or(1.0);
-                        plan.loads
-                            .push((res_id.clone(), start_time, end_time, load_factor));
-
-                        // load_factor < 1.0이면 resource_next_available 업데이트 건너뛰기
-                        // (load_tracker가 동시 작업을 관리)
-                        if load_factor < 1.0 {
-                            continue;
-                        }
-                    }
-                }
-                plan.availability.push((res_id.clone(), end_time));
-            }
-
-            // 연결 자원의 가용 시간도 업데이트 (동시 점유)
-            for linked_id in &linked_resources {
-                plan.availability.push((linked_id.clone(), end_time));
-            }
-
-            // 마지막 처리 제품 업데이트 (장비에만)
-            if let Some(product) = &job.product_name {
-                if let Some(equipment_id) = allocated_resources.first() {
-                    if request
-                        .resources
-                        .iter()
-                        .any(|r| r.id == *equipment_id && r.kind == crate::ResourceKind::Equipment)
-                    {
-                        plan.last_product = Some((equipment_id.clone(), product.clone()));
-                    }
-                }
-            }
-
-            plan.start_ms = start_time;
-            plan.end_ms = end_time;
-
-            // 이전 Operation 사이트 업데이트 (inter-site transition 추적)
-            if let Some(primary) = allocated_resources.first() {
-                plan.last_site = Some(
-                    resource_site_map
-                        .get(primary.as_str())
-                        .map(|s| s.to_string()),
-                );
-            }
-        } else {
-            // 자원 요구사항 없으면 시간만 진행 (Calendar + DailyWorkWindow 적용)
-            let mut start_time = job_current_time;
-
-            // DailyWorkWindow 적용
-            if let Some(window) = operation.daily_work_window {
-                start_time = super::task_splitter::advance_to_daily_window(start_time, window);
-            }
-
-            // Default Calendar 적용 (첫 번째 Calendar 사용)
-            let default_calendar = request.calendars.first();
-            if let Some(calendar) = default_calendar {
-                start_time = calendar.next_working_time(start_time);
-                // 캘린더 전진 후 DailyWorkWindow 재확인
-                if let Some(window) = operation.daily_work_window {
-                    start_time = super::task_splitter::advance_to_daily_window(start_time, window);
-                }
-            }
-
-            let process_time = operation.time.process_ms + operation.time.wait_ms;
-
-            // Calendar + DailyWorkWindow 기반 분할
-            let split_result = super::task_splitter::split_operation_by_calendar(
-                &operation.id,
-                &job.id,
-                job.product_name.as_deref(),
-                start_time,
-                operation.time.setup_ms,
-                process_time,
-                operation.is_splittable,
-                default_calendar,
-                operation.daily_work_window,
-            );
-
-            let end_time = split_result.final_end_ms;
-
-            plan.assignments.push(Assignment::new(
-                &operation.id,
-                &job.id,
-                "NONE",
-                start_time,
-                end_time,
-            ));
-
-            for task in split_result.tasks {
-                plan.tasks.push(task);
-            }
-
-            plan.start_ms = start_time;
-            plan.end_ms = end_time;
-        }
-
-        plan
+    /// Schedules `request`: operation-level non-delay dispatching on
+    /// u-schedule (see the module documentation). An operation nothing can
+    /// fill or place is reported as an `UnfilledRequirement` violation.
+    pub fn schedule(&self, request: &ScheduleRequest) -> Result<Schedule, ScheduleError> {
+        super::placement::schedule(request)
     }
 
     /// 납기 위반 체크
@@ -1269,93 +222,6 @@ impl SimpleScheduler {
             }
         }
     }
-
-    /// 가장 빨리 가용한 자원 찾기
-    #[allow(dead_code)]
-    fn find_earliest_resource(
-        &self,
-        candidates: &[String],
-        resources: &[Resource],
-        next_available: &HashMap<String, i64>,
-    ) -> (Option<String>, i64) {
-        let mut earliest_id: Option<String> = None;
-        let mut earliest_time = i64::MAX;
-
-        for candidate_id in candidates {
-            // 자원이 존재하는지 확인
-            if resources.iter().any(|r| r.id == *candidate_id) {
-                let available = next_available.get(candidate_id).copied().unwrap_or(0);
-
-                if available < earliest_time {
-                    earliest_time = available;
-                    earliest_id = Some(candidate_id.clone());
-                }
-            }
-        }
-
-        (earliest_id, earliest_time)
-    }
-
-    /// Setup Time과 효율성을 고려하여 최적의 자원 찾기
-    ///
-    /// 선택 기준:
-    /// 1. 완료 시간이 가장 빠른 자원 선택
-    /// 2. 완료 시간이 동일하면 효율성이 높은 자원 선택
-    fn find_earliest_resource_with_setup(
-        &self,
-        candidates: &[String],
-        resources: &[Resource],
-        next_available: &HashMap<String, i64>,
-        last_product: &HashMap<String, String>,
-        setup_matrices: &crate::SetupMatrixCollection,
-        current_product: Option<&str>,
-    ) -> (Option<String>, i64, i64, f64) {
-        let mut best_id: Option<String> = None;
-        let mut best_available_time = i64::MAX;
-        let mut best_setup_time = 0i64;
-        let mut best_efficiency = 0.0f64;
-        let mut best_completion = i64::MAX;
-
-        for candidate_id in candidates {
-            // 자원 찾기
-            if let Some(resource) = resources.iter().find(|r| r.id == *candidate_id) {
-                let available = next_available.get(candidate_id).copied().unwrap_or(0);
-
-                // 해당 자원의 마지막 제품
-                let prev_product = last_product.get(candidate_id).map(|s| s.as_str());
-
-                // Setup time 계산
-                let setup_time = if let Some(curr) = current_product {
-                    setup_matrices.get_setup_time(candidate_id, prev_product, curr)
-                } else {
-                    0
-                };
-
-                // 총 완료 시간 = 가용 시간 + 준비 시간 (효율은 처리 시간에만 적용)
-                let completion_time = available + setup_time;
-
-                // 선택 기준: 완료 시간이 빠르거나, 같으면 효율이 높은 자원
-                let is_better = completion_time < best_completion
-                    || (completion_time == best_completion
-                        && resource.efficiency > best_efficiency);
-
-                if is_better {
-                    best_available_time = available;
-                    best_setup_time = setup_time;
-                    best_efficiency = resource.efficiency;
-                    best_completion = completion_time;
-                    best_id = Some(candidate_id.clone());
-                }
-            }
-        }
-
-        (
-            best_id,
-            best_available_time,
-            best_setup_time,
-            best_efficiency,
-        )
-    }
 }
 
 impl Default for SimpleScheduler {
@@ -1366,9 +232,11 @@ impl Default for SimpleScheduler {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Assignment;
     use super::*;
     use crate::Operation;
     use crate::{DispatchingConfig, DispatchingRuleName};
+    use chrono::{DateTime, Utc};
 
     #[test]
     fn test_single_job_single_resource() {
@@ -1391,7 +259,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         assert_eq!(schedule.assignments.len(), 2);
@@ -1429,7 +297,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 우선순위 높은 JOB-HIGH가 먼저
         let op_high = schedule.assignment_for_operation("OP-HIGH").unwrap();
@@ -1463,7 +331,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 병렬 처리로 makespan = 30초
         assert_eq!(schedule.makespan_ms, 30000);
@@ -1499,8 +367,9 @@ mod tests {
         );
         let resources = vec![Resource::equipment("EQP-1"), Resource::equipment("EQP-2")];
 
-        let schedule =
-            SimpleScheduler::new().schedule(&ScheduleRequest::new(vec![a, b], resources));
+        let schedule = SimpleScheduler::new()
+            .schedule(&ScheduleRequest::new(vec![a, b], resources))
+            .expect("schedules");
 
         assert_eq!(schedule.assignment_for_operation("B1").unwrap().start_ms, 0);
         assert_eq!(schedule.assignment_for_operation("A1").unwrap().start_ms, 0);
@@ -1526,10 +395,12 @@ mod tests {
                 .with_equipment(vec!["EQP-1".to_string()]),
         );
 
-        let schedule = SimpleScheduler::new().schedule(&ScheduleRequest::new(
-            vec![urgent, routine],
-            vec![Resource::equipment("EQP-1")],
-        ));
+        let schedule = SimpleScheduler::new()
+            .schedule(&ScheduleRequest::new(
+                vec![urgent, routine],
+                vec![Resource::equipment("EQP-1")],
+            ))
+            .expect("schedules");
 
         assert_eq!(schedule.assignment_for_operation("R1").unwrap().start_ms, 0);
         assert_eq!(
@@ -1566,7 +437,9 @@ mod tests {
         )
         .with_dispatching_rule(DispatchingRuleName::Mwkr);
 
-        let schedule = SimpleScheduler::new().schedule(&request);
+        let schedule = SimpleScheduler::new()
+            .schedule(&request)
+            .expect("schedules");
 
         assert_eq!(schedule.assignment_for_operation("L1").unwrap().start_ms, 0);
         assert_eq!(
@@ -1609,7 +482,9 @@ mod tests {
         let request = ScheduleRequest::new(jobs, vec![Resource::equipment("EQP-1")])
             .with_dispatching_config(config);
 
-        let schedule = SimpleScheduler::new().schedule(&request);
+        let schedule = SimpleScheduler::new()
+            .schedule(&request)
+            .expect("schedules");
 
         let start = |op: &str| schedule.assignment_for_operation(op).unwrap().start_ms;
         // t = 0: LPT -> D (40 s). t = 40 s: SPT -> C, then A, then B.
@@ -1668,7 +543,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1693,7 +568,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 납기 준수
         assert!(schedule.is_on_time());
@@ -1718,7 +593,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 10초 지연
         assert!(!schedule.is_on_time());
@@ -1755,7 +630,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: JOB-002만 납기 위반 (30000 + 20000 = 50000 > 40000)
         assert_eq!(schedule.violations.len(), 1);
@@ -1804,7 +679,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1858,7 +733,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1890,7 +765,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 둘 다 가용할 때 시작
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1920,7 +795,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1956,7 +831,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -1982,7 +857,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 효율이 높은 EQP-002 선택
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2015,7 +890,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2051,7 +926,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: EQP-001이 먼저 가용하므로 선택
         let op2 = schedule.assignment_for_operation("OP-002").unwrap();
@@ -2080,7 +955,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 무인공정이므로 작업자 가용 상태와 무관하게 즉시 시작
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2118,7 +993,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 두 작업 모두 0에서 시작 가능 (무인공정은 작업자 불필요)
         let op_manned = schedule.assignment_for_operation("OP-MANNED").unwrap();
@@ -2155,7 +1030,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 0.5 + 0.5 = 1.0이므로 동시 작업 가능
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2193,7 +1068,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 0.7 + 0.5 = 1.2 > 1.0이므로 순차 처리
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2230,7 +1105,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 로봇 사용 시 EQP-001도 점유되므로 JOB-002는 대기
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2269,7 +1144,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2280,26 +1155,6 @@ mod tests {
         // JOB-002는 로봇 사용 - EQP-001도 필요하므로 대기
         assert_eq!(op2.start_ms, 30000); // EQP-001이 해제된 후 시작
     }
-
-    #[test]
-    fn test_worker_load_tracker_basic() {
-        // WorkerLoadTracker 단위 테스트
-        let mut tracker = WorkerLoadTracker::new();
-
-        // 0~30초 구간에 0.5 부하 추가
-        tracker.add_load("WRK-001", 0, 30000, 0.5);
-
-        // 같은 구간에 0.4 부하 추가 가능 (합계 0.9)
-        assert!(tracker.can_accept_load("WRK-001", 0, 30000, 0.4));
-
-        // 같은 구간에 0.6 부하 추가 불가 (합계 1.1)
-        assert!(!tracker.can_accept_load("WRK-001", 0, 30000, 0.6));
-
-        // 겹치지 않는 구간에는 어떤 부하든 가능
-        assert!(tracker.can_accept_load("WRK-001", 30000, 60000, 1.0));
-    }
-
-    // ===== Phase 2.2 Tests: Calendar Constraints =====
 
     #[test]
     fn test_calendar_no_calendar_24_7() {
@@ -2317,7 +1172,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 캘린더 없으면 즉시 시작, 단순 덧셈 종료
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2350,7 +1205,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 10시 시작, 11시 종료 (근무 시간 내)
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2386,7 +1241,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 06시 요청했지만 08시부터 시작
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2421,7 +1276,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 11시 시작, 점심(12-13시) 제외하고 3시간 후 = 15시 종료
         // 11:00-12:00 = 1시간, 13:00-15:00 = 2시간, 총 3시간
@@ -2458,7 +1313,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 금요일 16:00 시작
         // 16:00-17:00 = 1시간 (금요일 종료)
@@ -2500,7 +1355,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 월요일 휴일이므로 화요일 08시부터 시작
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2530,7 +1385,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 기본 처리 시간 그대로 (1분)
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2562,7 +1417,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 60000ms / 2.0 = 30000ms
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2593,7 +1448,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 60000ms / 0.5 = 120000ms
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2630,7 +1485,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: WRK-001 제외, WRK-002 할당
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2662,7 +1517,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 60000ms / 2.0 = 30000ms
         let op = schedule.assignment_for_operation("OP-WELDING").unwrap();
@@ -2697,7 +1552,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: WRK-002 할당, 숙련도 1.5 적용
         // 60000ms / 1.5 = 40000ms
@@ -2734,7 +1589,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 자재 가용일까지 지연되어 시작
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2781,7 +1636,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 재고 부족 위반 기록
         assert!(!schedule.violations.is_empty());
@@ -2821,7 +1676,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 위반 없음
         assert!(schedule.violations.is_empty());
@@ -2865,7 +1720,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 작업 스케줄됨 (WRK-002가 할당됨)
         assert!(!schedule.assignments.is_empty());
@@ -2908,7 +1763,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 60000 / 1.0 (스킬) / 1.3 (인증) ≈ 46153ms
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -2969,7 +1824,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: WRK-002 할당 (WRK-001은 인증 만료로 제외)
         assert!(!schedule.assignments.is_empty());
@@ -3007,7 +1862,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 스케줄 생성됨
         assert!(!schedule.assignments.is_empty());
@@ -3045,7 +1900,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 스케줄 생성됨
         assert!(!schedule.assignments.is_empty());
@@ -3200,7 +2055,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: Should use override time (20000ms), not default (60000ms)
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3233,7 +2088,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: Total duration = setup(5000) + process(30000) + wait(2000) = 37000ms
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3270,7 +2125,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: Override (45000ms) wins over skill-adjusted (30000ms)
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3307,7 +2162,7 @@ mod tests {
         let scheduler = SimpleScheduler::new();
 
         // When
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: No override for WRK-001, so skill matrix applies (60000/2.0 = 30000ms)
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3333,7 +2188,7 @@ mod tests {
 
         let request = ScheduleRequest::new(vec![job], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: SITE-A 장비만 할당됨
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3357,7 +2212,7 @@ mod tests {
 
         let request = ScheduleRequest::new(vec![job], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 둘 다 가용하므로 첫 번째(EQP-A1) 할당
         let op = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3390,7 +2245,7 @@ mod tests {
 
         let request = ScheduleRequest::new(vec![job], resources).with_site_transitions(transitions);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: OP-002는 OP-001 종료 + 이동시간 이후 시작
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3426,7 +2281,7 @@ mod tests {
 
         let request = ScheduleRequest::new(vec![job], resources).with_site_transitions(transitions);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         // Then: 같은 사이트이므로 transition 없음
         let op1 = schedule.assignment_for_operation("OP-001").unwrap();
@@ -3448,7 +2303,7 @@ mod tests {
 
         let request = ScheduleRequest::new(vec![job], resources);
         let scheduler = SimpleScheduler::new();
-        let schedule = scheduler.schedule(&request);
+        let schedule = scheduler.schedule(&request).expect("schedules");
 
         let op = schedule.assignment_for_operation("OP-001").unwrap();
         assert_eq!(op.resource_id, "EQP-001");
@@ -3510,7 +2365,9 @@ mod tests {
         );
 
         // When
-        let schedule = SimpleScheduler::new().schedule(&request);
+        let schedule = SimpleScheduler::new()
+            .schedule(&request)
+            .expect("schedules");
 
         // Then: 두 작업이 병렬로 돈다. 유휴 설비를 두고 직렬화되면 1,200,000 이 된다.
         assert_eq!(

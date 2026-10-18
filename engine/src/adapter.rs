@@ -102,6 +102,8 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
     let tasks: Vec<Task> = request
         .jobs
         .iter()
+        // A job with no operations has nothing to schedule.
+        .filter(|job| !job.operations.is_empty())
         .map(|job| {
             // u-aps: a lower priority value goes first; u-schedule: higher.
             // u-aps weighs a job by its priority (WSPT, ATC).

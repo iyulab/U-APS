@@ -7,7 +7,7 @@
 //! - 에러 핸들링
 
 use crate::cp::{CpSatConfig, CpSatScheduler};
-use crate::error::Result;
+use crate::error::{ErrorCode, Result, UapsError};
 use crate::ga::{GaParams, GaScheduler, GeneticOperators};
 use crate::models::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
@@ -507,20 +507,16 @@ impl SchedulingEngine {
             SchedulingAlgorithm::Simple => {
                 self.log(LogLevel::Debug, "Using Simple scheduler", None);
                 let request = self.build_schedule_request(jobs, resources, start_time_ms);
-                // TODO(rebase P3): the engine's own scheduler takes a request
-                // u-schedule refuses or schedules wrongly; remove it once those
-                // are answered here (the FFI default path does the same).
-                match super::rebased::schedule(&request) {
-                    Ok(schedule) => Ok(schedule),
-                    Err(reason) => {
-                        self.log(
-                            LogLevel::Debug,
-                            &format!("Scheduled by the engine's own scheduler: {reason:?}"),
-                            None,
-                        );
-                        Ok(SimpleScheduler::new().schedule(&request))
-                    }
-                }
+                SimpleScheduler::new()
+                    .schedule(&request)
+                    .map_err(|e| match e {
+                        super::ScheduleError::Refused(_) => {
+                            UapsError::new(ErrorCode::InvalidInput, e.to_string())
+                        }
+                        super::ScheduleError::Broken(_) => {
+                            UapsError::new(ErrorCode::SchedulingFailed, e.to_string())
+                        }
+                    })
             }
 
             SchedulingAlgorithm::GeneticAlgorithm => {
