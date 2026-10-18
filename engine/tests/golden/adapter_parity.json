@@ -52,14 +52,12 @@
   "g06_worker_load_factor": {
     "makespan_ms": {
       "u_aps": 60000,
-      "u_schedule": 90000
+      "u_schedule": 60000
     },
-    "placements_differing": 8,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "FractionalResourceUse"
-    ]
+    "unsupported": []
   },
   "g07_linked_robot": {
     "makespan_ms": {

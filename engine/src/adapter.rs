@@ -20,6 +20,10 @@ use u_schedule::Problem;
 use crate::scheduler::dispatching::DispatchingRuleName;
 use crate::{Calendar, ResourceKind, ResourceType, ScheduleRequest};
 
+/// The units a worker's capacity is laid out in, so a load factor (a
+/// fraction of the worker) is a whole usage: 0.5 takes 500.
+const WORKER_UNITS: i32 = 1_000;
+
 /// How far ahead a shift calendar is laid out as working windows.
 const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 
@@ -27,9 +31,6 @@ const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 /// general capability it needs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unsupported {
-    /// A resource used at less than its whole capacity (a worker's load
-    /// factor).
-    FractionalResourceUse,
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
     ActivityRelease,
@@ -74,7 +75,11 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 ResourceKind::Equipment => "Equipment",
                 ResourceKind::Worker => "Worker",
             };
-            let mut out = USResource::new(&r.id, kind).with_capacity(r.capacity.max(1));
+            let units = match r.kind {
+                ResourceKind::Equipment => 1,
+                ResourceKind::Worker => WORKER_UNITS,
+            };
+            let mut out = USResource::new(&r.id, kind).with_capacity(r.capacity.max(1) * units);
             // A robot occupies the cell it is linked to.
             if let Some(linked) = &r.linked_resource_id {
                 out = out.with_companion(linked);
@@ -160,15 +165,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
                         continue;
                     }
-                    if req.load_factor < 1.0 {
-                        unsupported.insert(Unsupported::FractionalResourceUse);
-                    }
                     let kind = match req.resource_type {
                         ResourceType::Equipment => "Equipment",
                         ResourceType::Worker => "Worker",
                     };
                     let mut requirement = USRequirement::new(kind)
                         .with_quantity(req.quantity)
+                        .with_usage(usage(req))
                         .with_candidates(match on_target_site(request, job, req) {
                             Some(candidates) => candidates,
                             None => {
@@ -314,7 +317,9 @@ fn with_crew(
     for member in crew.members() {
         if held.insert(member.worker_id.as_str()) {
             activity = activity.with_requirement(
-                USRequirement::new("Worker").with_candidates(vec![member.worker_id.clone()]),
+                USRequirement::new("Worker")
+                    .with_candidates(vec![member.worker_id.clone()])
+                    .with_usage(WORKER_UNITS),
             );
         }
     }
@@ -349,6 +354,17 @@ fn add_rule(engine: RuleEngine, rule: DispatchingRuleName, weight: f64) -> RuleE
         // The priority was negated with the task, so u-schedule's
         // higher-first rule keeps u-aps' lower-first order.
         R::Priority => engine.with_weighted_rule(rules::Priority, weight),
+    }
+}
+
+/// How much of a resource `req` takes: a worker's load factor in
+/// [`WORKER_UNITS`] (at least one unit), a piece of equipment whole.
+fn usage(req: &crate::ResourceRequirement) -> i32 {
+    match req.resource_type {
+        ResourceType::Equipment => 1,
+        ResourceType::Worker => {
+            ((req.load_factor * f64::from(WORKER_UNITS)).round() as i32).clamp(1, WORKER_UNITS)
+        }
     }
 }
 
