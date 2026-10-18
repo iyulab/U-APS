@@ -21,7 +21,8 @@ published to a registry — it ships inside those packages.
   requirements, equipment efficiency and worker proficiency as speeds, crews,
   worker load factors as shares of a worker, linked resources, set-up
   matrices, site transitions as transport times between equipment, shift
-  calendars — scheduled there, and read back into the same response: one
+  calendars, rule switching (`DispatchingConfig.MultiLayer`) decision by
+  decision — scheduled there, and read back into the same response: one
   assignment per resource with its site, the operation split at its
   calendar's breaks into tasks, the material and due-date violations. What
   changes:
@@ -34,16 +35,15 @@ published to a registry — it ships inside those packages.
     taken whole no longer overlaps work they hold at a load factor; the
     previous scheduler could book both, and on 300 random requests mixing
     alternatives, efficiencies, workers, set-ups, due dates, release times,
-    rules and calendars, 41 of its schedules held a resource beyond its
-    capacity. None of the new ones does.
+    rules, rule switching and calendars, 38 of its schedules held a resource
+    beyond its capacity. None of the new ones does.
   - On a resource with a set-up matrix, the matrix's set-up replaces the
     operation's own set-up time instead of the larger of the two being taken.
-  - On those 300 requests the makespan is shorter in 122, longer in 33 and
-    the same in 145, and the total lateness against due dates is 12 % lower.
+  - On those 300 requests the makespan is shorter in 147, longer in 19 and
+    the same in 134, and the total lateness against due dates is 17 % lower.
   A request using what the new path does not state yet — operation splitting
   or overlap, operation time windows or daily work windows, outsourcing,
-  pegging, rule switching (`DispatchingConfig.MultiLayer`), materials for an
-  operation after the first, an operation without resources, a target site
+  pegging, materials for an operation after the first, an operation without resources, a target site
   that keeps none of an operation's equipment — is scheduled as before.
 
 ## [1.3.1] - 2026-10-18

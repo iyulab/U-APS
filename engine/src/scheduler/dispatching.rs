@@ -665,7 +665,7 @@ impl DispatchingPreset {
 /// The WSPT/ATC weight of a job. A job's `priority` is lower-is-more-urgent
 /// (1 before 100), so the weight falls as the number rises: `1000 / (p + 1)`.
 /// Priorities below 0 count as 0, which keeps the weight finite and positive.
-fn job_weight(priority: i32) -> f64 {
+pub(crate) fn job_weight(priority: i32) -> f64 {
     1000.0 / (f64::from(priority.max(0)) + 1.0)
 }
 

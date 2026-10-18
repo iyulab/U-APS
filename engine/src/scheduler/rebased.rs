@@ -40,6 +40,9 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
     if let Some(engine) = adapted.rule_engine {
         scheduler = scheduler.with_rule_engine(engine);
     }
+    if let Some(policy) = adapted.rule_policy {
+        scheduler = scheduler.with_rule_policy(policy);
+    }
     let placed = scheduler.schedule(&problem, adapted.start_time_ms);
     // A late job is reported below, as this engine words it; anything else
     // breaks the problem.

@@ -27,6 +27,7 @@ struct Features {
     release: bool,
     rule: bool,
     calendar: bool,
+    switching: bool,
 }
 
 impl Features {
@@ -40,6 +41,7 @@ impl Features {
         release: true,
         rule: true,
         calendar: true,
+        switching: true,
     };
 }
 
@@ -144,8 +146,27 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
             R::Fifo,
             R::Priority,
             R::Cr,
+            R::Wspt,
+            R::Atc,
         ];
         request = request.with_dispatching_rule(rules[rng.random_range(0..rules.len())]);
+    }
+    if f.switching && rng.random_bool(0.5) {
+        use DispatchingRuleName as R;
+        let condition = match rng.random_range(0..3) {
+            0 => RuleSwitchCondition::TimeAfter {
+                threshold_ms: MONDAY + rng.random_range(1..4) * HOUR,
+            },
+            1 => RuleSwitchCondition::DelayedJobsExceed {
+                count: rng.random_range(1..3),
+            },
+            _ => RuleSwitchCondition::QueueLengthAbove {
+                threshold: rng.random_range(2..5),
+            },
+        };
+        let multi = MultiLayerDispatchingConfig::new(R::Spt)
+            .with_switch_rule(RuleSwitchRule::new(condition, R::Edd).with_priority(1));
+        request = request.with_dispatching_config(DispatchingConfig::multi_layer(multi));
     }
     if calendared {
         let weekdays = vec![
@@ -221,7 +242,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 10] = [
+    let alone: [(&str, Features); 11] = [
         ("plain", plain),
         (
             "alternatives",
@@ -278,6 +299,13 @@ fn differences_by_feature() {
             "calendar",
             Features {
                 calendar: true,
+                ..plain
+            },
+        ),
+        (
+            "switching",
+            Features {
+                switching: true,
                 ..plain
             },
         ),

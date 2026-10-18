@@ -625,6 +625,9 @@ fn adapter_parity() {
                 if let Some(engine) = adapted.rule_engine {
                     scheduler = scheduler.with_rule_engine(engine);
                 }
+                if let Some(policy) = adapted.rule_policy {
+                    scheduler = scheduler.with_rule_policy(policy);
+                }
                 let schedule = scheduler.schedule(&problem, adapted.start_time_ms);
                 // u-aps reports a linked resource it holds (a robot's cell)
                 // without an assignment; u-schedule books it as a companion.

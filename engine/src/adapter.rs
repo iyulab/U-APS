@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use u_schedule::dispatching::{rules, RuleEngine};
+use u_schedule::dispatching::{rules, Decision, RuleEngine, RulePolicy};
 use u_schedule::models::{
     Activity, ActivityDuration, Calendar as USCalendar, Resource as USResource,
     ResourceRequirement as USRequirement, Task, TransitionMatrix, TransitionMatrixCollection,
@@ -17,7 +17,9 @@ use u_schedule::models::{
 use u_schedule::validation::ValidationError;
 use u_schedule::Problem;
 
-use crate::scheduler::dispatching::DispatchingRuleName;
+use crate::scheduler::dispatching::{
+    job_weight, DispatchingContext, DispatchingRuleName, MultiLayerDispatchingConfig,
+};
 use crate::{Calendar, ResourceKind, ResourceType, ScheduleRequest};
 
 /// The units a worker's capacity is laid out in, so a load factor (a
@@ -42,8 +44,6 @@ pub enum Unsupported {
     UnfillableRequirement,
     /// Operation-level splitting, overlap or time windows.
     ActivityShape,
-    /// A dispatching rule that changes with the state of the shop.
-    RuleSwitching,
     /// Outsourcing, materials beyond a release date, pegging.
     SupplyPlanning,
 }
@@ -56,6 +56,9 @@ pub struct Adapted {
     pub transition_matrices: TransitionMatrixCollection,
     /// The rule the request dispatches by, if it names one.
     pub rule_engine: Option<RuleEngine>,
+    /// The rules chosen at each decision, when the request switches rules
+    /// (`DispatchingConfig.multi_layer`) — in place of `rule_engine`.
+    pub rule_policy: Option<MultiLayerPolicy>,
     /// What the problem leaves out, each capability once.
     pub unsupported: BTreeSet<Unsupported>,
 }
@@ -113,7 +116,10 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         .iter()
         .map(|job| {
             // u-aps: a lower priority value goes first; u-schedule: higher.
-            let mut task = Task::new(&job.id).with_priority(-job.priority);
+            // u-aps weighs a job by its priority (WSPT, ATC).
+            let mut task = Task::new(&job.id)
+                .with_priority(-job.priority)
+                .with_weight(job_weight(job.priority));
             if let Some(product) = &job.product_name {
                 task = task.with_category(product);
             }
@@ -224,23 +230,61 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         transition_matrices.add(m);
     }
 
-    let rule_engine = request.dispatching_config.as_ref().map(|config| {
-        if config.multi_layer.is_some() {
-            unsupported.insert(Unsupported::RuleSwitching);
-        }
-        let mut engine = add_rule(RuleEngine::new(), config.primary_rule, 1.0);
-        if let Some(tie) = config.tie_breaker {
-            engine = add_rule(engine, tie, 0.0);
-        }
-        engine
-    });
+    let (rule_engine, rule_policy) = match &request.dispatching_config {
+        None => (None, None),
+        Some(config) => match &config.multi_layer {
+            Some(multi) => (None, Some(MultiLayerPolicy(multi.clone()))),
+            None => {
+                let mut engine = add_rule(RuleEngine::new(), config.primary_rule, 1.0);
+                if let Some(tie) = config.tie_breaker {
+                    engine = add_rule(engine, tie, 0.0);
+                }
+                (Some(engine), None)
+            }
+        },
+    };
 
     Adapted {
         problem: Problem::new(tasks, resources),
         start_time_ms: request.start_time_ms,
         transition_matrices,
         rule_engine,
+        rule_policy,
         unsupported,
+    }
+}
+
+/// u-aps' multi-layer dispatching as a u-schedule [`RulePolicy`]: at each
+/// decision, the switch rule whose condition holds on that decision's state
+/// (the first by priority) or the default, or the weighted layers.
+#[derive(Debug, Clone)]
+pub struct MultiLayerPolicy(MultiLayerDispatchingConfig);
+
+impl RulePolicy for MultiLayerPolicy {
+    fn rules_for(&self, decision: &Decision<'_>) -> RuleEngine {
+        let now = decision.context.current_time_ms;
+        let waiting = || decision.waiting.iter().map(|&i| &decision.tasks[i]);
+        let state = DispatchingContext {
+            current_time_ms: now,
+            delayed_job_count: waiting()
+                .filter(|t| t.deadline.is_some_and(|due| due < now))
+                .count(),
+            resource_utilization: decision.context.resource_utilization.clone(),
+            queue_length: decision.waiting.len(),
+            // The priority was negated with the task.
+            min_priority: waiting().map(|t| -t.priority).min(),
+        };
+        let multi = &self.0;
+        if multi.layers.is_empty() {
+            add_rule(RuleEngine::new(), multi.select_rule(&state), 1.0)
+        } else {
+            multi
+                .layers
+                .iter()
+                .fold(RuleEngine::new(), |engine, layer| {
+                    add_rule(engine, layer.rule, layer.weight)
+                })
+        }
     }
 }
 
