@@ -303,8 +303,11 @@ fn split_into_tasks(
     let mut task_index = 0u32;
     let mut setup_remaining = setup_ms;
 
-    // 최대 100개 분할 (안전장치)
-    while remaining_process > 0 && tasks.len() < 100 {
+    // 최대 100개 분할 (안전장치). 근무 시간과 DailyWorkWindow 가 겹치지 않으면
+    // 조각이 하나도 생기지 않으므로, 1 년 안에 일할 시간을 못 찾으면 멈춘다
+    // (종전엔 끝나지 않았다).
+    let give_up_at = start_ms.saturating_add(366 * 24 * 3_600_000);
+    while remaining_process > 0 && tasks.len() < 100 && current_ms < give_up_at {
         // 근무 시간으로 이동 (Calendar)
         current_ms = calendar.next_working_time(current_ms);
 
@@ -896,6 +899,24 @@ mod tests {
 
         assert_eq!(result.tasks.len(), 1);
         assert_eq!(result.tasks[0].plan_begin_ms, monday_9am);
+    }
+
+    #[test]
+    fn a_daily_window_outside_the_calendar_ends_instead_of_looping() {
+        // Day shifts and a night window never overlap: there is no time to
+        // split into, so the splitter gives up (it used to loop forever).
+        let result = split_operation_by_calendar(
+            "OP-001",
+            "JOB-001",
+            None,
+            monday_midnight(),
+            0,
+            60 * 60 * 1000,
+            true,
+            Some(&create_day_calendar()),
+            Some(DailyWorkWindow::from_hm(22, 0, 6, 0)),
+        );
+        assert!(result.tasks.is_empty());
     }
 
     #[test]

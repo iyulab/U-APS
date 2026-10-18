@@ -30,6 +30,7 @@ struct Features {
     switching: bool,
     materials: bool,
     time_only: bool,
+    daily: bool,
 }
 
 impl Features {
@@ -46,6 +47,7 @@ impl Features {
         switching: true,
         materials: true,
         time_only: true,
+        daily: true,
     };
 }
 
@@ -128,6 +130,17 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                         );
                     }
                     op = op.with_material(need);
+                }
+                if f.daily && rng.random_bool(0.3) {
+                    // Hours of the day it may run in — some past midnight —
+                    // and whether its work may be split at their ends.
+                    let window = match rng.random_range(0..3) {
+                        0 => DailyWorkWindow::from_hm(9, 0, 15, 0),
+                        1 => DailyWorkWindow::from_hm(6, 30, 11, 0),
+                        _ => DailyWorkWindow::from_hm(22, 0, 6, 0),
+                    };
+                    op = op.with_daily_work_window(window);
+                    op.is_splittable = rng.random_bool(0.5);
                 }
                 if !time_only && n_workers > 0 && rng.random_bool(0.5) {
                     op = if rng.random_bool(0.5) {
@@ -304,7 +317,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 13] = [
+    let alone: [(&str, Features); 15] = [
         ("plain", plain),
         (
             "alternatives",
@@ -379,6 +392,22 @@ fn differences_by_feature() {
             },
         ),
         (
+            "daily",
+            Features {
+                daily: true,
+                ..plain
+            },
+        ),
+        (
+            "daily+calendar",
+            Features {
+                daily: true,
+                calendar: true,
+                time_only: true,
+                ..plain
+            },
+        ),
+        (
             "time-only",
             Features {
                 time_only: true,
@@ -388,10 +417,12 @@ fn differences_by_feature() {
         ),
     ];
     for (name, f) in alone.into_iter().chain([("all", Features::ALL)]) {
+        let started = std::time::Instant::now();
         let (same, differing, not_rebased) = compare(f, 300);
         eprintln!(
-            "{name:>13}: same {same:>3} · differing {:>3} · not rebased {not_rebased}",
-            differing.len()
+            "{name:>14}: same {same:>3} · differing {:>3} · not rebased {not_rebased} · {:.1} s",
+            differing.len(),
+            started.elapsed().as_secs_f64()
         );
         for (case, at) in differing.iter().take(3) {
             eprintln!("               case {case}: {at}");

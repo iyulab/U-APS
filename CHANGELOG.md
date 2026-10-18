@@ -15,10 +15,16 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- An operation without resources is now scheduled by the default scheduler's
-  new path too (it used to send the whole request to the previous
-  scheduler). It still runs on the request's first calendar and is reported
-  on `NONE`.
+- The default scheduler's new path now takes requests with operations
+  without resources, daily work windows, `IsSplittable`, `SplitConfig`,
+  `OverlapConfig` or `TimeWindow` (they used to go to the previous
+  scheduler whole). An operation without resources still runs on the
+  request's first calendar and is reported on `NONE`. A daily work window
+  holds an operation to its hours — past midnight when it ends before it
+  begins — and its work pauses outside them and resumes, as it does over a
+  calendar's breaks. `SplitConfig`, `OverlapConfig` and an operation's
+  `TimeWindow` are, as before, not applied by the default scheduler
+  (the genetic algorithm applies splitting and overlap).
 
 ### Fixed
 
@@ -27,6 +33,14 @@ published to a registry — it ships inside those packages.
   have. Before, the work done before the break was thrown away while the
   reported start stayed before it, so the operation and its job ended up to
   the length of that work later.
+- A request whose operation has a daily work window that never meets its
+  equipment's calendar (night hours on day-shift equipment) no longer hangs
+  the engine: splitting its work into tasks looked for working time without
+  end.
+- An operation with a daily work window past midnight that cannot finish
+  before the window closes resumes in the next window. Before, the previous
+  scheduler could book its equipment from its start until a window more than
+  a day later.
 
 ## [1.4.0] - 2026-10-18
 

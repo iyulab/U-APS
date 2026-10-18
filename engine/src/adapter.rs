@@ -36,8 +36,6 @@ pub enum Unsupported {
     /// A requirement no resource can fill — a job's target site has none of
     /// the operation's equipment; u-aps schedules the operation without it.
     UnfillableRequirement,
-    /// Operation-level splitting, overlap or time windows.
-    ActivityShape,
     /// Outsourcing, materials beyond a release date, pegging.
     SupplyPlanning,
 }
@@ -157,14 +155,10 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 if op.outsourcing_config.is_some() {
                     unsupported.insert(Unsupported::SupplyPlanning);
                 }
-                if op.is_splittable
-                    || op.split_config.is_some()
-                    || op.overlap_config.is_some()
-                    || op.time_window.is_some()
-                    || op.daily_work_window.is_some()
-                {
-                    unsupported.insert(Unsupported::ActivityShape);
-                }
+                // The dispatching scheduler reads none of an operation's
+                // `split_config`, `overlap_config` or `time_window` (the GA
+                // does), and `is_splittable` only in how the work is split
+                // into tasks, which reading the schedule back does too.
                 let mut activity = Activity::new(&op.id, &job.id, op.sequence)
                     .with_duration(
                         // A u-aps wait holds the resource after processing.
@@ -179,10 +173,23 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
                 }
-                if op.required_resources.is_empty() {
-                    if let Some(calendar) = &default_calendar {
-                        activity = activity.with_calendar(calendar.clone());
-                    }
+                // An operation without resources runs on the request's first
+                // calendar; a daily work window holds any operation to its
+                // hours, within that.
+                let own = op
+                    .required_resources
+                    .is_empty()
+                    .then(|| default_calendar.clone())
+                    .flatten();
+                let daily = op
+                    .daily_work_window
+                    .map(|w| daily_windows(w, request.start_time_ms));
+                let own = match (own, daily) {
+                    (Some(a), Some(b)) => Some(intersection(&a, &b)),
+                    (a, b) => a.or(b),
+                };
+                if let Some(calendar) = own {
+                    activity = activity.with_calendar(calendar);
                 }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
@@ -556,6 +563,65 @@ fn worker_skills(request: &ScheduleRequest, worker_id: &str) -> Vec<String> {
         types.retain(|t| certs.is_certified(worker_id, t, request.start_time_ms));
     }
     types.into_iter().map(str::to_string).collect()
+}
+
+/// A daily work window's hours (UTC minute of day, as u-aps reads them — an
+/// end before the begin runs past midnight) from the day before `start_ms`
+/// over [`CALENDAR_HORIZON_MS`]. Begin and end the same: the whole day.
+fn daily_windows(window: crate::DailyWorkWindow, start_ms: i64) -> USCalendar {
+    const MINUTE: i64 = 60_000;
+    const DAY: i64 = 24 * 60 * MINUTE;
+    let mut out = USCalendar::new("daily_work_window");
+    if window.begin_minute == window.end_minute {
+        return out;
+    }
+    let begin = i64::from(window.begin_minute) * MINUTE;
+    let end = i64::from(window.end_minute) * MINUTE;
+    let length = if end > begin {
+        end - begin
+    } else {
+        DAY - begin + end
+    };
+    let first = start_ms.div_euclid(DAY) * DAY - DAY;
+    let mut day = first;
+    while day < start_ms + CALENDAR_HORIZON_MS {
+        out = out.with_window(day + begin, day + begin + length);
+        day += DAY;
+    }
+    out
+}
+
+/// The working time of both `a` and `b`, as windows — each laid out as
+/// [`windows`] and [`daily_windows`] make them (windows only, ordered,
+/// disjoint).
+fn intersection(a: &USCalendar, b: &USCalendar) -> USCalendar {
+    // No windows: always working.
+    if a.time_windows.is_empty() {
+        return b.clone();
+    }
+    if b.time_windows.is_empty() {
+        return a.clone();
+    }
+    let mut out = USCalendar::new(format!("{}&{}", a.id, b.id));
+    let (mut i, mut j) = (0, 0);
+    let (x, y) = (&a.time_windows, &b.time_windows);
+    while i < x.len() && j < y.len() {
+        let start = x[i].start_ms.max(y[j].start_ms);
+        let end = x[i].end_ms.min(y[j].end_ms);
+        if start < end {
+            out = out.with_window(start, end);
+        }
+        if x[i].end_ms < y[j].end_ms {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    // Nothing in common: never working, not «always» (no windows).
+    if out.time_windows.is_empty() {
+        out = out.with_blocked(i64::MIN, i64::MAX);
+    }
+    out
 }
 
 /// `calendar`'s working windows from `start_ms` over [`CALENDAR_HORIZON_MS`],
