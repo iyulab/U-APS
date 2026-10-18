@@ -86,9 +86,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 ResourceKind::Worker => "Worker",
             };
             let mut out = USResource::new(&r.id, kind).with_capacity(r.capacity.max(1));
-            if (r.efficiency - 1.0).abs() > f64::EPSILON {
-                unsupported.insert(Unsupported::ResourceDependentDuration);
-            }
             if r.linked_resource_id.is_some() {
                 unsupported.insert(Unsupported::ResourceBundle);
             }
@@ -109,14 +106,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
 
     let qualified_by_type =
         request.skill_matrix.is_some() || request.certification_matrix.is_some();
-    if request.worker_time_override.is_some() || request.crew_manager.is_some() {
-        unsupported.insert(Unsupported::ResourceDependentDuration);
-    }
-    if let Some(skills) = &request.skill_matrix {
-        if skills.has_non_unit_proficiency() {
-            unsupported.insert(Unsupported::ResourceDependentDuration);
-        }
-    }
     if request.site_transitions.is_some() {
         unsupported.insert(Unsupported::TransportTime);
     }
@@ -149,7 +138,9 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     }
                 }
                 if op.crew_id.is_some() {
+                    // A crew's efficiency scales the whole team's time.
                     unsupported.insert(Unsupported::ResourceBundle);
+                    unsupported.insert(Unsupported::ResourceDependentDuration);
                 }
                 if op.outsourcing_config.is_some() {
                     unsupported.insert(Unsupported::SupplyPlanning);
@@ -177,6 +168,7 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     let mut requirement = USRequirement::new(kind)
                         .with_quantity(req.quantity)
                         .with_candidates(req.candidates.clone());
+                    activity = with_timings(activity, request, op, req);
                     if req.resource_type == ResourceType::Worker && qualified_by_type {
                         if let Some(op_type) = &op.operation_type {
                             requirement = requirement.with_skill(op_type);
@@ -222,6 +214,68 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         rule_engine,
         unsupported,
     }
+}
+
+/// The time of `op` on each resource `req` may take: an equipment's
+/// efficiency as a speed; for a worker, a time override for the operation
+/// type as a duration of its own, otherwise its proficiency × certification
+/// efficiency as a speed (u-aps' order: the override wins).
+fn with_timings(
+    mut activity: Activity,
+    request: &ScheduleRequest,
+    op: &crate::Operation,
+    req: &crate::ResourceRequirement,
+) -> Activity {
+    let kind = match req.resource_type {
+        ResourceType::Equipment => ResourceKind::Equipment,
+        ResourceType::Worker => ResourceKind::Worker,
+    };
+    let pool = request
+        .resources
+        .iter()
+        .filter(|r| r.kind == kind)
+        .filter(|r| req.candidates.is_empty() || req.candidates.contains(&r.id));
+    // u-aps reads a worker's figures under the operation type, or the
+    // operation id when it has none.
+    let op_type = op.operation_type.as_deref().unwrap_or(&op.id);
+    for r in pool {
+        match kind {
+            ResourceKind::Equipment => {
+                if (r.efficiency - 1.0).abs() > f64::EPSILON {
+                    activity = activity.with_speed_on(&r.id, r.efficiency);
+                }
+            }
+            ResourceKind::Worker => {
+                let time_override = request
+                    .worker_time_override
+                    .as_ref()
+                    .and_then(|o| o.get_override(&r.id, op_type));
+                if let Some(entry) = time_override {
+                    activity = activity.with_duration_on(
+                        &r.id,
+                        ActivityDuration::new(
+                            entry.setup_ms.unwrap_or(op.time.setup_ms),
+                            entry.process_ms.unwrap_or(op.time.process_ms),
+                            entry.wait_ms.unwrap_or(op.time.wait_ms),
+                        ),
+                    );
+                    continue;
+                }
+                let proficiency = request
+                    .skill_matrix
+                    .as_ref()
+                    .map_or(1.0, |m| m.get_proficiency(&r.id, op_type));
+                let certified = request.certification_matrix.as_ref().map_or(1.0, |m| {
+                    m.get_efficiency_modifier(&r.id, op_type, request.start_time_ms)
+                });
+                let speed = proficiency * certified;
+                if speed > 0.0 && (speed - 1.0).abs() > f64::EPSILON {
+                    activity = activity.with_speed_on(&r.id, speed);
+                }
+            }
+        }
+    }
+    activity
 }
 
 fn add_rule(engine: RuleEngine, rule: DispatchingRuleName, weight: f64) -> RuleEngine {

@@ -46,12 +46,10 @@
       "u_aps": 120000,
       "u_schedule": 120000
     },
-    "placements_differing": 8,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "ResourceDependentDuration"
-    ]
+    "unsupported": []
   },
   "g06_worker_load_factor": {
     "makespan_ms": {
@@ -92,14 +90,12 @@
   "g09_skill_proficiency": {
     "makespan_ms": {
       "u_aps": 120000,
-      "u_schedule": 60000
+      "u_schedule": 120000
     },
-    "placements_differing": 8,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "ResourceDependentDuration"
-    ]
+    "unsupported": []
   },
   "g10_material_availability": {
     "makespan_ms": {
