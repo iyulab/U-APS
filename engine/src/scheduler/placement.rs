@@ -4,18 +4,20 @@
 //! scheduled by its `SimpleScheduler`, and read back into this engine's
 //! [`Schedule`]: an assignment per resource with its site (a linked resource
 //! u-schedule books as a companion is not reported, as before), the
-//! operation's work split at its calendar's breaks into tasks (an operation
-//! without resources as one on `NONE`, split on the request's first
-//! calendar, as before), and the material and due-date violations.
+//! operation's work as tasks — one for each stretch it actually runs in,
+//! between the pauses where its resources (and its own hours) do not all
+//! work (an operation without resources on `NONE`, in its own hours) — and
+//! the material and due-date violations.
 
 use std::collections::{BTreeSet, HashMap};
 
 use u_metaheur::brkga::BrkgaConfig;
+use u_schedule::models::joint_working_spans;
 use u_schedule::scheduler::{DispatchSearch, SimpleScheduler as USScheduler};
 
-use super::task_splitter::split_operation_by_calendar;
 use super::{Assignment, ConstraintType, Schedule, ScheduleError, SimpleScheduler, Violation};
 use crate::adapter::{job_ready_ms, material_delays, outsourced, to_problem, MaterialDelay};
+use crate::models::{SplitReason, Task, WorkingWindowEndReason};
 use crate::{ResourceKind, ScheduleRequest};
 
 /// Schedules `request` on u-schedule, or says why it cannot.
@@ -187,6 +189,12 @@ fn place(
         .iter()
         .map(|r| (r.id.as_str(), r.companions.as_slice()))
         .collect();
+    // The working time u-schedule placed each operation in.
+    let us_calendars: HashMap<&str, &u_schedule::models::Calendar> = problem
+        .resources()
+        .iter()
+        .filter_map(|r| Some((r.id.as_str(), r.calendar.as_ref()?)))
+        .collect();
 
     let mut schedule = Schedule::new();
 
@@ -289,18 +297,15 @@ fn place(
                 span.start_ms,
                 span.end_ms,
             ));
-            let split = split_operation_by_calendar(
-                op_id,
-                &job.id,
-                job.product_name.as_deref(),
-                span.start_ms,
+            let own: Vec<&u_schedule::models::Calendar> =
+                activities[op_id].calendar.iter().collect();
+            for task in tasks_of(
+                job,
+                op,
+                joint_working_spans(&own, span.start_ms, span.end_ms),
                 op.time.setup_ms,
-                op.time.process_ms + op.time.wait_ms,
-                op.is_splittable,
                 request.calendars.first(),
-                op.daily_work_window,
-            );
-            for task in split.tasks {
+            ) {
                 schedule.add_task(task);
             }
             continue;
@@ -334,23 +339,24 @@ fn place(
             schedule.add_assignment(assignment);
         }
 
-        // The work, split at the breaks of the first resource's calendar.
+        // The work in the stretches it runs in: while every resource held
+        // and the operation's own hours work together, as u-schedule placed it.
         let primary = held[0].resource_id.as_str();
         let calendar = resources
             .get(primary)
             .and_then(|r| r.calendar_id.as_deref())
             .and_then(|id| calendars.get(id).copied());
-        let duration = activities[op_id].duration_on(held.iter().map(|a| a.resource_id.as_str()));
-        let split = split_operation_by_calendar(
-            op_id,
-            &job.id,
-            job.product_name.as_deref(),
-            start,
+        let joint: Vec<&u_schedule::models::Calendar> = all
+            .iter()
+            .filter_map(|a| us_calendars.get(a.resource_id.as_str()).copied())
+            .chain(activities[op_id].calendar.as_ref())
+            .collect();
+        let pieces = tasks_of(
+            job,
+            op,
+            joint_working_spans(&joint, start, end),
             setup,
-            duration.process_ms + duration.teardown_ms,
-            op.is_splittable,
             calendar,
-            op.daily_work_window,
         );
         // u-aps names the workers it picked by requirement, not a crew's.
         let workers: Vec<String> = if op.crew_id.is_some() && is_crewed(request, op) {
@@ -365,7 +371,7 @@ fn place(
                 .map(|a| a.resource_id.clone())
                 .collect()
         };
-        for mut task in split.tasks {
+        for mut task in pieces {
             task = task.with_equipment(primary);
             if !workers.is_empty() {
                 let required = op
@@ -405,6 +411,58 @@ fn place(
     }
     SimpleScheduler::check_due_dates(&mut schedule, &request.jobs);
     Ok(schedule)
+}
+
+/// `op`'s work as tasks, one per stretch of `spans` it runs in, in order:
+/// `<operation>-T001`, `-T002`, … The set-up comes first, in as many
+/// stretches as it takes; the rest of each stretch is processing. A stretch
+/// that ends before the work does says why from `calendar` (the first
+/// resource's) when the pause is that calendar's, else as the end of a shift.
+fn tasks_of(
+    job: &crate::Job,
+    op: &crate::Operation,
+    spans: Vec<(i64, i64)>,
+    setup_ms: i64,
+    calendar: Option<&crate::Calendar>,
+) -> Vec<Task> {
+    let total = spans.len() as u32;
+    let mut setup_left = setup_ms;
+    spans
+        .iter()
+        .enumerate()
+        .map(|(k, &(begin, end))| {
+            let setup = setup_left.min(end - begin);
+            setup_left -= setup;
+            let reason = if k + 1 == spans.len() {
+                SplitReason::None
+            } else {
+                match calendar.and_then(|c| c.find_working_window_end(begin)) {
+                    Some((at, WorkingWindowEndReason::BreakStart)) if at == end => {
+                        SplitReason::BreakStart
+                    }
+                    Some((at, WorkingWindowEndReason::Holiday)) if at == end => {
+                        SplitReason::Holiday
+                    }
+                    _ => SplitReason::ShiftEnd,
+                }
+            };
+            let mut task = Task::new(
+                format!("{}-T{:03}", op.id, k + 1),
+                &op.id,
+                &job.id,
+                begin,
+                end,
+            )
+            .with_setup(setup)
+            .with_process(end - begin - setup)
+            .with_splittable(op.is_splittable)
+            .with_split_info(k as u32, total, reason);
+            if let Some(name) = &job.product_name {
+                task = task.with_product_name(name);
+            }
+            task
+        })
+        .collect()
 }
 
 /// Whether `op`'s crew takes the operation (operational, as u-aps reads it).

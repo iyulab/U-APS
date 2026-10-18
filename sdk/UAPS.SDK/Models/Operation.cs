@@ -52,6 +52,10 @@ public class Operation
     public string? OperationType { get; set; }
     public OperationTime Time { get; set; } = new(0, 0, 0);
     public List<ResourceRequirement> RequiredResources { get; set; } = [];
+    /// <summary>
+    /// 로트 분할 허용 (<c>SplitConfig</c>와 함께 — 공정을 나눠 여러 설비에서). 근무 시간 밖에서 멈췄다
+    /// 잇는 것은 이 값과 무관하게 모든 공정이 한다.
+    /// </summary>
     public bool IsSplittable { get; set; }
     public bool AllowParallel { get; set; }
     public DateTime? EarliestStart { get; set; }

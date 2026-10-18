@@ -332,7 +332,8 @@ pub struct Operation {
     /// 필요 자재
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub material_requirements: Vec<MaterialRequirement>,
-    /// 분할 가능 여부
+    /// 로트 분할 허용 (`split_config` 와 함께 — 공정을 나눠 여러 설비에서). 근무 시간 밖에서
+    /// 멈췄다 잇는 것은 이 값과 무관하게 모든 공정이 한다(작업 조각은 실제로 일한 구간마다).
     pub is_splittable: bool,
     /// 병렬 처리 가능 여부
     pub allow_parallel: bool,

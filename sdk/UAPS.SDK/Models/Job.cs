@@ -13,6 +13,9 @@ public class Job
     public DateTime? DueDate { get; set; }
     public DateTime? EarliestStart { get; set; }
     public int Quantity { get; set; } = 1;
+    /// <summary>
+    /// 작업 단위 로트 분할 허용 — 엔진이 아직 적용하지 않는다(공정 단위는 <see cref="Operation.IsSplittable"/>).
+    /// </summary>
     public bool IsSplittable { get; set; }
 
     // ===== SDK-Only Properties (분석용) =====

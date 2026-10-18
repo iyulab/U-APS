@@ -37,7 +37,7 @@ let op = Operation::new("op-001", "job-001", 1)
 - `sequence: i32` - 공정 순서
 - `time: OperationTime` - 시간 정보
 - `required_resources: Vec<ResourceRequirement>` - 필요 자원
-- `is_splittable: bool` - 분할 가능 여부
+- `is_splittable: bool` - 로트 분할 허용(`split_config` 와 함께). 근무 시간 밖에서 멈췄다 잇는 것은 이 값과 무관하다 — 작업 조각(task)은 공정이 실제로 일한 구간마다 하나
 - `split_config: Option<SplitConfig>` - 분할 설정
 - `overlap_config: Option<OverlapConfig>` - 중첩 설정
 - `dependencies: Vec<String>` - 선행 공정 ID(다른 작업의 공정도) — 모두 끝난 뒤 시작한다

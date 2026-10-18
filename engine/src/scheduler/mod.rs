@@ -18,7 +18,6 @@
 //! - [`pegging`] — Order pegging engine
 //! - [`dispatching`] — Dispatching rule engine (SPT, EDD, etc.)
 //! - [`time_fence`] — Frozen/slushy/free time fence management
-//! - [`task_splitter`] — Operation splitting across parallel machines
 
 pub mod analytics;
 pub mod campaign;
@@ -34,7 +33,6 @@ pub mod production;
 pub mod reschedule;
 mod schedule;
 mod simple;
-pub mod task_splitter;
 pub mod time_fence;
 pub mod whatif;
 
@@ -51,6 +49,5 @@ pub use production::*;
 pub use reschedule::*;
 pub use schedule::*;
 pub use simple::*;
-pub use task_splitter::*;
 pub use time_fence::*;
 pub use whatif::*;

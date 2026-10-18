@@ -34,6 +34,27 @@ published to a registry — it ships inside those packages.
   an operation of another type: the operation keeps its own worker
   requirements, and the mismatch is reported (`UnfilledRequirement`).
 
+### Changed
+
+- **A schedule's tasks are now the stretches each operation actually works
+  in.** An operation pauses wherever any resource it holds, or its daily
+  work window, does not work, and its assignment runs from its start to its
+  end over those pauses; its tasks used to be worked out again from the
+  first resource's calendar alone, so they could disagree with the
+  assignment — a later start, hours past the end, or work through another
+  resource's pause, and an operation with `IsSplittable` false was reported
+  as one task in a later unbroken stretch while its assignment paused over
+  a break. The set-up is in the first tasks, as before.
+- `Operation.IsSplittable` is documented as what it does: it allows lot
+  splitting with `SplitConfig` (applied by the previous genetic algorithm).
+  Every operation pauses outside working time whatever its value, as every
+  assignment already did.
+
+### Removed
+
+- The engine's `scheduler::task_splitter` module, which nothing used any
+  more.
+
 ### Known limitations
 
 `Job.IsSplittable` is still accepted and not applied (operations are split

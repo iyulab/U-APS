@@ -28,7 +28,7 @@
 | `wait_time` | Duration | 공정후 대기시간 | |
 | `time_variance` | TimeVariance | 시간 편차 (min/max) | 공정전/중/후 각각 |
 | `required_resources` | ResourceReq[] | 필요 자원 목록 | 장비, 작업자 |
-| `is_splittable` | bool | 분할 가능 여부 | 휴지시간 발생시 |
+| `is_splittable` | bool | 로트 분할 허용 (`split_config` 와 함께) | 근무 시간 밖에서 멈췄다 잇는 것은 이 값과 무관하게 모든 공정이 한다 |
 | `allow_parallel` | bool | 병렬 처리 가능 | |
 | `earliest_start` | DateTime? | 시작 가능 시간 | |
 | `transit_time` | Duration | 다음 공정 이동시간 | |
