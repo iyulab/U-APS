@@ -7,7 +7,7 @@
 //! - 에러 핸들링
 
 use crate::cp::{CpSatConfig, CpSatScheduler};
-use crate::error::{ErrorCode, Result, UapsError};
+use crate::error::Result;
 use crate::ga::{GaParams, GaScheduler, GeneticOperators};
 use crate::models::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
@@ -507,16 +507,7 @@ impl SchedulingEngine {
             SchedulingAlgorithm::Simple => {
                 self.log(LogLevel::Debug, "Using Simple scheduler", None);
                 let request = self.build_schedule_request(jobs, resources, start_time_ms);
-                SimpleScheduler::new()
-                    .schedule(&request)
-                    .map_err(|e| match e {
-                        super::ScheduleError::Refused(_) => {
-                            UapsError::new(ErrorCode::InvalidInput, e.to_string())
-                        }
-                        super::ScheduleError::Broken(_) => {
-                            UapsError::new(ErrorCode::SchedulingFailed, e.to_string())
-                        }
-                    })
+                Ok(SimpleScheduler::new().schedule(&request)?)
             }
 
             SchedulingAlgorithm::GeneticAlgorithm => {
@@ -545,6 +536,27 @@ impl SchedulingEngine {
                     ),
                 ]);
                 let params = self.effective_ga_params();
+                // TODO(upstream: lot splitting and overlap on u-schedule —
+                // ISSUE-u-aps-20261018-algorithm-paths-ignore-requirements):
+                // only this engine's own GA splits an operation across
+                // machines or overlaps it with the one before, and it holds
+                // one machine per operation (no workers, calendars or
+                // releases). Remove once u-schedule states both.
+                let splits_or_overlaps = jobs
+                    .iter()
+                    .flat_map(|j| &j.operations)
+                    .any(|op| op.is_splittable || op.overlap_config.is_some());
+                if !splits_or_overlaps {
+                    let request = self.build_schedule_request(jobs, resources, start_time_ms);
+                    return Ok(SimpleScheduler::new().search(&request, &params)?);
+                }
+                self.log(
+                    LogLevel::Warn,
+                    "GeneticAlgorithm splits or overlaps operations with its own decoder, \
+                     which holds one machine per operation: worker requirements, calendars \
+                     and release times are not applied",
+                    None,
+                );
                 let operators = GeneticOperators::default();
                 let scheduler = GaScheduler::new(params, operators)
                     .with_setup_matrices(self.config.setup_matrices.clone())

@@ -10,7 +10,8 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use u_schedule::scheduler::SimpleScheduler as USScheduler;
+use u_metaheur::brkga::BrkgaConfig;
+use u_schedule::scheduler::{DispatchSearch, SimpleScheduler as USScheduler};
 
 use super::task_splitter::split_operation_by_calendar;
 use super::{Assignment, Schedule, ScheduleError, SimpleScheduler, Violation};
@@ -19,6 +20,38 @@ use crate::{ResourceKind, ScheduleRequest};
 
 /// Schedules `request` on u-schedule, or says why it cannot.
 pub(super) fn schedule(request: &ScheduleRequest) -> Result<Schedule, ScheduleError> {
+    place(request, |scheduler, problem, start| {
+        Ok(scheduler.schedule(problem, start))
+    })
+}
+
+/// Schedules `request` with the best dispatching order a random-key search
+/// finds (u-schedule's `DispatchSearch`, `config`'s budget), weighing total
+/// tardiness by `tardiness_weight` against makespan.
+pub(super) fn search(
+    request: &ScheduleRequest,
+    config: BrkgaConfig,
+    tardiness_weight: f64,
+) -> Result<Schedule, ScheduleError> {
+    place(request, |scheduler, problem, start| {
+        DispatchSearch::new(scheduler, config)
+            .with_tardiness_weight(tardiness_weight)
+            .search(problem, start)
+            .map(|found| found.schedule)
+            .map_err(ScheduleError::Settings)
+    })
+}
+
+/// States `request` as a u-schedule problem, has `run` place it with the
+/// request's scheduler, and reads the placement back.
+fn place(
+    request: &ScheduleRequest,
+    run: impl FnOnce(
+        USScheduler,
+        &u_schedule::Problem,
+        i64,
+    ) -> Result<u_schedule::models::Schedule, ScheduleError>,
+) -> Result<Schedule, ScheduleError> {
     let adapted = to_problem(request);
     let problem = adapted.problem.map_err(ScheduleError::Refused)?;
     let mut scheduler = USScheduler::new().with_transition_matrices(adapted.transition_matrices);
@@ -28,7 +61,7 @@ pub(super) fn schedule(request: &ScheduleRequest) -> Result<Schedule, ScheduleEr
     if let Some(policy) = adapted.rule_policy {
         scheduler = scheduler.with_rule_policy(policy);
     }
-    let placed = scheduler.schedule(&problem, adapted.start_time_ms);
+    let placed = run(scheduler, &problem, adapted.start_time_ms)?;
     // An operation u-schedule could not place at all — no time in which its
     // resources (and its own hours) work together — is reported, and its job
     // goes on without it. A late job is reported below, as this engine words

@@ -163,6 +163,9 @@ pub enum ScheduleError {
     /// The schedule breaks the request in a way it does not report — a
     /// defect in this engine, not in the request.
     Broken(Vec<u_schedule::models::Violation>),
+    /// The search settings are invalid (a population too small, a fraction
+    /// out of range, …).
+    Settings(u_metaheur::ConfigError),
 }
 
 impl std::fmt::Display for ScheduleError {
@@ -172,6 +175,7 @@ impl std::fmt::Display for ScheduleError {
                 let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
                 write!(f, "the request cannot be scheduled: {}", errors.join("; "))
             }
+            Self::Settings(error) => write!(f, "invalid search settings: {error}"),
             Self::Broken(violations) => {
                 let violations: Vec<&str> = violations.iter().map(|v| v.message.as_str()).collect();
                 write!(
@@ -186,6 +190,21 @@ impl std::fmt::Display for ScheduleError {
 
 impl std::error::Error for ScheduleError {}
 
+impl From<ScheduleError> for crate::error::UapsError {
+    fn from(error: ScheduleError) -> Self {
+        use crate::error::ErrorCode;
+        let code = match error {
+            ScheduleError::Refused(_) | ScheduleError::Settings(_) => ErrorCode::InvalidInput,
+            ScheduleError::Broken(_) => ErrorCode::SchedulingFailed,
+        };
+        Self::new(code, error.to_string())
+    }
+}
+
+/// The time a [`SimpleScheduler::search`] takes when its parameters set no
+/// limit (as [`GaParams::balanced`](crate::GaParams::balanced) does).
+pub const DEFAULT_SEARCH_TIME_LIMIT_MS: i64 = 30_000;
+
 /// The dispatching scheduler.
 pub struct SimpleScheduler;
 
@@ -199,6 +218,30 @@ impl SimpleScheduler {
     /// fill or place is reported as an `UnfilledRequirement` violation.
     pub fn schedule(&self, request: &ScheduleRequest) -> Result<Schedule, ScheduleError> {
         super::placement::schedule(request)
+    }
+
+    /// Schedules `request` with the dispatching order a random-key genetic
+    /// search finds (`params`' population, generations, elite share, stall
+    /// limit and time limit — [`DEFAULT_SEARCH_TIME_LIMIT_MS`] when it sets
+    /// none, since each schedule it considers is a whole dispatching run):
+    /// every schedule it considers is one this scheduler builds, so it keeps
+    /// the whole request, and it is never worse than
+    /// [`schedule`](Self::schedule). The cost is makespan plus a tenth of the
+    /// total tardiness.
+    pub fn search(
+        &self,
+        request: &ScheduleRequest,
+        params: &crate::GaParams,
+    ) -> Result<Schedule, ScheduleError> {
+        let mut config = u_metaheur::brkga::BrkgaConfig::new(1)
+            .with_population_size(params.population_size)
+            .with_max_generations(params.max_generations)
+            .with_elite_fraction(params.elite_ratio)
+            .with_stagnation_limit(params.convergence_generations);
+        let limit = params.time_limit_ms.unwrap_or(DEFAULT_SEARCH_TIME_LIMIT_MS);
+        config = config.with_time_limit_ms(u64::try_from(limit).unwrap_or(0));
+        // makespan + 0.1 × tardiness, as a weight in [0, 1].
+        super::placement::search(request, config, 0.1 / 1.1)
     }
 
     /// 납기 위반 체크

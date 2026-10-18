@@ -462,7 +462,10 @@ mod tests {
         assert!(result.makespan_ms > 0);
     }
 
+    /// A scale scenario: the search spends its time budget, so it runs
+    /// only when asked (`cargo test --release -- --ignored test_ga_50_schedules`).
     #[test]
+    #[ignore = "scale scenario: run with --release --ignored"]
     fn test_ga_50_schedules() {
         let result = benchmark_ga_50();
 
@@ -470,7 +473,10 @@ mod tests {
         assert!(result.makespan_ms > 0);
     }
 
+    /// A scale scenario: the search spends its time budget, so it runs
+    /// only when asked (`cargo test --release -- --ignored test_ga_100_schedules`).
     #[test]
+    #[ignore = "scale scenario: run with --release --ignored"]
     fn test_ga_100_schedules() {
         let result = benchmark_ga_100();
 

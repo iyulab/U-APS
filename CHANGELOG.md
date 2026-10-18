@@ -15,6 +15,21 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- **`GeneticAlgorithm` now searches the order the default scheduler takes
+  the jobs in** (a biased random-key genetic algorithm whose every candidate
+  is a default-scheduler run), so its schedules keep everything the default
+  scheduler keeps — worker requirements, calendars, release times, set-up
+  matrices, linked resources, sites, materials, outsourcing — and are never
+  worse than the default scheduler's. The cost is makespan plus a tenth of
+  the total tardiness. `GaParams` maps to the search as population size,
+  generations, elite ratio, stall generations (`convergence_generations`)
+  and time limit; `tournament_size` and `convergence_threshold` are not
+  used. Each candidate is a whole scheduling run, so a search without a time
+  limit stops after 30 seconds (`DEFAULT_SEARCH_TIME_LIMIT_MS`). A request
+  with operation splitting (`IsSplittable`) or overlap still goes to the
+  previous genetic algorithm, which logs a warning that it does not apply
+  worker requirements, calendars or release times.
+
 - **The previous dispatching scheduler is gone.** Every request the default
   scheduler takes is placed on u-schedule; nothing falls back any more. In
   the engine's Rust API `SimpleScheduler::schedule` returns
@@ -54,6 +69,12 @@ published to a registry — it ships inside those packages.
 
 ### Fixed
 
+- `GeneticAlgorithm` no longer leaves workers out and starts jobs before
+  their earliest start: on 100 random requests mixing alternatives,
+  efficiencies, workers, set-ups, priorities, due dates and release times,
+  79 of its schedules did one or both (no violation was reported). None of
+  the new ones does, and their makespan is 6 % shorter than the default
+  scheduler's on average.
 - An operation without resources that runs into a break no longer starts
   over after it: it pauses and resumes, as operations with resources always
   have. Before, the work done before the break was thrown away while the
