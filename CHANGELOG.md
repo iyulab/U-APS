@@ -15,8 +15,9 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
-- **The default scheduler (a request without `algorithm`) now places
-  operations with the u-schedule dispatcher, so its schedules change.** The
+- **The default scheduler (a request without `algorithm`, or with
+  `"Simple"`) now places operations with the u-schedule dispatcher, so its
+  schedules change.** The
   request is stated in u-schedule's terms — operations with their resource
   requirements, equipment efficiency and worker proficiency as speeds, crews,
   worker load factors as shares of a worker, linked resources, set-up

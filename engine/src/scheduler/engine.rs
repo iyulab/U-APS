@@ -506,9 +506,21 @@ impl SchedulingEngine {
         match self.config.algorithm {
             SchedulingAlgorithm::Simple => {
                 self.log(LogLevel::Debug, "Using Simple scheduler", None);
-                let scheduler = SimpleScheduler::new();
                 let request = self.build_schedule_request(jobs, resources, start_time_ms);
-                Ok(scheduler.schedule(&request))
+                // TODO(rebase P3): the engine's own scheduler takes what
+                // u-schedule cannot state yet; remove it once nothing is
+                // reported unsupported (the FFI default path does the same).
+                match super::rebased::schedule(&request) {
+                    Ok(schedule) => Ok(schedule),
+                    Err(reason) => {
+                        self.log(
+                            LogLevel::Debug,
+                            &format!("Scheduled by the engine's own scheduler: {reason:?}"),
+                            None,
+                        );
+                        Ok(SimpleScheduler::new().schedule(&request))
+                    }
+                }
             }
 
             SchedulingAlgorithm::GeneticAlgorithm => {
