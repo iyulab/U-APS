@@ -114,14 +114,12 @@
   "g12_multi_site": {
     "makespan_ms": {
       "u_aps": 3660000,
-      "u_schedule": 60000
+      "u_schedule": 3660000
     },
-    "placements_differing": 2,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "TransportTime"
-    ]
+    "unsupported": []
   },
   "g13_dispatching_edd_with_lateness": {
     "makespan_ms": {

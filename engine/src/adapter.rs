@@ -33,9 +33,9 @@ pub enum Unsupported {
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
     ActivityRelease,
-    /// A time between operations that depends on where they run (site
-    /// transitions).
-    TransportTime,
+    /// A requirement no resource can fill — a job's target site has none of
+    /// the operation's equipment; u-aps schedules the operation without it.
+    UnfillableRequirement,
     /// Operation-level splitting, overlap or time windows.
     ActivityShape,
     /// A dispatching rule that changes with the state of the shop.
@@ -87,15 +87,15 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     out = out.with_skill(skill);
                 }
             }
+            for (to, ms) in site_transport(request, r) {
+                out = out.with_transport_to(to, ms);
+            }
             out
         })
         .collect();
 
     let qualified_by_type =
         request.skill_matrix.is_some() || request.certification_matrix.is_some();
-    if request.site_transitions.is_some() {
-        unsupported.insert(Unsupported::TransportTime);
-    }
     if request.pegging_engine.is_some() || request.outsourcing_manager.is_some() {
         unsupported.insert(Unsupported::SupplyPlanning);
     }
@@ -169,7 +169,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     };
                     let mut requirement = USRequirement::new(kind)
                         .with_quantity(req.quantity)
-                        .with_candidates(req.candidates.clone());
+                        .with_candidates(match on_target_site(request, job, req) {
+                            Some(candidates) => candidates,
+                            None => {
+                                unsupported.insert(Unsupported::UnfillableRequirement);
+                                req.candidates.clone()
+                            }
+                        });
                     activity = with_timings(activity, request, op, req);
                     if req.resource_type == ResourceType::Worker && qualified_by_type {
                         if let Some(op_type) = &op.operation_type {
@@ -346,6 +352,57 @@ fn add_rule(engine: RuleEngine, rule: DispatchingRuleName, weight: f64) -> RuleE
     }
 }
 
+/// The time work takes to move from equipment `from` to each other piece of
+/// equipment on another site, by the request's site transitions — u-aps
+/// moves a job between the sites of the equipment its operations run on.
+fn site_transport<'r>(
+    request: &'r ScheduleRequest,
+    from: &'r crate::Resource,
+) -> impl Iterator<Item = (&'r str, i64)> {
+    let transitions = request.site_transitions.as_ref();
+    let from_site = from
+        .site_id
+        .as_deref()
+        .filter(|_| from.kind == ResourceKind::Equipment);
+    request
+        .resources
+        .iter()
+        .filter(move |_| transitions.is_some() && from_site.is_some())
+        .filter(|to| to.kind == ResourceKind::Equipment)
+        .filter_map(move |to| {
+            let ms = transitions?.get_transition_time(from_site, to.site_id.as_deref());
+            (ms > 0).then_some((to.id.as_str(), ms))
+        })
+}
+
+/// `req`'s candidates, kept to the job's target site when it names one (a
+/// piece of equipment with no site stays — u-aps' rule). `None` when the
+/// site keeps none of them.
+fn on_target_site(
+    request: &ScheduleRequest,
+    job: &crate::Job,
+    req: &crate::ResourceRequirement,
+) -> Option<Vec<String>> {
+    let (Some(site), ResourceType::Equipment) = (&job.target_site_id, &req.resource_type) else {
+        return Some(req.candidates.clone());
+    };
+    let kept: Vec<String> = req
+        .candidates
+        .iter()
+        .filter(|c| {
+            request
+                .resources
+                .iter()
+                .find(|r| &r.id == *c)
+                .and_then(|r| r.site_id.as_ref())
+                .is_none_or(|s| s == site)
+        })
+        .cloned()
+        .collect();
+    // An empty list would read as «any equipment».
+    (kept.is_empty() == req.candidates.is_empty()).then_some(kept)
+}
+
 /// The operation types a worker is qualified for, as skills: proficient (a
 /// skill-matrix entry above zero) and, with a certification matrix,
 /// certified at the schedule start.
@@ -471,5 +528,39 @@ mod tests {
         let activity = only_activity(&adapted);
         assert_eq!(worker_candidates(activity), vec![Vec::<String>::new()]);
         assert_eq!(activity.duration_on(["EQP", "W1"]).process_ms, 60_000);
+    }
+
+    fn sited_request(target: &str) -> ScheduleRequest {
+        let op = Operation::new("O1", "J1", 1)
+            .with_time(0, 60_000, 0)
+            .with_equipment(vec!["EQP-A".to_string(), "EQP-B".to_string()]);
+        ScheduleRequest::new(
+            vec![Job::new("J1").with_site(target).with_operation(op)],
+            vec![
+                Resource::equipment("EQP-A").with_site("SITE-A"),
+                Resource::equipment("EQP-B").with_site("SITE-B"),
+            ],
+        )
+    }
+
+    fn equipment_candidates(adapted: &Adapted) -> Vec<String> {
+        only_activity(adapted).resource_requirements[0]
+            .candidates
+            .clone()
+    }
+
+    #[test]
+    fn a_target_site_keeps_the_equipment_on_it() {
+        let adapted = to_problem(&sited_request("SITE-B"));
+        assert_eq!(equipment_candidates(&adapted), ["EQP-B"]);
+        assert!(adapted.unsupported.is_empty());
+    }
+
+    #[test]
+    fn a_target_site_with_none_of_the_equipment_is_named() {
+        let adapted = to_problem(&sited_request("SITE-C"));
+        assert!(adapted
+            .unsupported
+            .contains(&Unsupported::UnfillableRequirement));
     }
 }
