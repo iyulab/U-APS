@@ -2849,11 +2849,11 @@ mod tests {
         let now = 1_000_000_000i64;
         let day_ms = 24 * 3_600_000;
 
-        // WRK-001은 인증 없음, WRK-002는 Standard 인증
+        // WRK-001은 인증 없음, WRK-002는 Advanced 인증
         let cert_matrix = CertificationMatrix::new().with_operation_cert(
             "WRK-002",
             "welding",
-            CertificationLevel::Standard,
+            CertificationLevel::Advanced,
             now - day_ms,
         );
 
@@ -2944,7 +2944,7 @@ mod tests {
             "WRK-001",
             "welding",
             CertificationTarget::OperationType,
-            CertificationLevel::Advanced,
+            CertificationLevel::Expert,
             now - day_ms * 100,
         )
         .with_expiry(now - day_ms * 10); // 10일 전 만료
@@ -2955,7 +2955,7 @@ mod tests {
             "WRK-002",
             "welding",
             CertificationTarget::OperationType,
-            CertificationLevel::Standard,
+            CertificationLevel::Advanced,
             now - day_ms * 30,
         )
         .with_expiry(now + day_ms * 30); // 30일 후 만료

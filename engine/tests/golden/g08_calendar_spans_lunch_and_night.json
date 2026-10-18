@@ -1,0 +1,61 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 1705935600000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 1705921200000
+      },
+      {
+        "end_ms": 1706011200000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 1705935600000
+      }
+    ],
+    "makespan_ms": 1706011200000,
+    "tasks": [
+      {
+        "equipment_id": "EQP",
+        "id": "J1-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "plan_begin_ms": 1705928400000,
+        "plan_end_ms": 1705939200000,
+        "process_ms": 10800000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP",
+        "id": "J2-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "plan_begin_ms": 1705935600000,
+        "plan_end_ms": 1705957200000,
+        "process_ms": 21600000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      }
+    ],
+    "violations": []
+  },
+  "success": true
+}

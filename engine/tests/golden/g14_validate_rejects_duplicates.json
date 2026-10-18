@@ -1,0 +1,8 @@
+{
+  "errors": [
+    "[E1004] Duplicate Job ID: J1",
+    "[E1005] Operation J1-2 references unknown resource: MISSING"
+  ],
+  "valid": false,
+  "warnings": []
+}

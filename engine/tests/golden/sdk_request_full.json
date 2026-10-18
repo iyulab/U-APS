@@ -1,0 +1,135 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 1705910450000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "EQP-1",
+        "setup_ms": 10000,
+        "start_ms": 1705910400000
+      },
+      {
+        "end_ms": 1705910450000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "W1",
+        "setup_ms": 10000,
+        "start_ms": 1705910400000
+      },
+      {
+        "end_ms": 1705910480000,
+        "job_id": "J1",
+        "operation_id": "J1-2",
+        "resource_id": "EQP-2",
+        "setup_ms": 0,
+        "start_ms": 1705910450000
+      },
+      {
+        "end_ms": 1705910480000,
+        "job_id": "J1",
+        "operation_id": "J1-2",
+        "resource_id": "W1",
+        "setup_ms": 0,
+        "start_ms": 1705910450000
+      },
+      {
+        "end_ms": 1705910480000,
+        "job_id": "J1",
+        "operation_id": "J1-2",
+        "resource_id": "W2",
+        "setup_ms": 0,
+        "start_ms": 1705910450000
+      },
+      {
+        "end_ms": 1705910530000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "EQP-1",
+        "setup_ms": 20000,
+        "start_ms": 1705910480000
+      },
+      {
+        "end_ms": 1705910530000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "W1",
+        "setup_ms": 20000,
+        "start_ms": 1705910480000
+      },
+      {
+        "end_ms": 1705996930000,
+        "job_id": "J2",
+        "operation_id": "J2-2",
+        "resource_id": "OUTSOURCE:VENDOR-1",
+        "setup_ms": 0,
+        "start_ms": 1705910530000
+      }
+    ],
+    "makespan_ms": 1705996930000,
+    "tasks": [
+      {
+        "equipment_id": "EQP-1",
+        "id": "J1-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "plan_begin_ms": 1705910400000,
+        "plan_end_ms": 1705910450000,
+        "process_ms": 40000,
+        "product_name": "ProductA",
+        "setup_ms": 10000,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "worker_ids": [
+          "W1"
+        ],
+        "workers_required": 1
+      },
+      {
+        "equipment_id": "EQP-2",
+        "id": "J1-2-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-2",
+        "plan_begin_ms": 1705910450000,
+        "plan_end_ms": 1705910480000,
+        "process_ms": 30000,
+        "product_name": "ProductA",
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP-1",
+        "id": "J2-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "plan_begin_ms": 1705910480000,
+        "plan_end_ms": 1705910530000,
+        "process_ms": 30000,
+        "product_name": "ProductB",
+        "setup_ms": 20000,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "worker_ids": [
+          "W1"
+        ],
+        "workers_required": 1
+      }
+    ],
+    "violations": []
+  },
+  "success": true
+}

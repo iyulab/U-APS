@@ -33,27 +33,9 @@ public class SchedulerClient : IDisposable
     /// </summary>
     public ScheduleResult Schedule(ScheduleRequest request)
     {
-        var requestDto = new ScheduleRequestDto
-        {
-            Jobs = request.Jobs.Select(j => j.ToEngineDto()).ToList(),
-            Resources = request.Resources.Select(r => r.ToEngineDto()).ToList(),
-            StartTimeMs = request.StartTimeMs,
-            SetupMatrices = request.SetupMatrices?.ToEngineDto(),
-            SkillMatrix = request.SkillMatrix?.ToDto(),
-            CertificationMatrix = request.CertificationMatrix?.ToDto(),
-            WorkerTimeOverride = request.WorkerTimeOverride?.ToDto(),
-            CrewManager = request.CrewManager?.ToDto(),
-            DispatchingConfig = request.DispatchingConfig != null ? ConvertDispatchingConfig(request.DispatchingConfig) : null,
-            MaterialManager = request.MaterialManager?.ToDto(),
-            OutsourcingManager = request.OutsourcingManager?.ToDto(),
-            Calendars = request.Calendars.Count > 0
-                ? request.Calendars.Select(c => c.ToEngineDto()).ToList()
-                : null,
-        };
+        var requestJson = SerializeRequest(request);
 
-        var requestJson = JsonSerializer.Serialize(requestDto, JsonOptions);
-
-        var code = NativeInterop.uaps_schedule(requestJson, out var resultPtr);
+        NativeInterop.uaps_schedule(requestJson, out var resultPtr);
 
         try
         {
@@ -76,22 +58,7 @@ public class SchedulerClient : IDisposable
                 };
             }
 
-            var response = JsonSerializer.Deserialize<ScheduleResponseDto>(resultJson, JsonOptions);
-            if (response == null)
-            {
-                return new ScheduleResult
-                {
-                    Success = false,
-                    Error = "Failed to deserialize response"
-                };
-            }
-
-            return new ScheduleResult
-            {
-                Success = response.Success,
-                Schedule = response.Schedule != null ? MapSchedule(response.Schedule) : null,
-                Error = response.Error
-            };
+            return ParseScheduleResult(resultJson);
         }
         finally
         {
@@ -100,6 +67,53 @@ public class SchedulerClient : IDisposable
                 NativeInterop.uaps_free_string(resultPtr);
             }
         }
+    }
+
+    /// <summary>
+    /// The JSON the engine receives for <paramref name="request"/> — the wire
+    /// contract pinned by the request contract test.
+    /// </summary>
+    internal static string SerializeRequest(ScheduleRequest request)
+    {
+        var requestDto = new ScheduleRequestDto
+        {
+            Jobs = request.Jobs.Select(j => j.ToEngineDto()).ToList(),
+            Resources = request.Resources.Select(r => r.ToEngineDto()).ToList(),
+            StartTimeMs = request.StartTimeMs,
+            SetupMatrices = request.SetupMatrices?.ToEngineDto(),
+            SkillMatrix = request.SkillMatrix?.ToDto(),
+            CertificationMatrix = request.CertificationMatrix?.ToDto(),
+            WorkerTimeOverride = request.WorkerTimeOverride?.ToDto(),
+            CrewManager = request.CrewManager?.ToDto(),
+            DispatchingConfig = request.DispatchingConfig != null ? ConvertDispatchingConfig(request.DispatchingConfig) : null,
+            MaterialManager = request.MaterialManager?.ToDto(),
+            OutsourcingManager = request.OutsourcingManager?.ToDto(),
+            Calendars = request.Calendars.Count > 0
+                ? request.Calendars.Select(c => c.ToEngineDto()).ToList()
+                : null,
+        };
+
+        return JsonSerializer.Serialize(requestDto, JsonOptions);
+    }
+
+    private static ScheduleResult ParseScheduleResult(string resultJson)
+    {
+        var response = JsonSerializer.Deserialize<ScheduleResponseDto>(resultJson, JsonOptions);
+        if (response == null)
+        {
+            return new ScheduleResult
+            {
+                Success = false,
+                Error = "Failed to deserialize response"
+            };
+        }
+
+        return new ScheduleResult
+        {
+            Success = response.Success,
+            Schedule = response.Schedule != null ? MapSchedule(response.Schedule) : null,
+            Error = response.Error
+        };
     }
 
     private static Schedule MapSchedule(ScheduleDto dto)

@@ -1,0 +1,69 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 1705910460000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 1705910400000
+      },
+      {
+        "end_ms": 1705924860000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 1705924800000
+      }
+    ],
+    "makespan_ms": 1705924860000,
+    "tasks": [
+      {
+        "equipment_id": "EQP",
+        "id": "J2-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "plan_begin_ms": 1705910400000,
+        "plan_end_ms": 1705910460000,
+        "process_ms": 60000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP",
+        "id": "J1-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "plan_begin_ms": 1705924800000,
+        "plan_end_ms": 1705924860000,
+        "process_ms": 60000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      }
+    ],
+    "violations": [
+      {
+        "amount": 14400000.0,
+        "constraint_id": "MAT-AVAIL-J1-1-STEEL",
+        "constraint_type": "MaterialAvailability",
+        "message": "Operation J1-1 delayed by 14400000ms waiting for material STEEL",
+        "target_id": "J1-1"
+      }
+    ]
+  },
+  "success": true
+}

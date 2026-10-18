@@ -1,0 +1,126 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 120000,
+        "job_id": "J3",
+        "operation_id": "J3-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 240000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 120000
+      },
+      {
+        "end_ms": 360000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 240000
+      },
+      {
+        "end_ms": 480000,
+        "job_id": "J0",
+        "operation_id": "J0-1",
+        "resource_id": "EQP",
+        "setup_ms": 0,
+        "start_ms": 360000
+      }
+    ],
+    "makespan_ms": 480000,
+    "tasks": [
+      {
+        "equipment_id": "EQP",
+        "id": "J3-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J3",
+        "operation_id": "J3-1",
+        "plan_begin_ms": 0,
+        "plan_end_ms": 120000,
+        "process_ms": 120000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP",
+        "id": "J1-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "plan_begin_ms": 120000,
+        "plan_end_ms": 240000,
+        "process_ms": 120000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP",
+        "id": "J2-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "plan_begin_ms": 240000,
+        "plan_end_ms": 360000,
+        "process_ms": 120000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "EQP",
+        "id": "J0-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J0",
+        "operation_id": "J0-1",
+        "plan_begin_ms": 360000,
+        "plan_end_ms": 480000,
+        "process_ms": 120000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      }
+    ],
+    "violations": [
+      {
+        "amount": 60000.0,
+        "constraint_id": "DUE-J1",
+        "constraint_type": "DueDate",
+        "message": "Job J1 is late by 60000ms",
+        "target_id": "J1"
+      },
+      {
+        "amount": 60000.0,
+        "constraint_id": "DUE-J3",
+        "constraint_type": "DueDate",
+        "message": "Job J3 is late by 60000ms",
+        "target_id": "J3"
+      }
+    ]
+  },
+  "success": true
+}

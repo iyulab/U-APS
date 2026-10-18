@@ -1,0 +1,332 @@
+{
+  "jobs": [
+    {
+      "id": "J1",
+      "product_name": "ProductA",
+      "operations": [
+        {
+          "id": "J1-1",
+          "job_id": "J1",
+          "sequence": 1,
+          "operation_type": "welding",
+          "time": {
+            "setup_ms": 5000,
+            "process_ms": 60000,
+            "wait_ms": 0
+          },
+          "required_resources": [
+            {
+              "resource_type": "Equipment",
+              "quantity": 1,
+              "candidates": [
+                "EQP-1"
+              ],
+              "load_factor": 1
+            },
+            {
+              "resource_type": "Worker",
+              "quantity": 1,
+              "candidates": [],
+              "load_factor": 1
+            }
+          ],
+          "material_requirements": [
+            {
+              "material_id": "STEEL",
+              "quantity": 10
+            }
+          ],
+          "is_splittable": false,
+          "allow_parallel": false,
+          "dependencies": [],
+          "requires_operator": true
+        },
+        {
+          "id": "J1-2",
+          "job_id": "J1",
+          "sequence": 2,
+          "time": {
+            "setup_ms": 0,
+            "process_ms": 30000,
+            "wait_ms": 0
+          },
+          "required_resources": [
+            {
+              "resource_type": "Equipment",
+              "quantity": 1,
+              "candidates": [
+                "EQP-2"
+              ],
+              "load_factor": 1
+            }
+          ],
+          "material_requirements": [],
+          "is_splittable": false,
+          "allow_parallel": false,
+          "dependencies": [],
+          "requires_operator": true,
+          "crew_id": "TEAM-A"
+        }
+      ],
+      "priority": 1,
+      "due_date": "2024-01-22T16:00:00Z",
+      "quantity": 1,
+      "is_splittable": false
+    },
+    {
+      "id": "J2",
+      "product_name": "ProductB",
+      "operations": [
+        {
+          "id": "J2-1",
+          "job_id": "J2",
+          "sequence": 1,
+          "operation_type": "welding",
+          "time": {
+            "setup_ms": 0,
+            "process_ms": 45000,
+            "wait_ms": 0
+          },
+          "required_resources": [
+            {
+              "resource_type": "Equipment",
+              "quantity": 1,
+              "candidates": [
+                "EQP-1"
+              ],
+              "load_factor": 1
+            },
+            {
+              "resource_type": "Worker",
+              "quantity": 1,
+              "candidates": [],
+              "load_factor": 1
+            }
+          ],
+          "material_requirements": [],
+          "is_splittable": false,
+          "allow_parallel": false,
+          "dependencies": [
+            "J1-2"
+          ],
+          "requires_operator": true
+        },
+        {
+          "id": "J2-2",
+          "job_id": "J2",
+          "sequence": 2,
+          "operation_type": "plating",
+          "time": {
+            "setup_ms": 0,
+            "process_ms": 20000,
+            "wait_ms": 0
+          },
+          "required_resources": [],
+          "material_requirements": [],
+          "is_splittable": false,
+          "allow_parallel": false,
+          "dependencies": [],
+          "requires_operator": true,
+          "outsourcing_config": {
+            "provider_id": "VENDOR-1",
+            "lead_time_ms": 86400000,
+            "order_date_mode": "FromEarliestStart",
+            "priority": 100
+          }
+        }
+      ],
+      "priority": 2,
+      "quantity": 1,
+      "is_splittable": false
+    }
+  ],
+  "resources": [
+    {
+      "id": "EQP-1",
+      "kind": "Equipment",
+      "capabilities": [],
+      "capacity": 1,
+      "efficiency": 1,
+      "availability": [],
+      "unavailable": [],
+      "is_robot": false
+    },
+    {
+      "id": "EQP-2",
+      "kind": "Equipment",
+      "capabilities": [],
+      "capacity": 1,
+      "efficiency": 1,
+      "availability": [],
+      "unavailable": [],
+      "is_robot": false
+    },
+    {
+      "id": "W1",
+      "kind": "Worker",
+      "capabilities": [],
+      "capacity": 1,
+      "efficiency": 1,
+      "availability": [],
+      "unavailable": [],
+      "is_robot": false
+    },
+    {
+      "id": "W2",
+      "kind": "Worker",
+      "capabilities": [],
+      "capacity": 1,
+      "efficiency": 1,
+      "availability": [],
+      "unavailable": [],
+      "is_robot": false
+    }
+  ],
+  "start_time_ms": 1705910400000,
+  "setup_matrices": {
+    "matrices": {
+      "EQP-1": {
+        "resource_id": "EQP-1",
+        "default_setup_ms": 10000,
+        "entries": [
+          {
+            "from_product": "ProductA",
+            "to_product": "ProductB",
+            "setup_ms": 20000
+          }
+        ]
+      }
+    }
+  },
+  "skill_matrix": {
+    "default_proficiency": 1,
+    "proficiencies": [
+      {
+        "worker_id": "W1",
+        "operation_type": "welding",
+        "proficiency": 1.5
+      },
+      {
+        "worker_id": "W2",
+        "operation_type": "welding",
+        "proficiency": 0.8
+      }
+    ]
+  },
+  "certification_matrix": {
+    "certifications": [
+      {
+        "id": "C1",
+        "worker_id": "W1",
+        "target_id": "welding",
+        "target": "operationtype",
+        "level": "advanced",
+        "issued_at_ms": 1705824000000
+      }
+    ]
+  },
+  "worker_time_override": {
+    "overrides": [
+      {
+        "worker_id": "W2",
+        "operation_type": "welding",
+        "process_ms": 50000
+      }
+    ]
+  },
+  "crew_manager": {
+    "crews": [
+      {
+        "id": "TEAM-A",
+        "name": "Team A",
+        "member_ids": [
+          "W1",
+          "W2"
+        ],
+        "leader_id": "W1",
+        "assigned_operation_types": [],
+        "assigned_equipment_ids": [
+          "EQP-2"
+        ],
+        "min_members": 1
+      }
+    ]
+  },
+  "dispatching_config": {
+    "primary_rule": "EDD",
+    "tie_breaker": "SPT"
+  },
+  "material_manager": {
+    "materials": [
+      {
+        "id": "STEEL",
+        "name": "Steel plate",
+        "unit": "EA",
+        "stock_quantity": 100,
+        "safety_stock": 0,
+        "lead_time_ms": 0
+      }
+    ],
+    "bom": {}
+  },
+  "outsourcing_manager": {
+    "providers": {
+      "VENDOR-1": {
+        "id": "VENDOR-1",
+        "name": "Plating vendor",
+        "supported_operations": [
+          "plating"
+        ],
+        "default_lead_time_ms": 86400000,
+        "is_active": true,
+        "quality_rating": 0.8,
+        "working_days": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    }
+  },
+  "calendars": [
+    {
+      "id": "CAL-DAY",
+      "name": "\uC8FC\uAC04 \uADFC\uBB34",
+      "shifts": [
+        {
+          "name": "\uC8FC\uAC04",
+          "start": {
+            "hour": 8,
+            "minute": 0
+          },
+          "end": {
+            "hour": 17,
+            "minute": 0
+          },
+          "days": [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday"
+          ]
+        }
+      ],
+      "breaks": [
+        {
+          "start": {
+            "hour": 12,
+            "minute": 0
+          },
+          "end": {
+            "hour": 13,
+            "minute": 0
+          }
+        }
+      ],
+      "holidays": []
+    }
+  ]
+}

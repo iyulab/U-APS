@@ -1,0 +1,111 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 30000,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "resource_id": "FAST",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 120000,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "resource_id": "SLOW",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 60000,
+        "job_id": "J3",
+        "operation_id": "J3-1",
+        "resource_id": "FAST",
+        "setup_ms": 0,
+        "start_ms": 30000
+      },
+      {
+        "end_ms": 90000,
+        "job_id": "J4",
+        "operation_id": "J4-1",
+        "resource_id": "FAST",
+        "setup_ms": 0,
+        "start_ms": 60000
+      }
+    ],
+    "makespan_ms": 120000,
+    "tasks": [
+      {
+        "equipment_id": "FAST",
+        "id": "J1-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J1",
+        "operation_id": "J1-1",
+        "plan_begin_ms": 0,
+        "plan_end_ms": 30000,
+        "process_ms": 30000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "SLOW",
+        "id": "J2-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J2",
+        "operation_id": "J2-1",
+        "plan_begin_ms": 0,
+        "plan_end_ms": 120000,
+        "process_ms": 120000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "FAST",
+        "id": "J3-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J3",
+        "operation_id": "J3-1",
+        "plan_begin_ms": 30000,
+        "plan_end_ms": 60000,
+        "process_ms": 30000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      },
+      {
+        "equipment_id": "FAST",
+        "id": "J4-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "J4",
+        "operation_id": "J4-1",
+        "plan_begin_ms": 60000,
+        "plan_end_ms": 90000,
+        "process_ms": 30000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "workers_required": 0
+      }
+    ],
+    "violations": []
+  },
+  "success": true
+}

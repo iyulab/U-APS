@@ -1,0 +1,172 @@
+{
+  "result": {
+    "affected_operations": [
+      "J1-2"
+    ],
+    "schedule": {
+      "assignments": [
+        {
+          "end_ms": 60000,
+          "job_id": "J1",
+          "operation_id": "J1-1",
+          "resource_id": "M1",
+          "setup_ms": 0,
+          "start_ms": 0
+        },
+        {
+          "end_ms": 135000,
+          "job_id": "J1",
+          "operation_id": "J1-2",
+          "resource_id": "M2",
+          "setup_ms": 0,
+          "start_ms": 105000
+        },
+        {
+          "end_ms": 120000,
+          "job_id": "J2",
+          "operation_id": "J2-1",
+          "resource_id": "M1",
+          "setup_ms": 0,
+          "start_ms": 60000
+        },
+        {
+          "end_ms": 150000,
+          "job_id": "J2",
+          "operation_id": "J2-2",
+          "resource_id": "M2",
+          "setup_ms": 0,
+          "start_ms": 120000
+        },
+        {
+          "end_ms": 180000,
+          "job_id": "J3",
+          "operation_id": "J3-1",
+          "resource_id": "M1",
+          "setup_ms": 0,
+          "start_ms": 120000
+        },
+        {
+          "end_ms": 210000,
+          "job_id": "J3",
+          "operation_id": "J3-2",
+          "resource_id": "M2",
+          "setup_ms": 0,
+          "start_ms": 180000
+        }
+      ],
+      "makespan_ms": 210000,
+      "tasks": [
+        {
+          "equipment_id": "M1",
+          "id": "J1-1-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J1",
+          "operation_id": "J1-1",
+          "plan_begin_ms": 0,
+          "plan_end_ms": 60000,
+          "process_ms": 60000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        },
+        {
+          "equipment_id": "M2",
+          "id": "J1-2-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J1",
+          "operation_id": "J1-2",
+          "plan_begin_ms": 60000,
+          "plan_end_ms": 90000,
+          "process_ms": 30000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        },
+        {
+          "equipment_id": "M1",
+          "id": "J2-1-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J2",
+          "operation_id": "J2-1",
+          "plan_begin_ms": 60000,
+          "plan_end_ms": 120000,
+          "process_ms": 60000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        },
+        {
+          "equipment_id": "M2",
+          "id": "J2-2-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J2",
+          "operation_id": "J2-2",
+          "plan_begin_ms": 120000,
+          "plan_end_ms": 150000,
+          "process_ms": 30000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        },
+        {
+          "equipment_id": "M1",
+          "id": "J3-1-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J3",
+          "operation_id": "J3-1",
+          "plan_begin_ms": 120000,
+          "plan_end_ms": 180000,
+          "process_ms": 60000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        },
+        {
+          "equipment_id": "M2",
+          "id": "J3-2-T001",
+          "is_fixed": false,
+          "is_splittable": false,
+          "job_id": "J3",
+          "operation_id": "J3-2",
+          "plan_begin_ms": 180000,
+          "plan_end_ms": 210000,
+          "process_ms": 30000,
+          "setup_ms": 0,
+          "split_index": 0,
+          "split_reason": "None",
+          "status": "Plan",
+          "total_splits": 1,
+          "workers_required": 0
+        }
+      ],
+      "violations": []
+    },
+    "stats": {
+      "makespan_change_ms": 0,
+      "operations_changed": 1,
+      "total_delay_change_ms": 45000
+    },
+    "strategy_used": "RightShift"
+  },
+  "success": true
+}

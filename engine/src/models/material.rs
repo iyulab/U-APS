@@ -137,8 +137,10 @@ impl BomEntry {
     }
 }
 
-/// BOM (Bill of Materials) - 제품별 자재 명세서
+/// BOM (Bill of Materials) - 제품별 자재 명세서 — on the wire the map itself,
+/// `{ "<product>": [BomEntry] }`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(transparent)]
 pub struct BillOfMaterials {
     /// 제품 ID → BOM 항목 목록
     entries: HashMap<String, Vec<BomEntry>>,
@@ -221,12 +223,40 @@ pub struct MaterialShortage {
 }
 
 /// 자재 관리자 - 자재 가용성 검사 및 관리
+///
+/// On the wire `{ "materials": [Material], "bom": { "<product>": [BomEntry] } }`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MaterialManager {
-    /// 자재 마스터
+    /// 자재 마스터 (wire: a list, keyed here by id)
+    #[serde(default, with = "materials_by_id")]
     materials: HashMap<String, Material>,
     /// BOM
+    #[serde(default)]
     bom: BillOfMaterials,
+}
+
+mod materials_by_id {
+    use super::Material;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    pub fn serialize<S: Serializer>(
+        map: &HashMap<String, Material>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut list: Vec<&Material> = map.values().collect();
+        list.sort_by(|a, b| a.id.cmp(&b.id));
+        list.serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<HashMap<String, Material>, D::Error> {
+        Ok(Vec::<Material>::deserialize(d)?
+            .into_iter()
+            .map(|m| (m.id.clone(), m))
+            .collect())
+    }
 }
 
 impl MaterialManager {

@@ -23,4 +23,25 @@
     <ProjectReference Include="..\UAPS.SDK\UAPS.SDK.csproj" />
   </ItemGroup>
 
+  <!--
+    The engine under test is the one built from this repository: the native
+    library from `cargo build` (CARGO_TARGET_DIR, else engine/target) is copied
+    next to the tests, where standard resolution finds it before the SDK's
+    download cache. EngineUnderTestTests fails when it is missing.
+  -->
+  <PropertyGroup>
+    <UapsEngineTargetDir Condition="'$(CARGO_TARGET_DIR)' != ''">$(CARGO_TARGET_DIR)</UapsEngineTargetDir>
+    <UapsEngineTargetDir Condition="'$(UapsEngineTargetDir)' == ''">$(MSBuildThisFileDirectory)..\..\engine\target</UapsEngineTargetDir>
+    <UapsEngineProfile Condition="'$(Configuration)' == 'Release'">release</UapsEngineProfile>
+    <UapsEngineProfile Condition="'$(UapsEngineProfile)' == ''">debug</UapsEngineProfile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(UapsEngineTargetDir)\$(UapsEngineProfile)\uaps_engine.dll" Condition="Exists('$(UapsEngineTargetDir)\$(UapsEngineProfile)\uaps_engine.dll')"
+          Link="uaps_engine.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UapsEngineTargetDir)\$(UapsEngineProfile)\libuaps_engine.so" Condition="Exists('$(UapsEngineTargetDir)\$(UapsEngineProfile)\libuaps_engine.so')"
+          Link="libuaps_engine.so" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(UapsEngineTargetDir)\$(UapsEngineProfile)\libuaps_engine.dylib" Condition="Exists('$(UapsEngineTargetDir)\$(UapsEngineProfile)\libuaps_engine.dylib')"
+          Link="libuaps_engine.dylib" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
 </Project>

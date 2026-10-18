@@ -73,6 +73,7 @@ public class Job
     public JobDto ToEngineDto() => new()
     {
         Id = Id,
+        ProductName = string.IsNullOrEmpty(ProductName) ? null : ProductName,
         Operations = Operations.Select(op => op.ToEngineDto()).ToList(),
         Priority = Priority,
         DueDate = DueDate?.ToUniversalTime(),
@@ -98,6 +99,8 @@ public class Job
 public class JobDto
 {
     public string Id { get; set; } = string.Empty;
+    /// <summary>Product the setup matrices key on (sequence-dependent setup)</summary>
+    public string? ProductName { get; set; }
     public List<OperationDto> Operations { get; set; } = [];
     public int Priority { get; set; }
     /// <summary>Serializes as "due_date" for Rust engine compatibility</summary>

@@ -13,6 +13,28 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A request carrying a `SkillMatrix`, `CertificationMatrix`,
+  `WorkerTimeOverride`, `CrewManager` or `MaterialManager` was refused by the
+  engine** with `JSON parse error: invalid type: sequence, expected a map` (or
+  `missing field`): the SDK sends these as lists of entries, the engine read
+  them as maps keyed by a pair, which JSON cannot express. The engine now
+  reads and writes the SDK's shapes, so these sections reach the scheduler.
+- **Sequence-dependent set-up times never applied through the SDK**: `Job`
+  did not send `ProductName`, so every set-up matrix lookup missed. It is now
+  sent as `product_name`.
+- The engine's certification vocabulary is the SDK's: levels `None`,
+  `Basic`, `Advanced`, `Expert`, `Master` and targets `OperationType`,
+  `Equipment`, `Product`. `Basic` scales processing time by 0.8 in the engine
+  as it does in the SDK (was 0.7).
+
+### Known limitations
+
+These SDK fields are accepted and not yet applied by the engine:
+`Operation.Dependencies` (operations of a job run in `Sequence` order only),
+`Job.IsSplittable` (splitting is per operation) and `Crew.WithEquipment`.
+
 ## [1.3.0] - 2026-10-17
 
 ### Changed

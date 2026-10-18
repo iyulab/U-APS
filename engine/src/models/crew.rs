@@ -89,7 +89,12 @@ impl TeamMember {
 }
 
 /// 작업 팀
+///
+/// Wire shape (the C# SDK's): `member_ids` + `leader_id` for the members,
+/// `assigned_operation_types` for [`Crew::operation_types`]; the remaining
+/// fields are optional with [`Crew::new`]'s defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "CrewWire", into = "CrewWire")]
 pub struct Crew {
     /// 팀 ID
     pub id: String,
@@ -110,8 +115,101 @@ pub struct Crew {
     /// 활성화 여부
     pub is_active: bool,
     /// 운영 캘린더 ID (교대 근무 시간 정의)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendar_id: Option<String>,
+}
+
+/// [`Crew`] on the wire.
+#[derive(Serialize, Deserialize)]
+struct CrewWire {
+    id: String,
+    name: String,
+    #[serde(default)]
+    member_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leader_id: Option<String>,
+    #[serde(default)]
+    assigned_operation_types: Vec<String>,
+    /// Read for the manager's shift assignment (see [`CrewManager`]); a crew
+    /// carries no shift itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shift_id: Option<String>,
+    #[serde(default = "default_min_members")]
+    min_members: usize,
+    #[serde(default = "default_max_members")]
+    max_members: usize,
+    #[serde(default = "default_team_type")]
+    team_type: TeamType,
+    #[serde(default = "default_efficiency")]
+    efficiency_modifier: f64,
+    #[serde(default = "default_active")]
+    is_active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    calendar_id: Option<String>,
+}
+
+fn default_min_members() -> usize {
+    1
+}
+fn default_max_members() -> usize {
+    10
+}
+fn default_team_type() -> TeamType {
+    TeamType::Fixed
+}
+fn default_efficiency() -> f64 {
+    1.0
+}
+fn default_active() -> bool {
+    true
+}
+
+impl From<CrewWire> for Crew {
+    fn from(w: CrewWire) -> Self {
+        let members = w
+            .member_ids
+            .into_iter()
+            .map(|id| {
+                let role = if w.leader_id.as_deref() == Some(id.as_str()) {
+                    TeamRole::Leader
+                } else {
+                    TeamRole::Member
+                };
+                TeamMember::new(id, role)
+            })
+            .collect();
+        Self {
+            id: w.id,
+            name: w.name,
+            team_type: w.team_type,
+            members,
+            efficiency_modifier: w.efficiency_modifier,
+            min_members: w.min_members,
+            max_members: w.max_members,
+            operation_types: w.assigned_operation_types,
+            is_active: w.is_active,
+            calendar_id: w.calendar_id,
+        }
+    }
+}
+
+impl From<Crew> for CrewWire {
+    fn from(c: Crew) -> Self {
+        let leader_id = c.leader().map(|m| m.worker_id.clone());
+        Self {
+            id: c.id,
+            name: c.name,
+            member_ids: c.members.into_iter().map(|m| m.worker_id).collect(),
+            leader_id,
+            assigned_operation_types: c.operation_types,
+            shift_id: None,
+            min_members: c.min_members,
+            max_members: c.max_members,
+            team_type: c.team_type,
+            efficiency_modifier: c.efficiency_modifier,
+            is_active: c.is_active,
+            calendar_id: c.calendar_id,
+        }
+    }
 }
 
 impl Crew {
@@ -344,7 +442,12 @@ pub struct CrewShiftAssignment {
 }
 
 /// 팀 관리자
+///
+/// Wire shape: `{ "crews": [Crew], "shifts": [ShiftSchedule], "shift_assignments": [..] }`
+/// — the last two optional. A crew's `shift_id` becomes an open-ended shift
+/// assignment.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(from = "CrewManagerWire", into = "CrewManagerWire")]
 pub struct CrewManager {
     /// 팀 목록
     crews: HashMap<String, Crew>,
@@ -354,6 +457,53 @@ pub struct CrewManager {
     shift_assignments: Vec<CrewShiftAssignment>,
     /// 작업자-팀 매핑 (빠른 조회용)
     worker_to_crew: HashMap<String, String>,
+}
+
+/// [`CrewManager`] on the wire.
+#[derive(Serialize, Deserialize)]
+struct CrewManagerWire {
+    #[serde(default)]
+    crews: Vec<CrewWire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    shifts: Vec<ShiftSchedule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    shift_assignments: Vec<CrewShiftAssignment>,
+}
+
+impl From<CrewManagerWire> for CrewManager {
+    fn from(w: CrewManagerWire) -> Self {
+        let mut manager = CrewManager::new();
+        for shift in w.shifts {
+            manager.add_shift(shift);
+        }
+        manager.shift_assignments = w.shift_assignments;
+        for crew in w.crews {
+            if let Some(shift_id) = crew.shift_id.clone() {
+                manager.shift_assignments.push(CrewShiftAssignment {
+                    crew_id: crew.id.clone(),
+                    shift_id,
+                    effective_from_ms: i64::MIN,
+                    effective_until_ms: None,
+                });
+            }
+            manager.add_crew(crew.into());
+        }
+        manager
+    }
+}
+
+impl From<CrewManager> for CrewManagerWire {
+    fn from(m: CrewManager) -> Self {
+        let mut crews: Vec<Crew> = m.crews.into_values().collect();
+        crews.sort_by(|a, b| a.id.cmp(&b.id));
+        let mut shifts: Vec<ShiftSchedule> = m.shifts.into_values().collect();
+        shifts.sort_by(|a, b| a.id.cmp(&b.id));
+        Self {
+            crews: crews.into_iter().map(CrewWire::from).collect(),
+            shifts,
+            shift_assignments: m.shift_assignments,
+        }
+    }
 }
 
 impl CrewManager {

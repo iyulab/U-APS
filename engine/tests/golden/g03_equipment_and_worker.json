@@ -1,0 +1,119 @@
+{
+  "schedule": {
+    "assignments": [
+      {
+        "end_ms": 600000,
+        "job_id": "A",
+        "operation_id": "A-1",
+        "resource_id": "PRESS-1",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 600000,
+        "job_id": "A",
+        "operation_id": "A-1",
+        "resource_id": "ALICE",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 600000,
+        "job_id": "B",
+        "operation_id": "B-1",
+        "resource_id": "PRESS-2",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 600000,
+        "job_id": "B",
+        "operation_id": "B-1",
+        "resource_id": "BOB",
+        "setup_ms": 0,
+        "start_ms": 0
+      },
+      {
+        "end_ms": 1200000,
+        "job_id": "C",
+        "operation_id": "C-1",
+        "resource_id": "PRESS-1",
+        "setup_ms": 0,
+        "start_ms": 600000
+      },
+      {
+        "end_ms": 1200000,
+        "job_id": "C",
+        "operation_id": "C-1",
+        "resource_id": "ALICE",
+        "setup_ms": 0,
+        "start_ms": 600000
+      }
+    ],
+    "makespan_ms": 1200000,
+    "tasks": [
+      {
+        "equipment_id": "PRESS-1",
+        "id": "A-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "A",
+        "operation_id": "A-1",
+        "plan_begin_ms": 0,
+        "plan_end_ms": 600000,
+        "process_ms": 600000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "worker_ids": [
+          "ALICE"
+        ],
+        "workers_required": 1
+      },
+      {
+        "equipment_id": "PRESS-2",
+        "id": "B-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "B",
+        "operation_id": "B-1",
+        "plan_begin_ms": 0,
+        "plan_end_ms": 600000,
+        "process_ms": 600000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "worker_ids": [
+          "BOB"
+        ],
+        "workers_required": 1
+      },
+      {
+        "equipment_id": "PRESS-1",
+        "id": "C-1-T001",
+        "is_fixed": false,
+        "is_splittable": false,
+        "job_id": "C",
+        "operation_id": "C-1",
+        "plan_begin_ms": 600000,
+        "plan_end_ms": 1200000,
+        "process_ms": 600000,
+        "setup_ms": 0,
+        "split_index": 0,
+        "split_reason": "None",
+        "status": "Plan",
+        "total_splits": 1,
+        "worker_ids": [
+          "ALICE"
+        ],
+        "workers_required": 1
+      }
+    ],
+    "violations": []
+  },
+  "success": true
+}

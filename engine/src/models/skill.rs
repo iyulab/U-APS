@@ -53,13 +53,108 @@ impl SkillLevel {
     }
 }
 
-/// 스킬 매트릭스
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// 스킬 매트릭스 — on the wire
+/// `{ "default_proficiency": 1.0, "proficiencies": [{ "worker_id", "operation_type", "proficiency" }] }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMatrix {
     /// (작업자 ID, 공정 유형) → 숙련도
+    #[serde(default, with = "pair_entries::proficiency")]
     proficiencies: HashMap<(String, String), f64>,
     /// 기본 숙련도 (매핑 없을 때)
+    #[serde(default = "default_proficiency")]
     default_proficiency: f64,
+}
+
+fn default_proficiency() -> f64 {
+    1.0
+}
+
+impl Default for SkillMatrix {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// `(worker_id, operation_type)`-keyed maps as lists of entries — a JSON
+/// object cannot have a pair for a key.
+mod pair_entries {
+    use super::TimeOverrideEntry;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::HashMap;
+
+    type Key = (String, String);
+
+    fn sorted<V>(map: &HashMap<Key, V>) -> Vec<(&Key, &V)> {
+        let mut entries: Vec<_> = map.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        entries
+    }
+
+    pub mod proficiency {
+        use super::*;
+
+        #[derive(Serialize, Deserialize)]
+        struct Entry {
+            worker_id: String,
+            operation_type: String,
+            proficiency: f64,
+        }
+
+        pub fn serialize<S: Serializer>(map: &HashMap<Key, f64>, s: S) -> Result<S::Ok, S::Error> {
+            sorted(map)
+                .into_iter()
+                .map(|((w, o), p)| Entry {
+                    worker_id: w.clone(),
+                    operation_type: o.clone(),
+                    proficiency: *p,
+                })
+                .collect::<Vec<_>>()
+                .serialize(s)
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<Key, f64>, D::Error> {
+            Ok(Vec::<Entry>::deserialize(d)?
+                .into_iter()
+                .map(|e| ((e.worker_id, e.operation_type), e.proficiency))
+                .collect())
+        }
+    }
+
+    pub mod time_override {
+        use super::*;
+
+        #[derive(Serialize, Deserialize)]
+        struct Entry {
+            worker_id: String,
+            operation_type: String,
+            #[serde(flatten)]
+            entry: TimeOverrideEntry,
+        }
+
+        pub fn serialize<S: Serializer>(
+            map: &HashMap<Key, TimeOverrideEntry>,
+            s: S,
+        ) -> Result<S::Ok, S::Error> {
+            sorted(map)
+                .into_iter()
+                .map(|((w, o), e)| Entry {
+                    worker_id: w.clone(),
+                    operation_type: o.clone(),
+                    entry: e.clone(),
+                })
+                .collect::<Vec<_>>()
+                .serialize(s)
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>>(
+            d: D,
+        ) -> Result<HashMap<Key, TimeOverrideEntry>, D::Error> {
+            Ok(Vec::<Entry>::deserialize(d)?
+                .into_iter()
+                .map(|e| ((e.worker_id, e.operation_type), e.entry))
+                .collect())
+        }
+    }
 }
 
 impl SkillMatrix {
@@ -163,10 +258,13 @@ impl SkillMatrix {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeOverrideEntry {
     /// Setup 시간 오버라이드 (ms, None이면 기본값 사용)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_ms: Option<i64>,
     /// Process 시간 오버라이드 (ms, None이면 기본값 사용)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process_ms: Option<i64>,
     /// Wait 시간 오버라이드 (ms, None이면 기본값 사용)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait_ms: Option<i64>,
 }
 
@@ -229,7 +327,9 @@ impl Default for TimeOverrideEntry {
 /// SkillMatrix의 효율 조정보다 높은 우선순위로 적용됨.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorkerTimeOverride {
-    /// (작업자 ID, 공정 유형) → 시간 오버라이드
+    /// (작업자 ID, 공정 유형) → 시간 오버라이드 — on the wire a list of
+    /// `{ "worker_id", "operation_type", "setup_ms"?, "process_ms"?, "wait_ms"? }`
+    #[serde(default, with = "pair_entries::time_override")]
     overrides: HashMap<(String, String), TimeOverrideEntry>,
 }
 
@@ -389,18 +489,20 @@ pub struct LearningCurve {
     pub experience: u32,
 }
 
-/// 자격 인증 레벨
+/// 자격 인증 레벨 — the C# SDK's `CertificationLevel`; on the wire in
+/// lowercase (`"advanced"`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "lowercase")]
 pub enum CertificationLevel {
     /// 미인증
     None,
-    /// 기본 인증 (Basic)
+    /// 기본 인증
     Basic,
-    /// 표준 인증 (Standard)
-    Standard,
-    /// 고급 인증 (Advanced)
+    /// 고급 인증
     Advanced,
-    /// 마스터 인증 (Master)
+    /// 전문가 인증
+    Expert,
+    /// 마스터 인증
     Master,
 }
 
@@ -409,9 +511,9 @@ impl CertificationLevel {
     pub fn efficiency_modifier(&self) -> f64 {
         match self {
             CertificationLevel::None => 0.0,
-            CertificationLevel::Basic => 0.7,
-            CertificationLevel::Standard => 1.0,
-            CertificationLevel::Advanced => 1.15,
+            CertificationLevel::Basic => 0.8,
+            CertificationLevel::Advanced => 1.0,
+            CertificationLevel::Expert => 1.15,
             CertificationLevel::Master => 1.3,
         }
     }
@@ -426,7 +528,8 @@ pub struct Certification {
     pub worker_id: String,
     /// 대상 (설비 ID 또는 공정 유형)
     pub target_id: String,
-    /// 대상 유형 (Machine 또는 OperationType)
+    /// 대상 유형 (wire name `target`)
+    #[serde(rename = "target")]
     pub target_type: CertificationTarget,
     /// 인증 레벨
     pub level: CertificationLevel,
@@ -435,20 +538,25 @@ pub struct Certification {
     /// 만료일 (timestamp ms, None이면 무기한)
     pub expires_at_ms: Option<i64>,
     /// 인증 기관
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issuer: Option<String>,
     /// 비고
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
 
-/// 인증 대상 유형
+/// 인증 대상 유형 — the C# SDK's `CertificationTarget`; on the wire in
+/// lowercase (`"operationtype"`). The scheduler looks a certification up by
+/// worker and target id, so the type describes the id.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum CertificationTarget {
-    /// 설비 자격
-    Machine,
     /// 공정 유형 자격
     OperationType,
-    /// 안전 자격 (특수 작업)
-    Safety,
+    /// 설비 자격
+    Equipment,
+    /// 제품 자격
+    Product,
 }
 
 impl Certification {
@@ -535,13 +643,32 @@ pub enum CertificationWarningType {
     Expired,
 }
 
-/// 자격 인증 매트릭스
+/// 자격 인증 매트릭스 — on the wire `{ "certifications": [Certification] }`;
+/// the lookup index is rebuilt on read.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(from = "CertificationMatrixWire")]
 pub struct CertificationMatrix {
     /// 인증 목록
     certifications: Vec<Certification>,
     /// (작업자 ID, 대상 ID) → 인증 인덱스 (빠른 조회용)
+    #[serde(skip)]
     index: HashMap<(String, String), usize>,
+}
+
+#[derive(Deserialize)]
+struct CertificationMatrixWire {
+    #[serde(default)]
+    certifications: Vec<Certification>,
+}
+
+impl From<CertificationMatrixWire> for CertificationMatrix {
+    fn from(w: CertificationMatrixWire) -> Self {
+        let mut matrix = CertificationMatrix::new();
+        for cert in w.certifications {
+            matrix.add_certification(cert);
+        }
+        matrix
+    }
 }
 
 impl CertificationMatrix {
@@ -568,7 +695,7 @@ impl CertificationMatrix {
     }
 
     /// 설비 인증 간편 추가
-    pub fn with_machine_cert(
+    pub fn with_equipment_cert(
         self,
         worker_id: impl Into<String>,
         machine_id: impl Into<String>,
@@ -581,7 +708,7 @@ impl CertificationMatrix {
             format!("CERT-{}-{}", worker, machine),
             worker,
             machine,
-            CertificationTarget::Machine,
+            CertificationTarget::Equipment,
             level,
             issued_at_ms,
         );
@@ -1001,9 +1128,9 @@ mod tests {
     #[test]
     fn test_certification_level_efficiency() {
         assert_eq!(CertificationLevel::None.efficiency_modifier(), 0.0);
-        assert_eq!(CertificationLevel::Basic.efficiency_modifier(), 0.7);
-        assert_eq!(CertificationLevel::Standard.efficiency_modifier(), 1.0);
-        assert_eq!(CertificationLevel::Advanced.efficiency_modifier(), 1.15);
+        assert_eq!(CertificationLevel::Basic.efficiency_modifier(), 0.8);
+        assert_eq!(CertificationLevel::Advanced.efficiency_modifier(), 1.0);
+        assert_eq!(CertificationLevel::Expert.efficiency_modifier(), 1.15);
         assert_eq!(CertificationLevel::Master.efficiency_modifier(), 1.3);
     }
 
@@ -1017,8 +1144,8 @@ mod tests {
             "CERT-001",
             "W1",
             "CNC",
-            CertificationTarget::Machine,
-            CertificationLevel::Standard,
+            CertificationTarget::Equipment,
+            CertificationLevel::Advanced,
             now - day_ms * 30,
         );
         assert!(cert_no_expiry.is_valid(now));
@@ -1030,7 +1157,7 @@ mod tests {
             "W1",
             "Welding",
             CertificationTarget::OperationType,
-            CertificationLevel::Advanced,
+            CertificationLevel::Expert,
             now - day_ms * 30,
         )
         .with_expiry(now + day_ms * 60);
@@ -1043,7 +1170,7 @@ mod tests {
             "W1",
             "Assembly",
             CertificationTarget::OperationType,
-            CertificationLevel::Standard,
+            CertificationLevel::Advanced,
             now - day_ms * 90,
         )
         .with_expiry(now - day_ms * 10);
@@ -1061,8 +1188,8 @@ mod tests {
             "CERT-001",
             "W1",
             "CNC",
-            CertificationTarget::Machine,
-            CertificationLevel::Standard,
+            CertificationTarget::Equipment,
+            CertificationLevel::Advanced,
             now - day_ms * 100,
         )
         .with_expiry(now + day_ms * 20);
@@ -1077,8 +1204,8 @@ mod tests {
         let day_ms = 24 * 3_600_000;
 
         let matrix = CertificationMatrix::new()
-            .with_machine_cert("W1", "CNC-001", CertificationLevel::Standard, now - day_ms)
-            .with_machine_cert("W1", "CNC-002", CertificationLevel::Advanced, now - day_ms)
+            .with_equipment_cert("W1", "CNC-001", CertificationLevel::Advanced, now - day_ms)
+            .with_equipment_cert("W1", "CNC-002", CertificationLevel::Expert, now - day_ms)
             .with_operation_cert("W2", "welding", CertificationLevel::Master, now - day_ms);
 
         // 인증 확인
@@ -1090,11 +1217,11 @@ mod tests {
         // 인증 레벨 확인
         assert_eq!(
             matrix.get_certification_level("W1", "CNC-001", now),
-            CertificationLevel::Standard
+            CertificationLevel::Advanced
         );
         assert_eq!(
             matrix.get_certification_level("W1", "CNC-002", now),
-            CertificationLevel::Advanced
+            CertificationLevel::Expert
         );
         assert_eq!(
             matrix.get_certification_level("W2", "welding", now),
@@ -1108,9 +1235,9 @@ mod tests {
         let day_ms = 24 * 3_600_000;
 
         let matrix = CertificationMatrix::new()
-            .with_machine_cert("W1", "CNC-001", CertificationLevel::Standard, now - day_ms)
-            .with_machine_cert("W2", "CNC-001", CertificationLevel::Advanced, now - day_ms)
-            .with_machine_cert("W3", "CNC-001", CertificationLevel::Basic, now - day_ms);
+            .with_equipment_cert("W1", "CNC-001", CertificationLevel::Advanced, now - day_ms)
+            .with_equipment_cert("W2", "CNC-001", CertificationLevel::Expert, now - day_ms)
+            .with_equipment_cert("W3", "CNC-001", CertificationLevel::Basic, now - day_ms);
 
         let certified = matrix.certified_workers("CNC-001", now);
         assert_eq!(certified.len(), 3);
@@ -1120,7 +1247,7 @@ mod tests {
         assert!(best.is_some());
         let (worker, level) = best.unwrap();
         assert_eq!(worker, "W2");
-        assert_eq!(level, CertificationLevel::Advanced);
+        assert_eq!(level, CertificationLevel::Expert);
     }
 
     #[test]
@@ -1136,8 +1263,8 @@ mod tests {
             "CERT-001",
             "W1",
             "CNC-001",
-            CertificationTarget::Machine,
-            CertificationLevel::Standard,
+            CertificationTarget::Equipment,
+            CertificationLevel::Advanced,
             now - day_ms * 100,
         )
         .with_expiry(now - day_ms * 5);
@@ -1148,8 +1275,8 @@ mod tests {
             "CERT-002",
             "W2",
             "CNC-002",
-            CertificationTarget::Machine,
-            CertificationLevel::Standard,
+            CertificationTarget::Equipment,
+            CertificationLevel::Advanced,
             now - day_ms * 100,
         )
         .with_expiry(now + day_ms * 5);
@@ -1161,7 +1288,7 @@ mod tests {
             "W3",
             "Welding",
             CertificationTarget::OperationType,
-            CertificationLevel::Advanced,
+            CertificationLevel::Expert,
             now - day_ms * 100,
         )
         .with_expiry(now + day_ms * 20);
@@ -1173,7 +1300,7 @@ mod tests {
             "W4",
             "Assembly",
             CertificationTarget::OperationType,
-            CertificationLevel::Standard,
+            CertificationLevel::Advanced,
             now - day_ms * 100,
         );
         matrix.add_certification(valid_cert);
@@ -1202,8 +1329,8 @@ mod tests {
         let day_ms = 24 * 3_600_000;
 
         let matrix = CertificationMatrix::new()
-            .with_machine_cert("W1", "CNC", CertificationLevel::Standard, now - day_ms)
-            .with_machine_cert("W2", "CNC", CertificationLevel::Master, now - day_ms);
+            .with_equipment_cert("W1", "CNC", CertificationLevel::Advanced, now - day_ms)
+            .with_equipment_cert("W2", "CNC", CertificationLevel::Master, now - day_ms);
 
         let base_time = 60_000; // 60초
 
@@ -1237,8 +1364,8 @@ mod tests {
 
         // 인증 매트릭스: 자격
         let certs = CertificationMatrix::new()
-            .with_machine_cert("W1", "CNC", CertificationLevel::Standard, now - day_ms)
-            .with_machine_cert("W2", "CNC", CertificationLevel::Advanced, now - day_ms);
+            .with_equipment_cert("W1", "CNC", CertificationLevel::Advanced, now - day_ms)
+            .with_equipment_cert("W2", "CNC", CertificationLevel::Expert, now - day_ms);
 
         let manager = QualificationManager::new()
             .with_skills(skills)
@@ -1268,8 +1395,8 @@ mod tests {
             "CERT-001",
             "W1",
             "CNC",
-            CertificationTarget::Machine,
-            CertificationLevel::Advanced,
+            CertificationTarget::Equipment,
+            CertificationLevel::Expert,
             now - day_ms * 100,
         )
         .with_expiry(now - day_ms * 10);
