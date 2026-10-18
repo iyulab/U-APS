@@ -3,9 +3,10 @@
 //! The scheduling itself belongs to `u-schedule`; this module states a
 //! [`ScheduleRequest`] in its terms — jobs as tasks, operations as
 //! activities, equipment and workers as typed resources, calendars as working
-//! windows, set-up matrices as transition matrices — and names every part of
-//! the request it cannot state there yet ([`Unsupported`]), so a caller never
-//! mistakes a partial translation for a complete one.
+//! windows, set-up matrices as transition matrices, an outsourced operation
+//! as time of its own — and names what nothing can fill ([`Adapted::unfilled`]).
+//! A request's pegging engine is not read here: the dispatching scheduler
+//! never read it (the dynamic scheduler does).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -29,14 +30,6 @@ const WORKER_UNITS: i32 = 1_000;
 /// How far ahead a shift calendar is laid out as working windows.
 const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 
-/// A part of a request the u-schedule problem cannot state yet, by the
-/// general capability it needs.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Unsupported {
-    /// Outsourcing, materials beyond a release date, pegging.
-    SupplyPlanning,
-}
-
 /// The request as a u-schedule problem.
 pub struct Adapted {
     /// The tasks and resources, or why u-schedule refused them.
@@ -48,8 +41,6 @@ pub struct Adapted {
     /// The rules chosen at each decision, when the request switches rules
     /// (`DispatchingConfig.multi_layer`) — in place of `rule_engine`.
     pub rule_policy: Option<MultiLayerPolicy>,
-    /// What the problem leaves out, each capability once.
-    pub unsupported: BTreeSet<Unsupported>,
     /// The requirements left out because nothing can fill them — a job's
     /// target site keeps none of the operation's equipment; u-aps schedules
     /// the operation without it — as (operation, why).
@@ -58,7 +49,6 @@ pub struct Adapted {
 
 /// States `request` as a u-schedule problem.
 pub fn to_problem(request: &ScheduleRequest) -> Adapted {
-    let mut unsupported = BTreeSet::new();
     let mut unfilled = Vec::new();
 
     let calendars: HashMap<&str, &Calendar> = request
@@ -108,9 +98,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
 
     let qualified_by_type =
         request.skill_matrix.is_some() || request.certification_matrix.is_some();
-    if request.pegging_engine.is_some() || request.outsourcing_manager.is_some() {
-        unsupported.insert(Unsupported::SupplyPlanning);
-    }
 
     let tasks: Vec<Task> = request
         .jobs
@@ -154,9 +141,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     .as_deref()
                     .and_then(|id| request.crew_manager.as_ref()?.get_crew(id))
                     .filter(|c| c.is_operational());
-                if op.outsourcing_config.is_some() {
-                    unsupported.insert(Unsupported::SupplyPlanning);
-                }
                 // The dispatching scheduler reads none of an operation's
                 // `split_config`, `overlap_config` or `time_window` (the GA
                 // does), and `is_splittable` only in how the work is split
@@ -174,6 +158,17 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     .resumable();
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
+                }
+                // An outsourced operation holds nothing here: it takes its
+                // lead time from when the job reaches it, whatever the hour.
+                if let Some((_, lead_ms)) = outsourced(request, op) {
+                    let mut away = Activity::new(&op.id, &job.id, op.sequence)
+                        .with_duration(ActivityDuration::fixed(lead_ms));
+                    if let Some(at) = op_release {
+                        away = away.with_release_time(at);
+                    }
+                    task = task.with_activity(away);
+                    continue;
                 }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
@@ -270,9 +265,25 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         transition_matrices,
         rule_engine,
         rule_policy,
-        unsupported,
         unfilled,
     }
+}
+
+/// Who an outsourced operation goes to and for how long: its own lead time,
+/// else its provider's default, else its processing time — as u-aps reads it.
+pub(crate) fn outsourced<'r>(
+    request: &'r ScheduleRequest,
+    op: &'r crate::Operation,
+) -> Option<(&'r str, i64)> {
+    let config = op.outsourcing_config.as_ref()?;
+    let lead_ms = config.lead_time_ms.unwrap_or_else(|| {
+        request
+            .outsourcing_manager
+            .as_ref()
+            .and_then(|m| m.get_provider(&config.provider_id))
+            .map_or(op.time.process_ms, |p| p.default_lead_time_ms)
+    });
+    Some((config.provider_id.as_str(), lead_ms))
 }
 
 /// u-aps' multi-layer dispatching as a u-schedule [`RulePolicy`]: at each
@@ -708,7 +719,7 @@ mod tests {
             vec![vec!["W1".to_string()], vec!["W2".to_string()]]
         );
         assert_eq!(activity.duration_on(["EQP", "W1", "W2"]).process_ms, 40_000);
-        assert!(adapted.unsupported.is_empty());
+        assert!(adapted.unfilled.is_empty());
     }
 
     #[test]
@@ -764,13 +775,12 @@ mod tests {
     fn a_target_site_keeps_the_equipment_on_it() {
         let adapted = to_problem(&sited_request("SITE-B"));
         assert_eq!(equipment_candidates(&adapted), ["EQP-B"]);
-        assert!(adapted.unsupported.is_empty());
+        assert!(adapted.unfilled.is_empty());
     }
 
     #[test]
     fn a_target_site_with_none_of_the_equipment_is_named_and_left_out() {
         let adapted = to_problem(&sited_request("SITE-C"));
-        assert!(adapted.unsupported.is_empty());
         assert_eq!(adapted.unfilled.len(), 1);
         assert_eq!(adapted.unfilled[0].0, "O1");
         // Nothing left to hold: it runs in time only.

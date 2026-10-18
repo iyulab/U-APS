@@ -249,9 +249,9 @@ pub unsafe extern "C" fn uaps_schedule(
                 site_transitions: ffi_request.site_transitions,
             };
 
-            // TODO(rebase P3): the engine's own scheduler takes what u-schedule
-            // cannot state yet (`rebased::NotRebased`); remove it once nothing
-            // is reported unsupported.
+            // TODO(rebase P3): the engine's own scheduler takes a request
+            // u-schedule refuses or schedules wrongly (`rebased::NotRebased`);
+            // remove it once those are answered here.
             let schedule = crate::rebased::schedule(&request)
                 .unwrap_or_else(|_| SimpleScheduler::new().schedule(&request));
 

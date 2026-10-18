@@ -6,8 +6,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g02_competing_jobs_priority": {
     "makespan_ms": {
@@ -16,8 +15,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g03_equipment_and_worker": {
     "makespan_ms": {
@@ -26,8 +24,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g04_setup_matrix": {
     "makespan_ms": {
@@ -36,8 +33,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g05_alternative_efficiency": {
     "makespan_ms": {
@@ -46,8 +42,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g06_worker_load_factor": {
     "makespan_ms": {
@@ -56,8 +51,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g07_linked_robot": {
     "makespan_ms": {
@@ -66,8 +60,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g08_calendar_spans_lunch_and_night": {
     "makespan_ms": {
@@ -76,8 +69,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g09_skill_proficiency": {
     "makespan_ms": {
@@ -86,8 +78,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g10_material_availability": {
     "makespan_ms": {
@@ -96,8 +87,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g11_crew": {
     "makespan_ms": {
@@ -106,8 +96,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g12_multi_site": {
     "makespan_ms": {
@@ -116,8 +105,7 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 0,
-    "unsupported": []
+    "u_schedule_violations": 0
   },
   "g13_dispatching_edd_with_lateness": {
     "makespan_ms": {
@@ -126,7 +114,6 @@
     },
     "placements_differing": 0,
     "same_schedule": true,
-    "u_schedule_violations": 2,
-    "unsupported": []
+    "u_schedule_violations": 2
   }
 }

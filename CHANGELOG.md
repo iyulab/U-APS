@@ -25,6 +25,13 @@ published to a registry — it ships inside those packages.
   calendar's breaks. `SplitConfig`, `OverlapConfig` and an operation's
   `TimeWindow` are, as before, not applied by the default scheduler
   (the genetic algorithm applies splitting and overlap).
+- Outsourced operations and requests with an outsourcing manager or a
+  pegging engine are scheduled on the new path too, so every request the
+  default scheduler takes now goes there. An outsourced operation is booked,
+  as before, on `OUTSOURCE:<provider>` for its lead time (its own, else the
+  provider's default, else its processing time) from when its job reaches
+  it, without calendars and without tasks. The pegging engine is, as before,
+  not read by the default scheduler.
 - A job whose target site keeps none of an operation's equipment is
   scheduled on the new path too. The operation still runs without that
   equipment, as before — and the schedule now says so: a violation of the

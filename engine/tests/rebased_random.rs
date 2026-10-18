@@ -8,7 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use serde_json::Value;
-use uaps_engine::rebased::{schedule as rebased, NotRebased};
+use uaps_engine::rebased::schedule as rebased;
 use uaps_engine::*;
 
 const HOUR: i64 = 3_600_000;
@@ -32,6 +32,7 @@ struct Features {
     time_only: bool,
     daily: bool,
     sites: bool,
+    outsourcing: bool,
 }
 
 impl Features {
@@ -50,6 +51,7 @@ impl Features {
         time_only: true,
         daily: true,
         sites: true,
+        outsourcing: true,
     };
 }
 
@@ -140,6 +142,15 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                     }
                     op = op.with_material(need);
                 }
+                if f.outsourcing && rng.random_bool(0.2) {
+                    // Sent to a provider: its own lead time, the provider's, or
+                    // (no provider listed) the processing time.
+                    let mut away = OutsourcingConfig::new(["P1", "P2"][rng.random_range(0..2)]);
+                    if rng.random_bool(0.5) {
+                        away = away.with_lead_time_ms(rng.random_range(1..48) * HOUR);
+                    }
+                    op = op.with_outsourcing(away);
+                }
                 if f.daily && rng.random_bool(0.3) {
                     // Hours of the day it may run in — some past midnight —
                     // and whether its work may be split at their ends.
@@ -222,6 +233,12 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
             .with_switch_rule(RuleSwitchRule::new(condition, R::Edd).with_priority(1));
         request = request.with_dispatching_config(DispatchingConfig::multi_layer(multi));
     }
+    if f.outsourcing && rng.random_bool(0.6) {
+        let mut providers = OutsourcingManager::new();
+        providers
+            .add_provider(OutsourcingProvider::new("P1", "Plating").with_lead_time_ms(20 * HOUR));
+        request = request.with_outsourcing_manager(providers);
+    }
     if calendared {
         let weekdays = vec![
             DayOfWeek::Monday,
@@ -268,13 +285,13 @@ fn first_difference(path: &str, a: &Value, b: &Value) -> Option<String> {
 }
 
 /// The engine's schedule in u-schedule's terms, for its feasibility check:
-/// an assignment per resource, an operation without resources (`NONE`) as a
-/// time-only span.
+/// an assignment per resource, an operation without resources (`NONE`) or
+/// away at a provider (`OUTSOURCE:…`) as a time-only span.
 fn as_u_schedule(s: &Schedule) -> u_schedule::models::Schedule {
     use u_schedule::models::{Assignment as USAssignment, TimeOnlySpan};
     let mut us = u_schedule::models::Schedule::new();
     for a in &s.assignments {
-        if a.resource_id == "NONE" {
+        if a.resource_id == "NONE" || a.resource_id.starts_with("OUTSOURCE:") {
             us.time_only.push(TimeOnlySpan::new(
                 &a.operation_id,
                 &a.job_id,
@@ -328,7 +345,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
                     Some(at) => differing.push((case, at)),
                 }
             }
-            Err(NotRebased::Unsupported(_)) | Err(_) => not_rebased += 1,
+            Err(_) => not_rebased += 1,
         }
     }
     (same, differing, not_rebased)
@@ -339,7 +356,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 16] = [
+    let alone: [(&str, Features); 17] = [
         ("plain", plain),
         (
             "alternatives",
@@ -433,6 +450,14 @@ fn differences_by_feature() {
             "sites",
             Features {
                 sites: true,
+                ..plain
+            },
+        ),
+        (
+            "outsourcing",
+            Features {
+                outsourcing: true,
+                calendar: true,
                 ..plain
             },
         ),

@@ -609,14 +609,8 @@ fn adapter_parity() {
         let parsed =
             schedule_request_from_json(&request.to_string()).expect("scenario request parses");
         let adapted = to_problem(&parsed);
-        let unsupported: Vec<String> = adapted
-            .unsupported
-            .iter()
-            .map(|u| format!("{u:?}"))
-            .collect();
         let row = match adapted.problem {
             Err(errors) => json!({
-                "unsupported": unsupported,
                 "refused": errors.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
             }),
             Ok(problem) => {
@@ -651,7 +645,6 @@ fn adapter_parity() {
                     },
                 ));
                 json!({
-                    "unsupported": unsupported,
                     "same_schedule": us == uaps,
                     "makespan_ms": { "u_aps": golden["schedule"]["makespan_ms"], "u_schedule": schedule.makespan_ms() },
                     "placements_differing": uaps.symmetric_difference(&us).count(),
@@ -659,15 +652,13 @@ fn adapter_parity() {
                 })
             }
         };
-        // The adapter's own claim: a request it states completely is
-        // scheduled exactly as u-aps schedules it.
-        if row["unsupported"] == json!([]) {
-            assert_eq!(
-                row["same_schedule"],
-                json!(true),
-                "{name}: nothing reported unsupported, yet the schedules differ: {row}"
-            );
-        }
+        // The adapter's own claim: every scenario is scheduled exactly as
+        // u-aps schedules it.
+        assert_eq!(
+            row["same_schedule"],
+            json!(true),
+            "{name}: the schedules differ: {row}"
+        );
         table.insert(name.to_string(), row);
     }
     assert_golden("adapter_parity", &Value::Object(table));
@@ -721,7 +712,6 @@ fn rebased_parity() {
                     Some(at) => json!({ "differs": at }),
                 }
             }
-            Err(NotRebased::Unsupported(u)) => json!({ "unsupported": format!("{u:?}") }),
             Err(NotRebased::Refused(e)) => json!({ "refused": format!("{e:?}") }),
             Err(NotRebased::Infeasible(v)) => json!({ "infeasible": v.len() }),
         };

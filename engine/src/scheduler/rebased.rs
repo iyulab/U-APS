@@ -15,14 +15,12 @@ use u_schedule::validation::ValidationError;
 
 use super::task_splitter::split_operation_by_calendar;
 use super::{Assignment, Schedule, SimpleScheduler, Violation};
-use crate::adapter::{job_ready_ms, material_delays, to_problem, MaterialDelay, Unsupported};
+use crate::adapter::{job_ready_ms, material_delays, outsourced, to_problem, MaterialDelay};
 use crate::{ResourceKind, ScheduleRequest};
 
 /// Why a request was not scheduled on u-schedule.
 #[derive(Debug)]
 pub enum NotRebased {
-    /// The request uses what the problem cannot state yet.
-    Unsupported(BTreeSet<Unsupported>),
     /// u-schedule refused the problem.
     Refused(Vec<ValidationError>),
     /// u-schedule's schedule breaks the problem (a requirement it could not
@@ -33,9 +31,6 @@ pub enum NotRebased {
 /// Schedules `request` on u-schedule, or says why it did not.
 pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
     let adapted = to_problem(request);
-    if !adapted.unsupported.is_empty() {
-        return Err(NotRebased::Unsupported(adapted.unsupported));
-    }
     let problem = adapted.problem.map_err(NotRebased::Refused)?;
     let mut scheduler = USScheduler::new().with_transition_matrices(adapted.transition_matrices);
     if let Some(engine) = adapted.rule_engine {
@@ -178,6 +173,17 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         }
         if let Some(span) = placed.time_only_for_activity(op_id) {
             reached.insert(job.id.as_str(), span.end_ms);
+            // Away at its provider: no tasks of this plant's own.
+            if let Some((provider, _)) = outsourced(request, op) {
+                schedule.add_assignment(Assignment::new(
+                    op_id,
+                    &job.id,
+                    format!("OUTSOURCE:{provider}"),
+                    span.start_ms,
+                    span.end_ms,
+                ));
+                continue;
+            }
             schedule.add_assignment(Assignment::new(
                 op_id,
                 &job.id,
