@@ -25,6 +25,17 @@ published to a registry — it ships inside those packages.
   calendar's breaks. `SplitConfig`, `OverlapConfig` and an operation's
   `TimeWindow` are, as before, not applied by the default scheduler
   (the genetic algorithm applies splitting and overlap).
+- A job whose target site keeps none of an operation's equipment is
+  scheduled on the new path too. The operation still runs without that
+  equipment, as before — and the schedule now says so: a violation of the
+  new type `UnfilledRequirement` names the operation, the equipment and the
+  site.
+- An operation that cannot be scheduled at all on the new path — its
+  resources and its own hours never work together (a night work window on
+  day-shift equipment) — is left out of the schedule and reported as an
+  `UnfilledRequirement` violation; the rest of its job is scheduled without
+  it. Before, the request went to the previous scheduler, which booked such
+  an operation for no time or across a day it could not work in.
 
 ### Fixed
 

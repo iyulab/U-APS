@@ -33,9 +33,6 @@ const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 /// general capability it needs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unsupported {
-    /// A requirement no resource can fill — a job's target site has none of
-    /// the operation's equipment; u-aps schedules the operation without it.
-    UnfillableRequirement,
     /// Outsourcing, materials beyond a release date, pegging.
     SupplyPlanning,
 }
@@ -53,11 +50,16 @@ pub struct Adapted {
     pub rule_policy: Option<MultiLayerPolicy>,
     /// What the problem leaves out, each capability once.
     pub unsupported: BTreeSet<Unsupported>,
+    /// The requirements left out because nothing can fill them — a job's
+    /// target site keeps none of the operation's equipment; u-aps schedules
+    /// the operation without it — as (operation, why).
+    pub unfilled: Vec<(String, String)>,
 }
 
 /// States `request` as a u-schedule problem.
 pub fn to_problem(request: &ScheduleRequest) -> Adapted {
     let mut unsupported = BTreeSet::new();
+    let mut unfilled = Vec::new();
 
     let calendars: HashMap<&str, &Calendar> = request
         .calendars
@@ -173,11 +175,47 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
                 }
-                // An operation without resources runs on the request's first
-                // calendar; a daily work window holds any operation to its
-                // hours, within that.
-                let own = op
-                    .required_resources
+                for req in &op.required_resources {
+                    if crew.is_some() && req.resource_type == ResourceType::Worker {
+                        continue;
+                    }
+                    let kind = match req.resource_type {
+                        ResourceType::Equipment => "Equipment",
+                        ResourceType::Worker => "Worker",
+                    };
+                    let Some(candidates) = on_target_site(request, job, req) else {
+                        unfilled.push((
+                            op.id.clone(),
+                            format!(
+                                "Operation {} needs one of {} on target site {}, which keeps none of them; scheduled without it",
+                                op.id,
+                                req.candidates.join(", "),
+                                job.target_site_id.as_deref().unwrap_or_default()
+                            ),
+                        ));
+                        continue;
+                    };
+                    let mut requirement = USRequirement::new(kind)
+                        .with_quantity(req.quantity)
+                        .with_usage(usage(req))
+                        .with_candidates(candidates);
+                    activity = with_timings(activity, request, op, req);
+                    if req.resource_type == ResourceType::Worker && qualified_by_type {
+                        if let Some(op_type) = &op.operation_type {
+                            requirement = requirement.with_skill(op_type);
+                        }
+                    }
+                    activity = activity.with_requirement(requirement);
+                }
+                // After the equipment, as u-aps lists the resources.
+                if let Some(crew) = crew {
+                    activity = with_crew(activity, request, op, crew);
+                }
+                // An operation left with no resources runs on the request's
+                // first calendar; a daily work window holds any operation to
+                // its hours, within that.
+                let own = activity
+                    .resource_requirements
                     .is_empty()
                     .then(|| default_calendar.clone())
                     .flatten();
@@ -190,36 +228,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 };
                 if let Some(calendar) = own {
                     activity = activity.with_calendar(calendar);
-                }
-                for req in &op.required_resources {
-                    if crew.is_some() && req.resource_type == ResourceType::Worker {
-                        continue;
-                    }
-                    let kind = match req.resource_type {
-                        ResourceType::Equipment => "Equipment",
-                        ResourceType::Worker => "Worker",
-                    };
-                    let mut requirement = USRequirement::new(kind)
-                        .with_quantity(req.quantity)
-                        .with_usage(usage(req))
-                        .with_candidates(match on_target_site(request, job, req) {
-                            Some(candidates) => candidates,
-                            None => {
-                                unsupported.insert(Unsupported::UnfillableRequirement);
-                                req.candidates.clone()
-                            }
-                        });
-                    activity = with_timings(activity, request, op, req);
-                    if req.resource_type == ResourceType::Worker && qualified_by_type {
-                        if let Some(op_type) = &op.operation_type {
-                            requirement = requirement.with_skill(op_type);
-                        }
-                    }
-                    activity = activity.with_requirement(requirement);
-                }
-                // After the equipment, as u-aps lists the resources.
-                if let Some(crew) = crew {
-                    activity = with_crew(activity, request, op, crew);
                 }
                 task = task.with_activity(activity);
             }
@@ -263,6 +271,7 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
         rule_engine,
         rule_policy,
         unsupported,
+        unfilled,
     }
 }
 
@@ -759,10 +768,12 @@ mod tests {
     }
 
     #[test]
-    fn a_target_site_with_none_of_the_equipment_is_named() {
+    fn a_target_site_with_none_of_the_equipment_is_named_and_left_out() {
         let adapted = to_problem(&sited_request("SITE-C"));
-        assert!(adapted
-            .unsupported
-            .contains(&Unsupported::UnfillableRequirement));
+        assert!(adapted.unsupported.is_empty());
+        assert_eq!(adapted.unfilled.len(), 1);
+        assert_eq!(adapted.unfilled[0].0, "O1");
+        // Nothing left to hold: it runs in time only.
+        assert!(only_activity(&adapted).resource_requirements.is_empty());
     }
 }

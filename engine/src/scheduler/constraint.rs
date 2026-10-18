@@ -19,6 +19,8 @@ pub enum ConstraintType {
     MaterialShortage,
     /// 안전재고 침범
     SafetyStockViolation,
+    /// 자원 요구를 채울 수 없음 — 그 요구 없이 배치했거나, 배치하지 못함
+    UnfilledRequirement,
 }
 
 /// 제약조건
@@ -122,6 +124,17 @@ impl Violation {
                 "Operation {} delayed by {}ms waiting for material {}",
                 operation_id, delay_ms, material_id
             ),
+        }
+    }
+
+    /// 자원 요구 미충족 (`message` 가 무엇이 왜 안 되는지 말한다)
+    pub fn unfilled_requirement_violation(operation_id: &str, message: String) -> Self {
+        Self {
+            constraint_id: format!("UNFILLED-{}", operation_id),
+            constraint_type: ConstraintType::UnfilledRequirement,
+            target_id: operation_id.to_string(),
+            amount: 0.0,
+            message,
         }
     }
 

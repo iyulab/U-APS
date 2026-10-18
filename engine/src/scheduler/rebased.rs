@@ -45,12 +45,25 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         scheduler = scheduler.with_rule_policy(policy);
     }
     let placed = scheduler.schedule(&problem, adapted.start_time_ms);
-    // A late job is reported below, as this engine words it; anything else
-    // breaks the problem.
+    // An operation u-schedule could not place at all — no time in which its
+    // resources (and its own hours) work together — is reported, and its job
+    // goes on without it. A late job is reported below, as this engine words
+    // it; anything else breaks the problem.
+    let unplaced: BTreeSet<&str> = problem
+        .tasks()
+        .iter()
+        .flat_map(|t| &t.activities)
+        .map(|a| a.id.as_str())
+        .filter(|id| {
+            placed.assignment_for_activity(id).is_none()
+                && placed.time_only_for_activity(id).is_none()
+        })
+        .collect();
     let broken: Vec<u_schedule::models::Violation> = placed
         .violations
         .iter()
         .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
+        .filter(|v| !unplaced.contains(v.entity_id.as_str()))
         .cloned()
         .collect();
     if !broken.is_empty() {
@@ -262,6 +275,30 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         }
     }
 
+    // What could not be filled, in the order of the request.
+    for (op_id, why) in &adapted.unfilled {
+        schedule.add_violation(Violation::unfilled_requirement_violation(
+            op_id,
+            why.clone(),
+        ));
+    }
+    for job in &request.jobs {
+        for op in job
+            .operations
+            .iter()
+            .filter(|o| unplaced.contains(o.id.as_str()))
+        {
+            let why = placed
+                .violations
+                .iter()
+                .find(|v| v.entity_id == op.id)
+                .map_or_else(String::new, |v| format!(": {}", v.message));
+            schedule.add_violation(Violation::unfilled_requirement_violation(
+                &op.id,
+                format!("Operation {} could not be scheduled{why}", op.id),
+            ));
+        }
+    }
     SimpleScheduler::check_due_dates(&mut schedule, &request.jobs);
     Ok(schedule)
 }

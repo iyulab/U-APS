@@ -31,6 +31,7 @@ struct Features {
     materials: bool,
     time_only: bool,
     daily: bool,
+    sites: bool,
 }
 
 impl Features {
@@ -48,6 +49,7 @@ impl Features {
         materials: true,
         time_only: true,
         daily: true,
+        sites: true,
     };
 }
 
@@ -70,6 +72,9 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
             if calendared && rng.random_bool(0.6) {
                 r = r.with_calendar("DAY");
             }
+            if f.sites && rng.random_bool(0.8) {
+                r = r.with_site(["S1", "S2"][rng.random_range(0..2)]);
+            }
             r
         })
         .collect();
@@ -89,6 +94,10 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                 let due = MONDAY + rng.random_range(1..12) * HOUR;
                 job =
                     job.with_due_date(chrono::DateTime::from_timestamp_millis(due).expect("valid"));
+            }
+            if f.sites && rng.random_bool(0.4) {
+                // S3 keeps no equipment.
+                job = job.with_site(["S1", "S2", "S3"][rng.random_range(0..3)]);
             }
             if f.release && rng.random_bool(0.3) {
                 job.earliest_start =
@@ -288,8 +297,18 @@ fn as_u_schedule(s: &Schedule) -> u_schedule::models::Schedule {
     us
 }
 
-/// Requests with `f`'s features: how many schedule the same, and the first
-/// differences.
+/// The operations a schedule itself reports it could not fill or place
+/// (`UnfilledRequirement`) — the previous scheduler reports none.
+fn reported_unfilled(s: &Schedule) -> std::collections::BTreeSet<String> {
+    s.violations
+        .iter()
+        .filter(|v| matches!(v.constraint_type, ConstraintType::UnfilledRequirement))
+        .map(|v| v.target_id.clone())
+        .collect()
+}
+
+/// Requests with `f`'s features: how many schedule the same (apart from the
+/// new path's `UnfilledRequirement` reports), and the first differences.
 fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
     let mut rng = SmallRng::seed_from_u64(20261018);
     let (mut same, mut not_rebased) = (0, 0);
@@ -299,7 +318,10 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
         let legacy =
             serde_json::to_value(SimpleScheduler::new().schedule(&request)).expect("serializes");
         match rebased(&request) {
-            Ok(schedule) => {
+            Ok(mut schedule) => {
+                schedule
+                    .violations
+                    .retain(|v| !matches!(v.constraint_type, ConstraintType::UnfilledRequirement));
                 let schedule = serde_json::to_value(schedule).expect("serializes");
                 match first_difference("schedule", &legacy, &schedule) {
                     None => same += 1,
@@ -317,7 +339,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 15] = [
+    let alone: [(&str, Features); 16] = [
         ("plain", plain),
         (
             "alternatives",
@@ -408,6 +430,13 @@ fn differences_by_feature() {
             },
         ),
         (
+            "sites",
+            Features {
+                sites: true,
+                ..plain
+            },
+        ),
+        (
             "time-only",
             Features {
                 time_only: true,
@@ -451,7 +480,9 @@ fn quality_of_both_schedules() {
         };
         let adapted = uaps_engine::adapter::to_problem(&request);
         let problem = adapted.problem.expect("adapted");
+        // An operation the schedule reports it could not place is not judged.
         let judge = |s: &Schedule| {
+            let reported = reported_unfilled(s);
             check_schedule(
                 &as_u_schedule(s),
                 &FeasibilityInput {
@@ -462,6 +493,7 @@ fn quality_of_both_schedules() {
             )
             .into_iter()
             .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
+            .filter(|v| !reported.contains(&v.entity_id))
             .collect::<Vec<_>>()
         };
         let lv = judge(&legacy);
@@ -520,6 +552,7 @@ fn rebased_schedules_keep_random_requests() {
         let problem = uaps_engine::adapter::to_problem(&request)
             .problem
             .expect("adapted");
+        let reported = reported_unfilled(&schedule);
         let broken: Vec<_> = check_schedule(
             &as_u_schedule(&schedule),
             &FeasibilityInput {
@@ -530,6 +563,7 @@ fn rebased_schedules_keep_random_requests() {
         )
         .into_iter()
         .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
+        .filter(|v| !reported.contains(&v.entity_id))
         .collect();
         assert!(broken.is_empty(), "case {case}: {broken:?}");
     }
