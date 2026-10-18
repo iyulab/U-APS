@@ -380,7 +380,7 @@ fn algorithms_on_random_requests() {
         }
         let mut rng = SmallRng::seed_from_u64(20261018);
         let started = std::time::Instant::now();
-        let (mut broken, mut failed, mut makespan) = (0, 0, 0i64);
+        let (mut broken, mut silent, mut failed, mut makespan) = (0, 0, 0, 0i64);
         let mut kinds: std::collections::BTreeMap<String, usize> = Default::default();
         for _ in 0..cases {
             let request = random_request(&mut rng, features);
@@ -409,7 +409,13 @@ fn algorithms_on_random_requests() {
             let problem = uaps_engine::adapter::to_problem(&request)
                 .problem
                 .expect("adapted");
-            let reported = reported_unfilled(&schedule);
+            // What the schedule says about itself, apart from lateness.
+            let said: std::collections::BTreeSet<&str> = schedule
+                .violations
+                .iter()
+                .filter(|v| !matches!(v.constraint_type, ConstraintType::DueDate))
+                .map(|v| v.target_id.as_str())
+                .collect();
             let violations: Vec<_> = check_schedule(
                 &as_u_schedule(&schedule),
                 &FeasibilityInput {
@@ -420,15 +426,19 @@ fn algorithms_on_random_requests() {
             )
             .into_iter()
             .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
-            .filter(|v| !reported.contains(&v.entity_id))
             .collect();
             for v in &violations {
                 *kinds.entry(format!("{:?}", v.violation_type)).or_default() += 1;
             }
             broken += usize::from(!violations.is_empty());
+            silent += usize::from(
+                violations
+                    .iter()
+                    .any(|v| !said.contains(v.entity_id.as_str())),
+            );
         }
         eprintln!(
-            "{algorithm:>16?}: broken {broken:>3}/{cases} · failed {failed} · mean makespan {:.1} h · {:.1} s · {kinds:?}",
+            "{algorithm:>16?}: broken {broken:>3}/{cases} (unreported {silent}) · failed {failed} · mean makespan {:.1} h · {:.1} s · {kinds:?}",
             makespan as f64 / 3.6e6 / cases as f64,
             started.elapsed().as_secs_f64()
         );

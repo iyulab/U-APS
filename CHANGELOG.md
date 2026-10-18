@@ -69,6 +69,20 @@ published to a registry — it ships inside those packages.
 
 ### Fixed
 
+- The other algorithms (`Production`, `Dynamic`, `CpSat`, `Hybrid`, and
+  `GeneticAlgorithm` on a request that splits or overlaps operations) do not
+  read the whole request, and their schedules said nothing about what they
+  left out. Each schedule is now judged by the default scheduler's check and
+  says where it breaks the request: a violation per break, as
+  `UnfilledRequirement` (a worker or other requirement not booked, or an
+  operation not scheduled), `EarliestStart`, `Precedence`, `Capacity`, or the
+  new `WorkingTime` (outside a calendar or work window) and `Duration`
+  (shorter than its time). On 100 random requests, 78 of the production and
+  dynamic schedulers' schedules break the request, all of them now saying so.
+- `Hybrid` could return an empty schedule: when CP-SAT found nothing in its
+  time limit, its makespan of 0 beat the GA's. It now takes the schedule
+  that breaks the request less, then the shorter, and its GA phase is the
+  `GeneticAlgorithm` search.
 - `GeneticAlgorithm` no longer leaves workers out and starts jobs before
   their earliest start: on 100 random requests mixing alternatives,
   efficiencies, workers, set-ups, priorities, due dates and release times,

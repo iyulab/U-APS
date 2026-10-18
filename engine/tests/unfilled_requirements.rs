@@ -77,3 +77,29 @@ fn an_operation_that_can_never_run_is_left_out_and_reported() {
     assert!(schedule.assignment_for_operation("O2").is_some());
     assert_eq!(unfilled(&schedule), ["O1"]);
 }
+
+#[test]
+fn another_algorithm_says_where_its_schedule_breaks_the_request() {
+    // The dynamic scheduler holds one machine per operation: the worker the
+    // operation needs is left out — and the schedule now says so.
+    let job = Job::new("J1").with_operation(
+        Operation::new("O1", "J1", 1)
+            .with_time(0, 60_000, 0)
+            .with_equipment(vec!["E1".to_string()])
+            .with_workers(1),
+    );
+    let resources = vec![Resource::equipment("E1"), Resource::worker("W1")];
+    let mut engine = SchedulingEngine::new(EngineConfig {
+        algorithm: SchedulingAlgorithm::Dynamic,
+        validate_input: false,
+        ..EngineConfig::default()
+    });
+    let result = engine
+        .schedule(&[job], &resources, MONDAY)
+        .expect("schedules");
+    assert!(
+        unfilled(&result.schedule).contains(&"O1"),
+        "{:?}",
+        result.schedule.violations
+    );
+}

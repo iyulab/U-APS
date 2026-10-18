@@ -14,7 +14,7 @@ use u_metaheur::brkga::BrkgaConfig;
 use u_schedule::scheduler::{DispatchSearch, SimpleScheduler as USScheduler};
 
 use super::task_splitter::split_operation_by_calendar;
-use super::{Assignment, Schedule, ScheduleError, SimpleScheduler, Violation};
+use super::{Assignment, ConstraintType, Schedule, ScheduleError, SimpleScheduler, Violation};
 use crate::adapter::{job_ready_ms, material_delays, outsourced, to_problem, MaterialDelay};
 use crate::{ResourceKind, ScheduleRequest};
 
@@ -40,6 +40,82 @@ pub(super) fn search(
             .map(|found| found.schedule)
             .map_err(ScheduleError::Settings)
     })
+}
+
+/// Where `schedule` — by any of this engine's algorithms — breaks `request`,
+/// judged by u-schedule's check on the request as the default scheduler
+/// states it: an operation without resources (`NONE`) or away at a provider
+/// (`OUTSOURCE:…`) as time of its own. Lateness is not a break (it is
+/// reported as such), nor is what the schedule already reports unfilled.
+pub(crate) fn breaks(
+    request: &ScheduleRequest,
+    schedule: &Schedule,
+) -> Vec<u_schedule::models::Violation> {
+    use u_schedule::models::{Assignment as USAssignment, TimeOnlySpan};
+    let Ok(problem) = to_problem(request).problem else {
+        return Vec::new();
+    };
+    let mut us = u_schedule::models::Schedule::new();
+    for a in &schedule.assignments {
+        if a.resource_id == "NONE" || a.resource_id.starts_with("OUTSOURCE:") {
+            us.time_only.push(TimeOnlySpan::new(
+                &a.operation_id,
+                &a.job_id,
+                a.start_ms,
+                a.end_ms,
+            ));
+        } else {
+            us.add_assignment(
+                USAssignment::new(
+                    &a.operation_id,
+                    &a.job_id,
+                    &a.resource_id,
+                    a.start_ms,
+                    a.end_ms,
+                )
+                .with_setup(a.setup_ms),
+            );
+        }
+    }
+    let reported: BTreeSet<&str> = schedule
+        .violations
+        .iter()
+        .filter(|v| matches!(v.constraint_type, ConstraintType::UnfilledRequirement))
+        .map(|v| v.target_id.as_str())
+        .collect();
+    u_schedule::scheduler::check_schedule(
+        &us,
+        &u_schedule::scheduler::FeasibilityInput {
+            tasks: problem.tasks(),
+            resources: problem.resources(),
+            constraints: &[],
+        },
+    )
+    .into_iter()
+    .filter(|v| v.violation_type != u_schedule::models::ViolationType::DeadlineMiss)
+    .filter(|v| !reported.contains(v.entity_id.as_str()))
+    .collect()
+}
+
+/// Reports in `schedule` where it breaks `request` ([`breaks`]), each as the
+/// constraint it breaks.
+pub(crate) fn report_breaks(request: &ScheduleRequest, schedule: &mut Schedule) {
+    use u_schedule::models::ViolationType as V;
+    for v in breaks(request, schedule) {
+        let kind = match v.violation_type {
+            V::RequirementUnfilled | V::SkillMismatch | V::UnknownActivity => {
+                ConstraintType::UnfilledRequirement
+            }
+            V::EarlyStart => ConstraintType::EarliestStart,
+            V::PrecedenceViolation | V::SynchronizeViolation => ConstraintType::Precedence,
+            V::CapacityExceeded => ConstraintType::Capacity,
+            V::ResourceUnavailable | V::TimeWindowViolation => ConstraintType::WorkingTime,
+            V::DurationTooShort => ConstraintType::Duration,
+            V::DeadlineMiss => continue,
+            V::Custom(_) => ConstraintType::UnfilledRequirement,
+        };
+        schedule.add_violation(Violation::broken(kind, &v.entity_id, v.message));
+    }
 }
 
 /// States `request` as a u-schedule problem, has `run` place it with the

@@ -21,6 +21,10 @@ pub enum ConstraintType {
     SafetyStockViolation,
     /// 자원 요구를 채울 수 없음 — 그 요구 없이 배치했거나, 배치하지 못함
     UnfilledRequirement,
+    /// 자원의 근무 시간(달력) 밖, 또는 공정 자신의 작업창 밖
+    WorkingTime,
+    /// 배정이 공정의 준비 · 처리 · 대기 시간보다 짧음
+    Duration,
 }
 
 /// 제약조건
@@ -133,6 +137,18 @@ impl Violation {
             constraint_id: format!("UNFILLED-{}", operation_id),
             constraint_type: ConstraintType::UnfilledRequirement,
             target_id: operation_id.to_string(),
+            amount: 0.0,
+            message,
+        }
+    }
+
+    /// 스케줄이 요청을 어긴 곳 — 요청을 다 읽지 않는 알고리즘의 결과를 같은
+    /// 검사기로 판정한 것(`kind` 가 어떤 제약인지, `message` 가 무엇이 어떻게).
+    pub fn broken(kind: ConstraintType, target_id: &str, message: String) -> Self {
+        Self {
+            constraint_id: format!("BROKEN-{:?}-{}", kind, target_id),
+            constraint_type: kind,
+            target_id: target_id.to_string(),
             amount: 0.0,
             message,
         }

@@ -323,7 +323,13 @@ impl SchedulingEngine {
 
         // 2. 스케줄링 실행
         let scheduling_start = Instant::now();
-        let schedule = self.run_scheduling(jobs, resources, start_time_ms)?;
+        let mut schedule = self.run_scheduling(jobs, resources, start_time_ms)?;
+        // The other algorithms do not read the whole request: say where their
+        // schedule breaks it, judged as the default scheduler states it.
+        if self.config.algorithm != SchedulingAlgorithm::Simple {
+            let request = self.build_schedule_request(jobs, resources, start_time_ms);
+            super::placement::report_breaks(&request, &mut schedule);
+        }
         let scheduling_time = scheduling_start.elapsed().as_millis();
 
         self.log(
@@ -497,6 +503,44 @@ impl SchedulingEngine {
         );
     }
 
+    /// The GA: a search over the default scheduler's order, or — for a
+    /// request that splits or overlaps operations — this engine's own GA.
+    fn run_ga(
+        &mut self,
+        jobs: &[Job],
+        resources: &[Resource],
+        start_time_ms: i64,
+    ) -> Result<Schedule> {
+        let params = self.effective_ga_params();
+        // TODO(upstream: lot splitting and overlap on u-schedule —
+        // ISSUE-u-aps-20261018-algorithm-paths-ignore-requirements):
+        // only this engine's own GA splits an operation across
+        // machines or overlaps it with the one before, and it holds
+        // one machine per operation (no workers, calendars or
+        // releases). Remove once u-schedule states both.
+        let splits_or_overlaps = jobs
+            .iter()
+            .flat_map(|j| &j.operations)
+            .any(|op| op.is_splittable || op.overlap_config.is_some());
+        if !splits_or_overlaps {
+            let request = self.build_schedule_request(jobs, resources, start_time_ms);
+            return Ok(SimpleScheduler::new().search(&request, &params)?);
+        }
+        self.log(
+            LogLevel::Warn,
+            "GeneticAlgorithm splits or overlaps operations with its own decoder, \
+             which holds one machine per operation: worker requirements, calendars \
+             and release times are not applied",
+            None,
+        );
+        let operators = GeneticOperators::default();
+        let scheduler = GaScheduler::new(params, operators)
+            .with_setup_matrices(self.config.setup_matrices.clone())
+            .with_site_transitions(self.config.site_transitions.clone());
+        let result = scheduler.schedule(jobs, resources, start_time_ms);
+        Ok(result.schedule)
+    }
+
     fn run_scheduling(
         &mut self,
         jobs: &[Job],
@@ -535,34 +579,7 @@ impl SchedulingEngine {
                         self.config.outsourcing_manager.is_some(),
                     ),
                 ]);
-                let params = self.effective_ga_params();
-                // TODO(upstream: lot splitting and overlap on u-schedule —
-                // ISSUE-u-aps-20261018-algorithm-paths-ignore-requirements):
-                // only this engine's own GA splits an operation across
-                // machines or overlaps it with the one before, and it holds
-                // one machine per operation (no workers, calendars or
-                // releases). Remove once u-schedule states both.
-                let splits_or_overlaps = jobs
-                    .iter()
-                    .flat_map(|j| &j.operations)
-                    .any(|op| op.is_splittable || op.overlap_config.is_some());
-                if !splits_or_overlaps {
-                    let request = self.build_schedule_request(jobs, resources, start_time_ms);
-                    return Ok(SimpleScheduler::new().search(&request, &params)?);
-                }
-                self.log(
-                    LogLevel::Warn,
-                    "GeneticAlgorithm splits or overlaps operations with its own decoder, \
-                     which holds one machine per operation: worker requirements, calendars \
-                     and release times are not applied",
-                    None,
-                );
-                let operators = GeneticOperators::default();
-                let scheduler = GaScheduler::new(params, operators)
-                    .with_setup_matrices(self.config.setup_matrices.clone())
-                    .with_site_transitions(self.config.site_transitions.clone());
-                let result = scheduler.schedule(jobs, resources, start_time_ms);
-                Ok(result.schedule)
+                self.run_ga(jobs, resources, start_time_ms)
             }
 
             SchedulingAlgorithm::Production => {
@@ -729,14 +746,10 @@ impl SchedulingEngine {
                     None,
                 );
 
-                // Phase 2: GA refinement
-                let ga_params = self.effective_ga_params();
-                let ga_scheduler = GaScheduler::new(ga_params, GeneticOperators::default())
-                    .with_setup_matrices(self.config.setup_matrices.clone())
-                    .with_site_transitions(self.config.site_transitions.clone());
-                let ga_result = ga_scheduler.schedule(jobs, resources, start_time_ms);
+                // Phase 2: the GA
+                let ga_schedule = self.run_ga(jobs, resources, start_time_ms)?;
 
-                let final_makespan = ga_result.schedule.makespan_ms;
+                let final_makespan = ga_schedule.makespan_ms;
                 self.log(
                     LogLevel::Info,
                     &format!(
@@ -752,9 +765,15 @@ impl SchedulingEngine {
                     None,
                 );
 
-                // Return better result
-                if ga_result.schedule.makespan_ms <= cpsat_result.schedule.makespan_ms {
-                    Ok(ga_result.schedule)
+                // The one that keeps more of the request, then the shorter.
+                // CP-SAT reads one machine per operation and may find nothing
+                // in its time: its schedule then breaks the request, and its
+                // makespan of 0 is no reason to take it.
+                let request = self.build_schedule_request(jobs, resources, start_time_ms);
+                let score =
+                    |s: &Schedule| (super::placement::breaks(&request, s).len(), s.makespan_ms);
+                if score(&ga_schedule) <= score(&cpsat_result.schedule) {
+                    Ok(ga_schedule)
                 } else {
                     Ok(cpsat_result.schedule)
                 }
