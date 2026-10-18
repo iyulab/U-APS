@@ -307,49 +307,24 @@ jobs:
           cp artifacts/nuget-packages/* release/
           ls -la release/
 
+      # The notes are the version's CHANGELOG.md section (scripts/release-notes.sh
+      # -- the same script runs locally), then how to install it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            CHANGELOG.md
+            scripts/release-notes.sh
+          path: src
+
+      - name: Release notes from the changelog
+        run: bash src/scripts/release-notes.sh "${{ needs.extract-version.outputs.version }}" > release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ needs.extract-version.outputs.version }}
           name: Release v${{ needs.extract-version.outputs.version }}
-          body: |
-            ## UAPS v${{ needs.extract-version.outputs.version }}
-
-            ### Installation
-
-            #### CLI (dotnet tool - Recommended)
-            ```bash
-            dotnet tool install -g UAPS.CLI
-            ```
-
-            #### CLI (Quick Install - Self-contained)
-            ```bash
-            # Windows (PowerShell)
-            irm https://raw.githubusercontent.com/iyulab/U-APS/main/install.ps1 | iex
-
-            # Linux/macOS
-            curl -fsSL https://raw.githubusercontent.com/iyulab/U-APS/main/install.sh | bash
-            ```
-
-            #### SDK (NuGet)
-            ```bash
-            dotnet add package UAPS.SDK --version ${{ needs.extract-version.outputs.version }}
-            ```
-
-            ### Manual Download
-
-            #### Native Libraries
-            - `uaps_engine-win-x64.dll` - Windows x64
-            - `uaps_engine-linux-x64.so` - Linux x64
-            - `uaps_engine-osx-x64.dylib` - macOS x64
-            - `uaps_engine-osx-arm64.dylib` - macOS ARM64
-
-            #### CLI Bundles
-            - `uaps-cli-win-x64.zip` - Windows x64
-            - `uaps-cli-linux-x64.tar.gz` - Linux x64
-            - `uaps-cli-osx-x64.tar.gz` - macOS x64
-            - `uaps-cli-osx-arm64.tar.gz` - macOS ARM64
-
+          body_path: release-notes.md
           files: release/*
           draft: false
           prerelease: ${{ contains(needs.extract-version.outputs.version, '-') }}
