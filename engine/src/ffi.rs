@@ -63,6 +63,28 @@ struct FfiScheduleRequest {
     site_transitions: Option<SiteTransitions>,
 }
 
+/// The [`ScheduleRequest`] a `uaps_schedule` request without `algorithm`
+/// schedules — the request JSON the SDK writes, read as the FFI reads it.
+pub fn schedule_request_from_json(json: &str) -> Result<ScheduleRequest, serde_json::Error> {
+    let r: FfiScheduleRequest = serde_json::from_str(json)?;
+    Ok(ScheduleRequest {
+        jobs: r.jobs,
+        resources: r.resources,
+        start_time_ms: r.start_time_ms.unwrap_or(0),
+        setup_matrices: r.setup_matrices.unwrap_or_default(),
+        calendars: r.calendars.unwrap_or_default(),
+        skill_matrix: r.skill_matrix,
+        worker_time_override: r.worker_time_override,
+        dispatching_config: r.dispatching_config,
+        material_manager: r.material_manager,
+        certification_matrix: r.certification_matrix,
+        crew_manager: r.crew_manager,
+        pegging_engine: r.pegging_engine,
+        outsourcing_manager: r.outsourcing_manager,
+        site_transitions: r.site_transitions,
+    })
+}
+
 /// 스케줄링 응답 (JSON)
 #[derive(serde::Serialize, serde::Deserialize)]
 struct FfiScheduleResponse {

@@ -40,6 +40,7 @@
 //! | `uaps_version()` | Engine version string |
 //! | `uaps_free_string()` | Free allocated string memory |
 
+pub mod adapter;
 pub mod benchmark;
 pub mod cp;
 pub mod error;

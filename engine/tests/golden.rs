@@ -104,18 +104,21 @@ fn schedule_golden(name: &str, request: Value) -> Value {
 const MONDAY_MIDNIGHT: i64 = 1_705_881_600_000;
 const HOUR: i64 = 3_600_000;
 
-#[test]
-fn g01_single_job_chain() {
+fn g01_single_job_chain_request() -> Value {
     let job = Job::new("J1")
         .with_operation(op("J1-1", "J1", 1, 30_000, &["M1"]))
         .with_operation(op("J1-2", "J1", 2, 45_000, &["M2"]))
         .with_operation(op("J1-3", "J1", 3, 15_000, &["M1"]));
     let resources = [Resource::equipment("M1"), Resource::equipment("M2")];
-    schedule_golden("g01_single_job_chain", request(&[job], &resources));
+    request(&[job], &resources)
 }
 
 #[test]
-fn g02_competing_jobs_priority() {
+fn g01_single_job_chain() {
+    schedule_golden("g01_single_job_chain", g01_single_job_chain_request());
+}
+
+fn g02_competing_jobs_priority_request() -> Value {
     let jobs: Vec<Job> = (1..=3)
         .map(|i| {
             let id = format!("J{i}");
@@ -128,14 +131,18 @@ fn g02_competing_jobs_priority() {
             ))
         })
         .collect();
-    schedule_golden(
-        "g02_competing_jobs_priority",
-        request(&jobs, &[Resource::equipment("LATHE")]),
-    );
+    request(&jobs, &[Resource::equipment("LATHE")])
 }
 
 #[test]
-fn g03_equipment_and_worker() {
+fn g02_competing_jobs_priority() {
+    schedule_golden(
+        "g02_competing_jobs_priority",
+        g02_competing_jobs_priority_request(),
+    );
+}
+
+fn g03_equipment_and_worker_request() -> Value {
     let jobs: Vec<Job> = ["A", "B", "C"]
         .iter()
         .map(|j| {
@@ -150,11 +157,18 @@ fn g03_equipment_and_worker() {
         Resource::worker("ALICE"),
         Resource::worker("BOB"),
     ];
-    schedule_golden("g03_equipment_and_worker", request(&jobs, &resources));
+    request(&jobs, &resources)
 }
 
 #[test]
-fn g04_setup_matrix() {
+fn g03_equipment_and_worker() {
+    schedule_golden(
+        "g03_equipment_and_worker",
+        g03_equipment_and_worker_request(),
+    );
+}
+
+fn g04_setup_matrix_request() -> Value {
     let products = ["A", "B", "A", "B"];
     let jobs: Vec<Job> = products
         .iter()
@@ -174,11 +188,15 @@ fn g04_setup_matrix() {
     );
     let mut req = request(&jobs, &[Resource::equipment("EQP")]);
     req["setup_matrices"] = to_json(&matrices);
-    schedule_golden("g04_setup_matrix", req);
+    req
 }
 
 #[test]
-fn g05_alternative_efficiency() {
+fn g04_setup_matrix() {
+    schedule_golden("g04_setup_matrix", g04_setup_matrix_request());
+}
+
+fn g05_alternative_efficiency_request() -> Value {
     let jobs: Vec<Job> = (1..=4)
         .map(|i| {
             let id = format!("J{i}");
@@ -189,11 +207,18 @@ fn g05_alternative_efficiency() {
         Resource::equipment("FAST").with_efficiency(2.0),
         Resource::equipment("SLOW").with_efficiency(0.5),
     ];
-    schedule_golden("g05_alternative_efficiency", request(&jobs, &resources));
+    request(&jobs, &resources)
 }
 
 #[test]
-fn g06_worker_load_factor() {
+fn g05_alternative_efficiency() {
+    schedule_golden(
+        "g05_alternative_efficiency",
+        g05_alternative_efficiency_request(),
+    );
+}
+
+fn g06_worker_load_factor_request() -> Value {
     let jobs: Vec<Job> = (1..=3)
         .map(|i| {
             let id = format!("J{i}");
@@ -209,11 +234,15 @@ fn g06_worker_load_factor() {
         Resource::equipment("EQP-3"),
         Resource::worker("W1"),
     ];
-    schedule_golden("g06_worker_load_factor", request(&jobs, &resources));
+    request(&jobs, &resources)
 }
 
 #[test]
-fn g07_linked_robot() {
+fn g06_worker_load_factor() {
+    schedule_golden("g06_worker_load_factor", g06_worker_load_factor_request());
+}
+
+fn g07_linked_robot_request() -> Value {
     let jobs = [
         Job::new("J1")
             .with_priority(1)
@@ -228,11 +257,15 @@ fn g07_linked_robot() {
             .with_linked_resource("CELL"),
         Resource::equipment("CELL"),
     ];
-    schedule_golden("g07_linked_robot", request(&jobs, &resources));
+    request(&jobs, &resources)
 }
 
 #[test]
-fn g08_calendar_spans_lunch_and_night() {
+fn g07_linked_robot() {
+    schedule_golden("g07_linked_robot", g07_linked_robot_request());
+}
+
+fn g08_calendar_spans_lunch_and_night_request() -> Value {
     let jobs = [
         Job::new("J1").with_operation(op("J1-1", "J1", 1, 3 * HOUR, &["EQP"])),
         Job::new("J2").with_operation(op("J2-1", "J2", 1, 6 * HOUR, &["EQP"])),
@@ -243,11 +276,18 @@ fn g08_calendar_spans_lunch_and_night() {
     );
     req["start_time_ms"] = json!(MONDAY_MIDNIGHT + 11 * HOUR);
     req["calendars"] = to_json(&[Calendar::default_day()]);
-    schedule_golden("g08_calendar_spans_lunch_and_night", req);
+    req
 }
 
 #[test]
-fn g09_skill_proficiency() {
+fn g08_calendar_spans_lunch_and_night() {
+    schedule_golden(
+        "g08_calendar_spans_lunch_and_night",
+        g08_calendar_spans_lunch_and_night_request(),
+    );
+}
+
+fn g09_skill_proficiency_request() -> Value {
     let jobs: Vec<Job> = (1..=2)
         .map(|i| {
             let id = format!("J{i}");
@@ -269,11 +309,15 @@ fn g09_skill_proficiency() {
         .with_skill("NOVICE", "welding", 0.5);
     let mut req = request(&jobs, &resources);
     req["skill_matrix"] = to_json(&skills);
-    schedule_golden("g09_skill_proficiency", req);
+    req
 }
 
 #[test]
-fn g10_material_availability() {
+fn g09_skill_proficiency() {
+    schedule_golden("g09_skill_proficiency", g09_skill_proficiency_request());
+}
+
+fn g10_material_availability_request() -> Value {
     let start = MONDAY_MIDNIGHT + 8 * HOUR;
     let arrives = chrono::DateTime::from_timestamp_millis(start + 4 * HOUR).expect("valid time");
     let jobs = [
@@ -288,11 +332,18 @@ fn g10_material_availability() {
     let mut req = request(&jobs, &[Resource::equipment("EQP")]);
     req["start_time_ms"] = json!(start);
     req["material_manager"] = to_json(&materials);
-    schedule_golden("g10_material_availability", req);
+    req
 }
 
 #[test]
-fn g11_crew() {
+fn g10_material_availability() {
+    schedule_golden(
+        "g10_material_availability",
+        g10_material_availability_request(),
+    );
+}
+
+fn g11_crew_request() -> Value {
     let crews = CrewManager::new().with_crew(
         Crew::new("TEAM-A", "Assembly A")
             .with_efficiency(1.5)
@@ -309,11 +360,15 @@ fn g11_crew() {
     ];
     let mut req = request(&[job], &resources);
     req["crew_manager"] = to_json(&crews);
-    schedule_golden("g11_crew", req);
+    req
 }
 
 #[test]
-fn g12_multi_site() {
+fn g11_crew() {
+    schedule_golden("g11_crew", g11_crew_request());
+}
+
+fn g12_multi_site_request() -> Value {
     let job = Job::new("J1")
         .with_operation(op("J1-1", "J1", 1, 30_000, &["EQP-A"]))
         .with_operation(op("J1-2", "J1", 2, 30_000, &["EQP-B"]));
@@ -325,11 +380,15 @@ fn g12_multi_site() {
     transitions.add_bidirectional("SITE-A", "SITE-B", HOUR);
     let mut req = request(&[job], &resources);
     req["site_transitions"] = to_json(&transitions);
-    schedule_golden("g12_multi_site", req);
+    req
 }
 
 #[test]
-fn g13_dispatching_edd_with_lateness() {
+fn g12_multi_site() {
+    schedule_golden("g12_multi_site", g12_multi_site_request());
+}
+
+fn g13_dispatching_edd_with_lateness_request() -> Value {
     let dues = [9, 3, 6, 1];
     let jobs: Vec<Job> = dues
         .iter()
@@ -349,7 +408,15 @@ fn g13_dispatching_edd_with_lateness() {
         .collect();
     let mut req = request(&jobs, &[Resource::equipment("EQP")]);
     req["dispatching_config"] = to_json(&DispatchingConfig::new(DispatchingRuleName::Edd));
-    schedule_golden("g13_dispatching_edd_with_lateness", req);
+    req
+}
+
+#[test]
+fn g13_dispatching_edd_with_lateness() {
+    schedule_golden(
+        "g13_dispatching_edd_with_lateness",
+        g13_dispatching_edd_with_lateness_request(),
+    );
 }
 
 #[test]
@@ -496,6 +563,135 @@ fn sdk_request_fixture_is_accepted() {
     let response = call(uaps_schedule, &request);
     assert_eq!(response["success"], json!(true), "{response}");
     assert_golden("sdk_request_full", &response);
+}
+
+/// Each scheduling scenario stated as a u-schedule problem
+/// (`uaps_engine::adapter`) and scheduled by u-schedule, against the golden:
+/// what the adapter leaves out and whether the schedules agree. Pinned in
+/// `tests/golden/adapter_parity.json`, so moving a capability into u-schedule
+/// shows as a diff here.
+#[test]
+fn adapter_parity() {
+    use std::collections::BTreeSet;
+    use uaps_engine::adapter::to_problem;
+    use uaps_engine::ffi::schedule_request_from_json;
+
+    fn placements(
+        rows: impl Iterator<Item = (String, String, i64, i64)>,
+    ) -> BTreeSet<(String, String, i64, i64)> {
+        rows.collect()
+    }
+
+    let mut table = serde_json::Map::new();
+    for (name, request) in schedule_scenarios() {
+        let golden: Value = serde_json::from_str(
+            &std::fs::read_to_string(golden_path(name)).expect("golden exists"),
+        )
+        .expect("golden is JSON");
+        let uaps = placements(
+            golden["schedule"]["assignments"]
+                .as_array()
+                .expect("assignments")
+                .iter()
+                .map(|a| {
+                    (
+                        a["operation_id"]
+                            .as_str()
+                            .expect("operation_id")
+                            .to_string(),
+                        a["resource_id"].as_str().expect("resource_id").to_string(),
+                        a["start_ms"].as_i64().expect("start_ms"),
+                        a["end_ms"].as_i64().expect("end_ms"),
+                    )
+                }),
+        );
+
+        let parsed =
+            schedule_request_from_json(&request.to_string()).expect("scenario request parses");
+        let adapted = to_problem(&parsed);
+        let unsupported: Vec<String> = adapted
+            .unsupported
+            .iter()
+            .map(|u| format!("{u:?}"))
+            .collect();
+        let row = match adapted.problem {
+            Err(errors) => json!({
+                "unsupported": unsupported,
+                "refused": errors.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            }),
+            Ok(problem) => {
+                let mut scheduler = u_schedule::scheduler::SimpleScheduler::new()
+                    .with_transition_matrices(adapted.transition_matrices);
+                if let Some(engine) = adapted.rule_engine {
+                    scheduler = scheduler.with_rule_engine(engine);
+                }
+                let schedule = scheduler.schedule(&problem, adapted.start_time_ms);
+                let us = placements(schedule.assignments.iter().map(|a| {
+                    (
+                        a.activity_id.clone(),
+                        a.resource_id.clone(),
+                        a.start_ms,
+                        a.end_ms,
+                    )
+                }));
+                json!({
+                    "unsupported": unsupported,
+                    "same_schedule": us == uaps,
+                    "makespan_ms": { "u_aps": golden["schedule"]["makespan_ms"], "u_schedule": schedule.makespan_ms() },
+                    "placements_differing": uaps.symmetric_difference(&us).count(),
+                    "u_schedule_violations": schedule.violations.len(),
+                })
+            }
+        };
+        // The adapter's own claim: a request it states completely is
+        // scheduled exactly as u-aps schedules it.
+        if row["unsupported"] == json!([]) {
+            assert_eq!(
+                row["same_schedule"],
+                json!(true),
+                "{name}: nothing reported unsupported, yet the schedules differ: {row}"
+            );
+        }
+        table.insert(name.to_string(), row);
+    }
+    assert_golden("adapter_parity", &Value::Object(table));
+}
+
+/// The scheduling scenarios, by golden name.
+fn schedule_scenarios() -> Vec<(&'static str, Value)> {
+    vec![
+        ("g01_single_job_chain", g01_single_job_chain_request()),
+        (
+            "g02_competing_jobs_priority",
+            g02_competing_jobs_priority_request(),
+        ),
+        (
+            "g03_equipment_and_worker",
+            g03_equipment_and_worker_request(),
+        ),
+        ("g04_setup_matrix", g04_setup_matrix_request()),
+        (
+            "g05_alternative_efficiency",
+            g05_alternative_efficiency_request(),
+        ),
+        ("g06_worker_load_factor", g06_worker_load_factor_request()),
+        ("g07_linked_robot", g07_linked_robot_request()),
+        (
+            "g08_calendar_spans_lunch_and_night",
+            g08_calendar_spans_lunch_and_night_request(),
+        ),
+        ("g09_skill_proficiency", g09_skill_proficiency_request()),
+        (
+            "g10_material_availability",
+            g10_material_availability_request(),
+        ),
+        ("g11_crew", g11_crew_request()),
+        ("g12_multi_site", g12_multi_site_request()),
+        (
+            "g13_dispatching_edd_with_lateness",
+            g13_dispatching_edd_with_lateness_request(),
+        ),
+    ]
 }
 
 #[test]

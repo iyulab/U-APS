@@ -107,6 +107,13 @@ impl SetupMatrix {
         }
     }
 
+    /// The explicit changeovers `(from, to, setup_ms)`, in no set order.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str, i64)> {
+        self.entries
+            .iter()
+            .map(|((from, to), ms)| (from.as_str(), to.as_str(), *ms))
+    }
+
     /// 여러 항목을 한번에 추가 (from, to, setup_ms 튜플 배열)
     pub fn with_entries(mut self, entries: Vec<(&str, &str, i64)>) -> Self {
         for (from, to, setup_ms) in entries {
@@ -142,6 +149,11 @@ impl SetupMatrixCollection {
         Self {
             matrices: HashMap::new(),
         }
+    }
+
+    /// Every matrix, in no set order.
+    pub fn matrices(&self) -> impl Iterator<Item = &SetupMatrix> {
+        self.matrices.values()
     }
 
     /// Setup Matrix 추가

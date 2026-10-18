@@ -209,6 +209,15 @@ impl SkillMatrix {
         SkillLevel::from_proficiency(proficiency)
     }
 
+    /// Whether any proficiency (or the default) scales time — is not 1.
+    pub fn has_non_unit_proficiency(&self) -> bool {
+        (self.default_proficiency - 1.0).abs() > f64::EPSILON
+            || self
+                .proficiencies
+                .values()
+                .any(|p| (p - 1.0).abs() > f64::EPSILON)
+    }
+
     /// 작업자가 특정 공정을 수행할 수 있는지 확인
     pub fn can_perform(&self, worker_id: &str, operation_type: &str) -> bool {
         self.get_proficiency(worker_id, operation_type) > 0.0

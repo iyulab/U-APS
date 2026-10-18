@@ -1,0 +1,149 @@
+{
+  "g01_single_job_chain": {
+    "makespan_ms": {
+      "u_aps": 90000,
+      "u_schedule": 90000
+    },
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 0,
+    "unsupported": []
+  },
+  "g02_competing_jobs_priority": {
+    "makespan_ms": {
+      "u_aps": 120000,
+      "u_schedule": 120000
+    },
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 0,
+    "unsupported": []
+  },
+  "g03_equipment_and_worker": {
+    "makespan_ms": {
+      "u_aps": 1200000,
+      "u_schedule": 1200000
+    },
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 0,
+    "unsupported": []
+  },
+  "g04_setup_matrix": {
+    "makespan_ms": {
+      "u_aps": 185000,
+      "u_schedule": 175000
+    },
+    "placements_differing": 8,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "InitialSetup"
+    ]
+  },
+  "g05_alternative_efficiency": {
+    "makespan_ms": {
+      "u_aps": 120000,
+      "u_schedule": 120000
+    },
+    "placements_differing": 8,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "ResourceDependentDuration"
+    ]
+  },
+  "g06_worker_load_factor": {
+    "makespan_ms": {
+      "u_aps": 60000,
+      "u_schedule": 90000
+    },
+    "placements_differing": 8,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "FractionalResourceUse"
+    ]
+  },
+  "g07_linked_robot": {
+    "makespan_ms": {
+      "u_aps": 50000,
+      "u_schedule": 30000
+    },
+    "placements_differing": 2,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "ResourceBundle"
+    ]
+  },
+  "g08_calendar_spans_lunch_and_night": {
+    "makespan_ms": {
+      "u_aps": 1706011200000,
+      "u_schedule": 1705939200000
+    },
+    "placements_differing": 3,
+    "same_schedule": false,
+    "u_schedule_violations": 1,
+    "unsupported": [
+      "ResumableActivity"
+    ]
+  },
+  "g09_skill_proficiency": {
+    "makespan_ms": {
+      "u_aps": 120000,
+      "u_schedule": 60000
+    },
+    "placements_differing": 8,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "ResourceDependentDuration"
+    ]
+  },
+  "g10_material_availability": {
+    "makespan_ms": {
+      "u_aps": 1705924860000,
+      "u_schedule": 1705924860000
+    },
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 0,
+    "unsupported": []
+  },
+  "g11_crew": {
+    "makespan_ms": {
+      "u_aps": 40000,
+      "u_schedule": 60000
+    },
+    "placements_differing": 4,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "ResourceDependentDuration",
+      "ResourceBundle"
+    ]
+  },
+  "g12_multi_site": {
+    "makespan_ms": {
+      "u_aps": 3660000,
+      "u_schedule": 60000
+    },
+    "placements_differing": 2,
+    "same_schedule": false,
+    "u_schedule_violations": 0,
+    "unsupported": [
+      "TransportTime"
+    ]
+  },
+  "g13_dispatching_edd_with_lateness": {
+    "makespan_ms": {
+      "u_aps": 480000,
+      "u_schedule": 480000
+    },
+    "placements_differing": 0,
+    "same_schedule": true,
+    "u_schedule_violations": 2,
+    "unsupported": []
+  }
+}
