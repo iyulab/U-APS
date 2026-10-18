@@ -13,6 +13,39 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- **The default scheduler (a request without `algorithm`) now places
+  operations with the u-schedule dispatcher, so its schedules change.** The
+  request is stated in u-schedule's terms — operations with their resource
+  requirements, equipment efficiency and worker proficiency as speeds, crews,
+  worker load factors as shares of a worker, linked resources, set-up
+  matrices, site transitions as transport times between equipment, shift
+  calendars — scheduled there, and read back into the same response: one
+  assignment per resource with its site, the operation split at its
+  calendar's breaks into tasks, the material and due-date violations. What
+  changes:
+  - An operation takes the resource on which it can **start earliest**, using
+    an idle gap the resource has before its last booking; at the same start,
+    the one that processes it fastest, then the first listed. Before, it took
+    the resource that became free soonest after its last booking (plus
+    set-up), whether or not the job was ready then.
+  - **A worker is never booked beyond what they can do at once.** A worker
+    taken whole no longer overlaps work they hold at a load factor; the
+    previous scheduler could book both, and on 300 random requests mixing
+    alternatives, efficiencies, workers, set-ups, due dates, release times,
+    rules and calendars, 41 of its schedules held a resource beyond its
+    capacity. None of the new ones does.
+  - On a resource with a set-up matrix, the matrix's set-up replaces the
+    operation's own set-up time instead of the larger of the two being taken.
+  - On those 300 requests the makespan is shorter in 122, longer in 33 and
+    the same in 145, and the total lateness against due dates is 12 % lower.
+  A request using what the new path does not state yet — operation splitting
+  or overlap, operation time windows or daily work windows, outsourcing,
+  pegging, rule switching (`DispatchingConfig.MultiLayer`), materials for an
+  operation after the first, an operation without resources, a target site
+  that keeps none of an operation's equipment — is scheduled as before.
+
 ## [1.3.1] - 2026-10-18
 
 ### Fixed

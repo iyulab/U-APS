@@ -231,7 +231,7 @@ pub unsafe extern "C" fn uaps_schedule(
             }
         }
         None => {
-            // 레거시 경로: SimpleScheduler 직접 호출 (하위 호환성)
+            // 기본 경로: u-schedule 디스패처로 배치하고 응답 모양으로 되읽는다
             let request = ScheduleRequest {
                 jobs: ffi_request.jobs,
                 resources: ffi_request.resources,
@@ -249,8 +249,11 @@ pub unsafe extern "C" fn uaps_schedule(
                 site_transitions: ffi_request.site_transitions,
             };
 
-            let scheduler = SimpleScheduler::new();
-            let schedule = scheduler.schedule(&request);
+            // TODO(rebase P3): the engine's own scheduler takes what u-schedule
+            // cannot state yet (`rebased::NotRebased`); remove it once nothing
+            // is reported unsupported.
+            let schedule = crate::rebased::schedule(&request)
+                .unwrap_or_else(|_| SimpleScheduler::new().schedule(&request));
 
             let response = FfiScheduleResponse {
                 success: true,
