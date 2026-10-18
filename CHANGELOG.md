@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-18
+
 ### Fixed
 
 - **`Operation.Dependencies` (`WithDependencies`) is applied.** An operation
