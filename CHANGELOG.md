@@ -13,6 +13,32 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Operation.Dependencies` (`WithDependencies`) is applied.** An operation
+  starts once every operation it names has ended, in any job, with the
+  default scheduler and the genetic algorithm; the other algorithms — and the
+  genetic algorithm on a request with splitting or overlap, which still goes
+  to the previous one — report an operation that starts too early as a
+  `Precedence` violation. A
+  dependency on an operation the request does not have, or a loop of
+  dependencies and job order that would keep operations from ever starting,
+  is refused for every algorithm (`success: false`).
+- **A crew works only the equipment it is assigned (`Crew.WithEquipment`).**
+  An operation done by that crew runs on the equipment both the operation
+  and the crew name; with no equipment of its own named, on the crew's. If
+  the crew is assigned none of the operation's equipment, the operation is
+  scheduled without equipment and reported (`UnfilledRequirement`), as for a
+  target site that keeps none of it.
+- A crew assigned operation types (`AssignedOperationTypes`) no longer takes
+  an operation of another type: the operation keeps its own worker
+  requirements, and the mismatch is reported (`UnfilledRequirement`).
+
+### Known limitations
+
+`Job.IsSplittable` is still accepted and not applied (operations are split
+per operation, `Operation.IsSplittable`).
+
 ## [1.5.0] - 2026-10-18
 
 ### Changed

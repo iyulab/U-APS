@@ -138,11 +138,25 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 }
                 // u-aps takes an operational crew whole, in place of the
                 // operation's worker requirements.
-                let crew = op
+                let mut crew = op
                     .crew_id
                     .as_deref()
                     .and_then(|id| request.crew_manager.as_ref()?.get_crew(id))
                     .filter(|c| c.is_operational());
+                // A crew not assigned the operation's type does not take it:
+                // the operation keeps its own worker requirements.
+                if let (Some(c), Some(op_type)) = (crew, op.operation_type.as_deref()) {
+                    if !c.handles_operation_type(op_type) {
+                        unfilled.push((
+                            op.id.clone(),
+                            format!(
+                                "Operation {} is of type {op_type}, which crew {} is not assigned; scheduled with the operation's own workers",
+                                op.id, c.id
+                            ),
+                        ));
+                        crew = None;
+                    }
+                }
                 // The dispatching scheduler reads none of an operation's
                 // `split_config`, `overlap_config` or `time_window` (the GA
                 // does), and `is_splittable` only in how the work is split
@@ -161,6 +175,10 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
                 }
+                // Operations of any job it waits for, past its own job's order.
+                for dependency in &op.dependencies {
+                    activity = activity.with_predecessor(dependency);
+                }
                 // An outsourced operation holds nothing here: it takes its
                 // lead time from when the job reaches it, whatever the hour.
                 if let Some((_, lead_ms)) = outsourced(request, op) {
@@ -168,6 +186,9 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         .with_duration(ActivityDuration::fixed(lead_ms));
                     if let Some(at) = op_release {
                         away = away.with_release_time(at);
+                    }
+                    for dependency in &op.dependencies {
+                        away = away.with_predecessor(dependency);
                     }
                     task = task.with_activity(away);
                     continue;
@@ -188,6 +209,18 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                                 op.id,
                                 req.candidates.join(", "),
                                 job.target_site_id.as_deref().unwrap_or_default()
+                            ),
+                        ));
+                        continue;
+                    };
+                    let Some(candidates) = crew_equipment(crew, req, candidates) else {
+                        unfilled.push((
+                            op.id.clone(),
+                            format!(
+                                "Operation {} needs one of {}, none of which its crew {} is assigned; scheduled without it",
+                                op.id,
+                                req.candidates.join(", "),
+                                crew.map(|c| c.id.as_str()).unwrap_or_default()
                             ),
                         ));
                         continue;
@@ -568,6 +601,31 @@ fn on_target_site(
     (kept.is_empty() == req.candidates.is_empty()).then_some(kept)
 }
 
+/// The equipment `candidates` (already kept to the job's site) that the
+/// operation's crew is assigned, when the crew is assigned any: a crew works
+/// its own equipment. No candidates read as «any equipment», so they become
+/// the crew's. `None` when the crew is assigned none of them.
+fn crew_equipment(
+    crew: Option<&crate::Crew>,
+    req: &crate::ResourceRequirement,
+    candidates: Vec<String>,
+) -> Option<Vec<String>> {
+    let assigned = match crew {
+        Some(c) if req.resource_type == ResourceType::Equipment && !c.equipment_ids.is_empty() => {
+            &c.equipment_ids
+        }
+        _ => return Some(candidates),
+    };
+    if candidates.is_empty() {
+        return Some(assigned.clone());
+    }
+    let kept: Vec<String> = candidates
+        .into_iter()
+        .filter(|e| assigned.contains(e))
+        .collect();
+    (!kept.is_empty()).then_some(kept)
+}
+
 /// The operation types a worker is qualified for, as skills: proficient (a
 /// skill-matrix entry above zero) and, with a certification matrix,
 /// certified at the schedule start.
@@ -752,6 +810,77 @@ mod tests {
         let activity = only_activity(&adapted);
         assert_eq!(worker_candidates(activity), vec![Vec::<String>::new()]);
         assert_eq!(activity.duration_on(["EQP", "W1"]).process_ms, 60_000);
+    }
+
+    fn equipment_lists(activity: &Activity) -> Vec<Vec<String>> {
+        activity
+            .resource_requirements
+            .iter()
+            .filter(|r| r.resource_type == "Equipment")
+            .map(|r| r.candidates.clone())
+            .collect()
+    }
+
+    fn led_crew() -> Crew {
+        Crew::new("TEAM", "Team").with_worker("W1", TeamRole::Leader)
+    }
+
+    #[test]
+    fn a_crew_works_only_the_equipment_it_is_assigned() {
+        let mut request = crew_request(led_crew().with_equipment("EQP2"));
+        request.resources.push(Resource::equipment("EQP2"));
+        request.jobs[0].operations[0].required_resources[0].candidates =
+            vec!["EQP".to_string(), "EQP2".to_string()];
+        let adapted = to_problem(&request);
+        assert_eq!(
+            equipment_lists(only_activity(&adapted)),
+            vec![vec!["EQP2".to_string()]]
+        );
+        assert!(adapted.unfilled.is_empty());
+
+        // «Any equipment» becomes the crew's.
+        request.jobs[0].operations[0].required_resources[0]
+            .candidates
+            .clear();
+        let adapted = to_problem(&request);
+        assert_eq!(
+            equipment_lists(only_activity(&adapted)),
+            vec![vec!["EQP2".to_string()]]
+        );
+
+        // None of the operation's equipment is the crew's: reported, and
+        // scheduled without it.
+        let adapted = to_problem(&crew_request(led_crew().with_equipment("EQP2")));
+        assert!(equipment_lists(only_activity(&adapted)).is_empty());
+        assert_eq!(adapted.unfilled.len(), 1);
+        assert!(
+            adapted.unfilled[0].1.contains("crew TEAM"),
+            "{}",
+            adapted.unfilled[0].1
+        );
+    }
+
+    #[test]
+    fn a_crew_not_assigned_the_operations_type_does_not_take_it() {
+        let adapted = to_problem(&crew_request(led_crew().with_operation_type("painting")));
+        // The operation's own worker requirement, not the crew's members.
+        assert_eq!(
+            worker_candidates(only_activity(&adapted)),
+            vec![Vec::<String>::new()]
+        );
+        assert_eq!(adapted.unfilled.len(), 1);
+        assert!(
+            adapted.unfilled[0].1.contains("assembly"),
+            "{}",
+            adapted.unfilled[0].1
+        );
+
+        let adapted = to_problem(&crew_request(led_crew().with_operation_type("assembly")));
+        assert_eq!(
+            worker_candidates(only_activity(&adapted)),
+            vec![vec!["W1".to_string()]]
+        );
+        assert!(adapted.unfilled.is_empty());
     }
 
     fn sited_request(target: &str) -> ScheduleRequest {

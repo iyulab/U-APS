@@ -358,6 +358,10 @@ pub struct Operation {
     /// 일일 작업시간 제약 (MES BeginWorkTime/EndWorkTime 대응)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub daily_work_window: Option<DailyWorkWindow>,
+    /// 선행 공정 ID — 이 공정은 나열한 공정이 모두 끝난 뒤 시작한다(다른 작업의 공정도 된다).
+    /// 같은 작업 안의 순서(`sequence`)는 따로 적지 않아도 지켜진다.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<String>,
 }
 
 fn default_requires_operator() -> bool {
@@ -384,7 +388,19 @@ impl Operation {
             time_window: None,
             pert_duration: None,
             daily_work_window: None,
+            dependencies: Vec::new(),
         }
+    }
+
+    /// Builder: 선행 공정 추가 — 나열한 공정이 모두 끝난 뒤 시작한다.
+    pub fn with_dependencies<I, S>(mut self, operation_ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.dependencies
+            .extend(operation_ids.into_iter().map(Into::into));
+        self
     }
 
     /// Builder: 작업 유형 설정 (스킬 매트릭스 매핑용)

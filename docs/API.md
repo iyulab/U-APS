@@ -40,6 +40,7 @@ let op = Operation::new("op-001", "job-001", 1)
 - `is_splittable: bool` - 분할 가능 여부
 - `split_config: Option<SplitConfig>` - 분할 설정
 - `overlap_config: Option<OverlapConfig>` - 중첩 설정
+- `dependencies: Vec<String>` - 선행 공정 ID(다른 작업의 공정도) — 모두 끝난 뒤 시작한다
 
 ### Resource
 자원 (설비, 작업자)

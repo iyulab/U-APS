@@ -465,20 +465,10 @@ fn g15_reschedule_machine_breakdown() {
 /// SDK fields the engine reads past today (CHANGELOG «Known limitations»),
 /// each with what the scheduler lacks. Removing an entry makes the guard count
 /// that field again. Matched as a path suffix.
-const KNOWN_GAPS: &[(&str, &str)] = &[
-    (
-        ".dependencies",
-        "cross-operation predecessors: the engine orders a job's operations by sequence only",
-    ),
-    (
-        "].is_splittable",
-        "job-level splitting: the engine splits operations, not jobs",
-    ),
-    (
-        ".assigned_equipment_ids",
-        "crew-to-equipment assignment: the engine's crews carry operation types only",
-    ),
-];
+const KNOWN_GAPS: &[(&str, &str)] = &[(
+    "].is_splittable",
+    "job-level splitting: the engine splits operations, not jobs",
+)];
 
 /// The request the C# SDK writes (pinned by the SDK's
 /// `RequestWireContractTests`), read by the engine section by section so a

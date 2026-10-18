@@ -91,7 +91,8 @@ impl TeamMember {
 /// 작업 팀
 ///
 /// Wire shape (the C# SDK's): `member_ids` + `leader_id` for the members,
-/// `assigned_operation_types` for [`Crew::operation_types`]; the remaining
+/// `assigned_operation_types` for [`Crew::operation_types`],
+/// `assigned_equipment_ids` for [`Crew::equipment_ids`]; the remaining
 /// fields are optional with [`Crew::new`]'s defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "CrewWire", into = "CrewWire")]
@@ -110,8 +111,10 @@ pub struct Crew {
     pub min_members: usize,
     /// 최대 인원
     pub max_members: usize,
-    /// 담당 공정 유형
+    /// 담당 공정 유형 (비어 있으면 모든 유형)
     pub operation_types: Vec<String>,
+    /// 담당 설비 (비어 있으면 모든 설비) — 이 팀이 맡은 공정은 이 설비에서만 한다
+    pub equipment_ids: Vec<String>,
     /// 활성화 여부
     pub is_active: bool,
     /// 운영 캘린더 ID (교대 근무 시간 정의)
@@ -129,6 +132,8 @@ struct CrewWire {
     leader_id: Option<String>,
     #[serde(default)]
     assigned_operation_types: Vec<String>,
+    #[serde(default)]
+    assigned_equipment_ids: Vec<String>,
     /// Read for the manager's shift assignment (see [`CrewManager`]); a crew
     /// carries no shift itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,6 +191,7 @@ impl From<CrewWire> for Crew {
             min_members: w.min_members,
             max_members: w.max_members,
             operation_types: w.assigned_operation_types,
+            equipment_ids: w.assigned_equipment_ids,
             is_active: w.is_active,
             calendar_id: w.calendar_id,
         }
@@ -201,6 +207,7 @@ impl From<Crew> for CrewWire {
             member_ids: c.members.into_iter().map(|m| m.worker_id).collect(),
             leader_id,
             assigned_operation_types: c.operation_types,
+            assigned_equipment_ids: c.equipment_ids,
             shift_id: None,
             min_members: c.min_members,
             max_members: c.max_members,
@@ -224,6 +231,7 @@ impl Crew {
             min_members: 1,
             max_members: 10,
             operation_types: Vec::new(),
+            equipment_ids: Vec::new(),
             is_active: true,
             calendar_id: None,
         }
@@ -257,6 +265,12 @@ impl Crew {
     /// 담당 공정 유형 추가
     pub fn with_operation_type(mut self, op_type: impl Into<String>) -> Self {
         self.operation_types.push(op_type.into());
+        self
+    }
+
+    /// 담당 설비 추가 — 이 팀이 맡은 공정은 담당 설비에서만 한다
+    pub fn with_equipment(mut self, equipment_id: impl Into<String>) -> Self {
+        self.equipment_ids.push(equipment_id.into());
         self
     }
 
@@ -323,6 +337,11 @@ impl Crew {
     /// 특정 공정 유형을 담당하는지 확인
     pub fn handles_operation_type(&self, op_type: &str) -> bool {
         self.operation_types.is_empty() || self.operation_types.iter().any(|t| t == op_type)
+    }
+
+    /// 특정 설비를 담당하는지 확인
+    pub fn handles_equipment(&self, equipment_id: &str) -> bool {
+        self.equipment_ids.is_empty() || self.equipment_ids.iter().any(|e| e == equipment_id)
     }
 
     /// 멤버 ID 목록 반환

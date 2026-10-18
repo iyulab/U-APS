@@ -4,7 +4,7 @@
 
 use crate::error::{ErrorCode, Result, UapsError};
 use crate::models::{Job, Operation, Resource};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// 검증 결과
 #[derive(Debug, Clone, Default)]
@@ -249,14 +249,29 @@ impl Validator {
 
     /// 참조 무결성 검증
     pub fn validate_references(
-        _jobs: &[Job],
+        jobs: &[Job],
         operations: &[Operation],
         resources: &[Resource],
         result: &mut ValidationResult,
     ) {
         let resource_ids: HashSet<&str> = resources.iter().map(|r| r.id.as_str()).collect();
+        let operation_ids: HashSet<&str> = operations.iter().map(|o| o.id.as_str()).collect();
 
         for op in operations {
+            for dependency in &op.dependencies {
+                if !operation_ids.contains(dependency.as_str()) {
+                    result.add_error(
+                        UapsError::new(
+                            ErrorCode::InvalidReference,
+                            format!(
+                                "Operation {} depends on unknown operation: {}",
+                                op.id, dependency
+                            ),
+                        )
+                        .with_entity(&op.id),
+                    );
+                }
+            }
             for req in &op.required_resources {
                 for candidate in &req.candidates {
                     if !resource_ids.contains(candidate.as_str()) {
@@ -274,7 +289,77 @@ impl Validator {
                 }
             }
         }
+
+        if let Some(waiting) = dependency_loop(jobs) {
+            result.add_error(
+                UapsError::new(
+                    ErrorCode::InvalidInput,
+                    format!(
+                        "Operations {} wait on each other through their dependencies and job order, so none of them can start",
+                        waiting.join(", ")
+                    ),
+                )
+                .with_entity(&waiting[0]),
+            );
+        }
     }
+}
+
+/// The operations a loop of waits keeps from ever starting — each waits for
+/// the operations it names in `dependencies` and for the one before it in its
+/// job (`sequence` order) — or `None` when every operation can start.
+/// Dependencies on unknown operations are left to the reference check.
+///
+/// Kahn (1962): repeatedly take an operation nothing it waits for is left
+/// before; what remains is on a loop or after one. O(operations + waits).
+fn dependency_loop(jobs: &[Job]) -> Option<Vec<String>> {
+    let mut waits_for: HashMap<&str, Vec<&str>> = HashMap::new();
+    for job in jobs {
+        let mut ordered: Vec<&Operation> = job.operations.iter().collect();
+        ordered.sort_by_key(|o| o.sequence);
+        for (k, op) in ordered.iter().enumerate() {
+            let entry = waits_for.entry(op.id.as_str()).or_default();
+            if k > 0 {
+                entry.push(ordered[k - 1].id.as_str());
+            }
+            entry.extend(op.dependencies.iter().map(String::as_str));
+        }
+    }
+    let mut left: HashMap<&str, usize> = HashMap::new();
+    let mut successors: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (&op, preds) in &waits_for {
+        let known: Vec<&str> = preds
+            .iter()
+            .copied()
+            .filter(|p| waits_for.contains_key(p))
+            .collect();
+        left.insert(op, known.len());
+        for p in known {
+            successors.entry(p).or_default().push(op);
+        }
+    }
+    let mut free: Vec<&str> = left
+        .iter()
+        .filter(|(_, &n)| n == 0)
+        .map(|(&op, _)| op)
+        .collect();
+    while let Some(op) = free.pop() {
+        left.remove(op);
+        for &next in successors.get(op).into_iter().flatten() {
+            if let Some(n) = left.get_mut(next) {
+                *n -= 1;
+                if *n == 0 {
+                    free.push(next);
+                }
+            }
+        }
+    }
+    if left.is_empty() {
+        return None;
+    }
+    let mut waiting: Vec<String> = left.into_keys().map(str::to_string).collect();
+    waiting.sort();
+    Some(waiting)
 }
 
 /// 시간 범위 검증

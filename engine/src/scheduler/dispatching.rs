@@ -763,6 +763,7 @@ mod tests {
                 time_window: None,
                 pert_duration: None,
                 daily_work_window: None,
+                dependencies: vec![],
             }],
             target_site_id: None,
         }
