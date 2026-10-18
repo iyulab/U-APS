@@ -111,11 +111,11 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | Algorithm | Type | Best For |
 |-----------|------|----------|
 | **Simple** | Dispatching rule | Fast baseline, small problems |
-| **GeneticAlgorithm** | Metaheuristic | Medium problems (30-200 ops) |
-| **Production** | GA + extensions | Real manufacturing with setup/split/overlap |
-| **Dynamic** | Time-fence | Rescheduling with frozen horizons |
+| **GeneticAlgorithm** | Search over the dispatching order (random keys) | Better than Simple when there is time to search; keeps everything Simple keeps |
+| **Production** | Search (as GeneticAlgorithm) | The engine's default algorithm; its own budget (`ProductionConfig.ga_params`) |
+| **Dynamic** | Search (as GeneticAlgorithm) | Its own budget (`DynamicSchedulerConfig`); pegged materials are release times for every algorithm |
 | **CpSat** | Branch and bound (own search, not OR-Tools CP-SAT) | Small problems — optimal when the search finishes within the time limit |
-| **Hybrid** | GA + SA | Large problems needing escape from local optima |
+| **Hybrid** | CpSat, then GeneticAlgorithm | Keeps whichever schedule breaks the request less, then the shorter |
 | **Auto** | Adaptive | Selects algorithm based on problem characteristics |
 
 ### Dispatching Rules

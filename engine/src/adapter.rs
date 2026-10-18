@@ -5,8 +5,8 @@
 //! activities, equipment and workers as typed resources, calendars as working
 //! windows, set-up matrices as transition matrices, an outsourced operation
 //! as time of its own — and names what nothing can fill ([`Adapted::unfilled`]).
-//! A request's pegging engine is not read here: the dispatching scheduler
-//! never read it (the dynamic scheduler does).
+//! A request's pegging engine gives each operation the time its pegged
+//! materials are available, as a release time like a material's arrival.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -122,11 +122,17 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                 // manager when the job reaches it, and waits for the latest
                 // to arrive. The manager does not draw stock down, so the
                 // arrival is the same whenever it is asked.
+                let pegged = request
+                    .pegging_engine
+                    .as_ref()
+                    .map(|p| p.get_operation_material_availability(&op.id))
+                    .filter(|&at| at > job_ready_ms(request, job));
                 let arrival = material_delays(request, op, job_ready_ms(request, job))
                     .filter_map(|d| match d {
                         MaterialDelay::Until { at_ms, .. } => Some(at_ms),
                         MaterialDelay::Short { .. } => None,
                     })
+                    .chain(pegged)
                     .max();
                 let mut op_release = None;
                 if let Some(at) = arrival {

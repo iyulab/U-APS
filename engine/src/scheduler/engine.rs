@@ -16,10 +16,10 @@ use crate::models::{
 use crate::scheduler::{
     analytics::{AnalyticsConfig, AnalyticsEngine, AnalyticsReport},
     dispatching::DispatchingConfig,
-    dynamic::{DynamicScheduler, DynamicSchedulerConfig},
+    dynamic::DynamicSchedulerConfig,
     kpi::{KpiCalculator, ScheduleKpi},
     pegging::PeggingEngine,
-    production::{ProductionConfig, ProductionScheduler},
+    production::ProductionConfig,
     simple::SimpleScheduler,
     Schedule, ScheduleRequest,
 };
@@ -39,9 +39,10 @@ pub enum SchedulingAlgorithm {
     Simple,
     /// 유전 알고리즘
     GeneticAlgorithm,
-    /// 생산 스케줄러 (Setup Matrix, Campaign 등)
+    /// 유전 알고리즘과 같은 탐색 — 예산은 `ProductionConfig.ga_params` (엔진 기본값)
     Production,
-    /// 동적 스케줄러 (Time Fence, Rescheduling, Pegging)
+    /// 유전 알고리즘과 같은 탐색 — 예산은 `DynamicSchedulerConfig` 의 것.
+    /// 페깅된 자재 가용 시각은 모든 알고리즘에서 릴리스 시각이다
     Dynamic,
     /// CP-SAT 제약 프로그래밍 솔버
     CpSat,
@@ -503,15 +504,20 @@ impl SchedulingEngine {
         );
     }
 
-    /// The GA: a search over the default scheduler's order, or — for a
-    /// request that splits or overlaps operations — this engine's own GA.
+    /// A search over the default scheduler's order within `params`' budget,
+    /// or — for a request that splits or overlaps operations — this engine's
+    /// own GA. The genetic algorithm, Production and Dynamic all run here:
+    /// each differed from the others only in steps that left the schedule as
+    /// the GA made it (Production's campaign order, which the GA re-sorted)
+    /// or broke it (Dynamic's shift of each assignment to its material
+    /// arrival, which now reaches every algorithm as a release time).
     fn run_ga(
         &mut self,
         jobs: &[Job],
         resources: &[Resource],
         start_time_ms: i64,
+        params: GaParams,
     ) -> Result<Schedule> {
-        let params = self.effective_ga_params();
         // TODO(upstream: lot splitting and overlap on u-schedule —
         // ISSUE-u-aps-20261018-algorithm-paths-ignore-requirements):
         // only this engine's own GA splits an operation across
@@ -528,9 +534,12 @@ impl SchedulingEngine {
         }
         self.log(
             LogLevel::Warn,
-            "GeneticAlgorithm splits or overlaps operations with its own decoder, \
-             which holds one machine per operation: worker requirements, calendars \
-             and release times are not applied",
+            &format!(
+                "{:?} splits or overlaps operations with the previous genetic algorithm, \
+                 which holds one machine per operation: worker requirements, calendars \
+                 and release times are not applied",
+                self.config.algorithm
+            ),
             None,
         );
         let operators = GeneticOperators::default();
@@ -556,97 +565,28 @@ impl SchedulingEngine {
 
             SchedulingAlgorithm::GeneticAlgorithm => {
                 self.log(LogLevel::Debug, "Using GA scheduler", None);
-                self.warn_unsupported_extensions(&[
-                    ("calendars", !self.config.calendars.is_empty()),
-                    ("skill_matrix", self.config.skill_matrix.is_some()),
-                    (
-                        "worker_time_override",
-                        self.config.worker_time_override.is_some(),
-                    ),
-                    (
-                        "dispatching_config",
-                        self.config.dispatching_config.is_some(),
-                    ),
-                    ("material_manager", self.config.material_manager.is_some()),
-                    (
-                        "certification_matrix",
-                        self.config.certification_matrix.is_some(),
-                    ),
-                    ("crew_manager", self.config.crew_manager.is_some()),
-                    ("pegging_engine", self.config.pegging_engine.is_some()),
-                    (
-                        "outsourcing_manager",
-                        self.config.outsourcing_manager.is_some(),
-                    ),
-                ]);
-                self.run_ga(jobs, resources, start_time_ms)
+                let params = self.effective_ga_params();
+                self.run_ga(jobs, resources, start_time_ms, params)
             }
 
             SchedulingAlgorithm::Production => {
                 self.log(LogLevel::Debug, "Using Production scheduler", None);
-                self.warn_unsupported_extensions(&[
-                    ("calendars", !self.config.calendars.is_empty()),
-                    ("skill_matrix", self.config.skill_matrix.is_some()),
-                    (
-                        "worker_time_override",
-                        self.config.worker_time_override.is_some(),
-                    ),
-                    (
-                        "dispatching_config",
-                        self.config.dispatching_config.is_some(),
-                    ),
-                    ("material_manager", self.config.material_manager.is_some()),
-                    (
-                        "certification_matrix",
-                        self.config.certification_matrix.is_some(),
-                    ),
-                    ("crew_manager", self.config.crew_manager.is_some()),
-                    ("pegging_engine", self.config.pegging_engine.is_some()),
-                    (
-                        "outsourcing_manager",
-                        self.config.outsourcing_manager.is_some(),
-                    ),
-                ]);
-                let config = self.effective_production_config();
-                let scheduler = ProductionScheduler::new(config)
-                    .with_setup_matrices(self.config.setup_matrices.clone())
-                    .with_site_transitions(self.config.site_transitions.clone());
-                let result = scheduler.schedule(jobs, resources, start_time_ms);
-                Ok(result.schedule)
+                let params = self.effective_production_config().ga_params;
+                self.run_ga(jobs, resources, start_time_ms, params)
             }
 
             SchedulingAlgorithm::Dynamic => {
                 self.log(LogLevel::Debug, "Using Dynamic scheduler", None);
-                self.warn_unsupported_extensions(&[
-                    ("calendars", !self.config.calendars.is_empty()),
-                    ("skill_matrix", self.config.skill_matrix.is_some()),
-                    (
-                        "worker_time_override",
-                        self.config.worker_time_override.is_some(),
-                    ),
-                    (
-                        "dispatching_config",
-                        self.config.dispatching_config.is_some(),
-                    ),
-                    ("material_manager", self.config.material_manager.is_some()),
-                    (
-                        "certification_matrix",
-                        self.config.certification_matrix.is_some(),
-                    ),
-                    ("crew_manager", self.config.crew_manager.is_some()),
-                    (
-                        "outsourcing_manager",
-                        self.config.outsourcing_manager.is_some(),
-                    ),
-                ]);
-                let config = self.config.dynamic_config.clone().unwrap_or_default();
-                let mut scheduler = DynamicScheduler::new(config)
-                    .with_setup_matrices(self.config.setup_matrices.clone());
-                if let Some(engine) = self.config.pegging_engine.clone() {
-                    scheduler = scheduler.with_pegging_engine(engine);
+                let mut params = self
+                    .config
+                    .dynamic_config
+                    .as_ref()
+                    .map(|c| c.production_config.ga_params.clone())
+                    .unwrap_or_default();
+                if params.time_limit_ms.is_none() {
+                    params.time_limit_ms = self.config.timeout_ms.map(|ms| ms as i64);
                 }
-                let result = scheduler.schedule(jobs, resources, start_time_ms);
-                Ok(result.schedule)
+                self.run_ga(jobs, resources, start_time_ms, params)
             }
 
             SchedulingAlgorithm::CpSat => {
@@ -710,29 +650,6 @@ impl SchedulingEngine {
 
             SchedulingAlgorithm::Hybrid => {
                 self.log(LogLevel::Info, "Hybrid scheduling: CP-SAT → GA", None);
-                self.warn_unsupported_extensions(&[
-                    ("calendars", !self.config.calendars.is_empty()),
-                    ("skill_matrix", self.config.skill_matrix.is_some()),
-                    (
-                        "worker_time_override",
-                        self.config.worker_time_override.is_some(),
-                    ),
-                    (
-                        "dispatching_config",
-                        self.config.dispatching_config.is_some(),
-                    ),
-                    ("material_manager", self.config.material_manager.is_some()),
-                    (
-                        "certification_matrix",
-                        self.config.certification_matrix.is_some(),
-                    ),
-                    ("crew_manager", self.config.crew_manager.is_some()),
-                    ("pegging_engine", self.config.pegging_engine.is_some()),
-                    (
-                        "outsourcing_manager",
-                        self.config.outsourcing_manager.is_some(),
-                    ),
-                ]);
 
                 // Phase 1: CP-SAT with short time limit
                 let cpsat_config = self.effective_cpsat_config();
@@ -747,7 +664,8 @@ impl SchedulingEngine {
                 );
 
                 // Phase 2: the GA
-                let ga_schedule = self.run_ga(jobs, resources, start_time_ms)?;
+                let params = self.effective_ga_params();
+                let ga_schedule = self.run_ga(jobs, resources, start_time_ms, params)?;
 
                 let final_makespan = ga_schedule.makespan_ms;
                 self.log(
@@ -1246,27 +1164,33 @@ mod tests {
             job_id: "J1".into(),
         });
 
-        let config = EngineConfig {
-            algorithm: SchedulingAlgorithm::Dynamic,
-            pegging_engine: Some(pegging_engine),
-            ..Default::default()
-        };
-        let mut engine = SchedulingEngine::new(config);
-        let result = engine.schedule(&jobs, &resources, 0).unwrap();
-
-        // 자재가 50초 후에나 도착하므로, 페깅이 실제로 적용됐다면 배정 시작시각이
-        // 0ms일 수 없다 — 배선이 빠져 있었다면 이 검증 없이 0ms로 배정됐을 것.
-        let assignment = result
-            .schedule
-            .assignments
-            .iter()
-            .find(|a| a.operation_id == "J1-O1")
-            .expect("J1-O1 should be assigned");
-        assert!(
-            assignment.start_ms >= 50_000,
-            "material-constrained operation should be delayed until supply arrives, got start_ms={}",
-            assignment.start_ms
-        );
+        // The pegged material arrives at 50 s: every algorithm that places
+        // on the default scheduler waits for it (a release time).
+        for algorithm in [
+            SchedulingAlgorithm::Simple,
+            SchedulingAlgorithm::GeneticAlgorithm,
+            SchedulingAlgorithm::Dynamic,
+        ] {
+            let config = EngineConfig {
+                algorithm,
+                pegging_engine: Some(pegging_engine.clone()),
+                ga_params: Some(GaParams {
+                    max_generations: 5,
+                    ..GaParams::default()
+                }),
+                ..Default::default()
+            };
+            let mut engine = SchedulingEngine::new(config);
+            let result = engine.schedule(&jobs, &resources, 0).unwrap();
+            let assignment = result
+                .schedule
+                .assignments
+                .iter()
+                .find(|a| a.operation_id == "J1-O1")
+                .expect("J1-O1 should be assigned");
+            assert_eq!(assignment.start_ms, 50_000, "{algorithm:?}");
+            assert!(result.schedule.violations.is_empty(), "{algorithm:?}");
+        }
     }
 
     #[test]
@@ -1282,24 +1206,32 @@ mod tests {
     // 회귀 가드: "설정됨-그러나-무시됨" 확장 필드 경고 로그.
 
     #[test]
-    fn test_ga_algorithm_warns_when_unsupported_field_set() {
-        let (jobs, resources) = create_test_scenario();
-        let config = EngineConfig {
-            algorithm: SchedulingAlgorithm::GeneticAlgorithm,
-            skill_matrix: Some(SkillMatrix::new()),
-            ..Default::default()
-        };
-        let mut engine = SchedulingEngine::new(config);
-        let result = engine.schedule(&jobs, &resources, 0).unwrap();
-
-        assert!(
-            result
-                .logs
-                .iter()
-                .any(|l| l.level == "WARN" && l.message.contains("skill_matrix")),
-            "expected a WARN log naming skill_matrix as unsupported, got: {:?}",
-            result.logs
-        );
+    fn the_searching_algorithms_read_the_extension_fields_without_warning() {
+        // The GA, Production and Dynamic search the default scheduler's
+        // order, which reads the skill matrix: nothing to warn about.
+        for algorithm in [
+            SchedulingAlgorithm::GeneticAlgorithm,
+            SchedulingAlgorithm::Production,
+            SchedulingAlgorithm::Dynamic,
+        ] {
+            let (jobs, resources) = create_test_scenario();
+            let config = EngineConfig {
+                algorithm,
+                skill_matrix: Some(SkillMatrix::new()),
+                ga_params: Some(GaParams {
+                    max_generations: 5,
+                    ..GaParams::default()
+                }),
+                ..Default::default()
+            };
+            let mut engine = SchedulingEngine::new(config);
+            let result = engine.schedule(&jobs, &resources, 0).unwrap();
+            assert!(
+                !result.logs.iter().any(|l| l.level == "WARN"),
+                "{algorithm:?}: {:?}",
+                result.logs
+            );
+        }
     }
 
     #[test]

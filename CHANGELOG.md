@@ -36,6 +36,27 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- **`Production` and `Dynamic` now search the default scheduler's order, as
+  `GeneticAlgorithm` does** (each within its own budget:
+  `ProductionConfig.ga_params`, `DynamicSchedulerConfig`'s), so their
+  schedules keep worker requirements, calendars, release times and
+  everything else the default scheduler keeps. Both ran the previous genetic
+  algorithm, which holds one machine per operation: on 100 random requests
+  78 of their schedules broke the request (reported since 1.5.0); on 30 now,
+  none. Production's campaign grouping never reached the schedule (the
+  genetic algorithm re-sorted the jobs) and still does not; Dynamic's shift
+  of each assignment to its pegged material's arrival moved assignments past
+  each other and their jobs' order, and is replaced by the next item. A
+  request that splits or overlaps operations still goes to the previous
+  genetic algorithm with any of the three, with the same warning.
+- **A pegging engine's material availability is a release time for every
+  algorithm**: an operation waits for its pegged materials, as for a
+  material manager's arrival. Only `Dynamic` read it before, and only after
+  placing.
+- The genetic algorithm, `Production` and `Dynamic` no longer log that they
+  ignore calendars, the skill matrix, materials, crews and the other
+  extension fields: they have read them since they searched the default
+  scheduler's order.
 - **A schedule's tasks are now the stretches each operation actually works
   in.** An operation pauses wherever any resource it holds, or its daily
   work window, does not work, and its assignment runs from its start to its

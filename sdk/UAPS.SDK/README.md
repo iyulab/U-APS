@@ -52,11 +52,11 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | Algorithm | Type | Best for |
 |---|---|---|
 | `Simple` | Dispatching rule | Fast baseline, small problems |
-| `GeneticAlgorithm` | Metaheuristic | Medium problems (30–200 operations) |
-| `Production` | GA + extensions | Setup, split and overlap constraints |
-| `Dynamic` | Time-fence | Rescheduling with frozen horizons |
+| `GeneticAlgorithm` | Search over the dispatching order | Better than `Simple` when there is time to search |
+| `Production` | Search (as `GeneticAlgorithm`) | Its own search budget |
+| `Dynamic` | Search (as `GeneticAlgorithm`) | Its own search budget |
 | `CpSat` | Constraint programming | Exact solutions for small problems |
-| `Hybrid` | GA + SA | Large problems needing escape from local optima |
+| `Hybrid` | `CpSat`, then `GeneticAlgorithm` | Keeps the schedule that breaks the request less |
 | `Auto` | Adaptive | Selects based on problem characteristics |
 
 Dispatching rules: `FIFO`, `SPT`, `LPT`, `EDD`, `SLACK`, `CR`, `PRIORITY`,

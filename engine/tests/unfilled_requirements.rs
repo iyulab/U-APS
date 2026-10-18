@@ -80,8 +80,8 @@ fn an_operation_that_can_never_run_is_left_out_and_reported() {
 
 #[test]
 fn another_algorithm_says_where_its_schedule_breaks_the_request() {
-    // The dynamic scheduler holds one machine per operation: the worker the
-    // operation needs is left out — and the schedule now says so.
+    // An algorithm that holds one machine per operation leaves out the
+    // worker the operation needs — and the schedule says so.
     let job = Job::new("J1").with_operation(
         Operation::new("O1", "J1", 1)
             .with_time(0, 60_000, 0)
@@ -89,9 +89,14 @@ fn another_algorithm_says_where_its_schedule_breaks_the_request() {
             .with_workers(1),
     );
     let resources = vec![Resource::equipment("E1"), Resource::worker("W1")];
+    // CP-SAT holds one machine per operation: it does not book the worker.
     let mut engine = SchedulingEngine::new(EngineConfig {
-        algorithm: SchedulingAlgorithm::Dynamic,
+        algorithm: SchedulingAlgorithm::CpSat,
         validate_input: false,
+        cpsat_config: Some(CpSatConfig {
+            time_limit_ms: 1_000,
+            ..CpSatConfig::default()
+        }),
         ..EngineConfig::default()
     });
     let result = engine
