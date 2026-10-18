@@ -33,9 +33,6 @@ const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 /// general capability it needs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unsupported {
-    /// A release for one operation rather than the whole job (a material
-    /// arriving for a later operation).
-    ActivityRelease,
     /// An operation with no resource, which u-aps still places in time on
     /// the request's first calendar.
     TimeOnlyActivity,
@@ -130,21 +127,20 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
             for (i, op) in job.operations.iter().enumerate() {
                 // u-aps checks an operation's materials against the material
                 // manager when the job reaches it, and waits for the latest
-                // to arrive.
-                if request.material_manager.is_some() && op.has_material_requirements() {
+                // to arrive. The manager does not draw stock down, so the
+                // arrival is the same whenever it is asked.
+                let arrival = material_delays(request, op, job_ready_ms(request, job))
+                    .filter_map(|d| match d {
+                        MaterialDelay::Until { at_ms, .. } => Some(at_ms),
+                        MaterialDelay::Short { .. } => None,
+                    })
+                    .max();
+                let mut op_release = None;
+                if let Some(at) = arrival {
                     if i == 0 {
-                        let ready = job_ready_ms(request, job);
-                        let arrival = material_delays(request, op, ready)
-                            .filter_map(|d| match d {
-                                MaterialDelay::Until { at_ms, .. } => Some(at_ms),
-                                MaterialDelay::Short { .. } => None,
-                            })
-                            .max();
-                        if let Some(at) = arrival {
-                            release = Some(release.map_or(at, |r| r.max(at)));
-                        }
+                        release = Some(release.map_or(at, |r| r.max(at)));
                     } else {
-                        unsupported.insert(Unsupported::ActivityRelease);
+                        op_release = Some(at);
                     }
                 }
                 if op.required_resources.is_empty() {
@@ -179,6 +175,9 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     )
                     // u-aps splits every operation at its calendar's breaks.
                     .resumable();
+                if let Some(at) = op_release {
+                    activity = activity.with_release_time(at);
+                }
                 for req in &op.required_resources {
                     if crew.is_some() && req.resource_type == ResourceType::Worker {
                         continue;

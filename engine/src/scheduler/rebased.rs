@@ -82,36 +82,6 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         .collect();
 
     let mut schedule = Schedule::new();
-    // The first operation of each job may wait for its materials.
-    for job in &request.jobs {
-        if let Some(op) = job.operations.first() {
-            let ready = job_ready_ms(request, job);
-            let mut at = ready;
-            for delay in material_delays(request, op, ready) {
-                match delay {
-                    MaterialDelay::Until { material_id, at_ms } if at_ms > at => {
-                        schedule.add_violation(Violation::material_availability_violation(
-                            &op.id,
-                            &material_id,
-                            at_ms - at,
-                        ));
-                        at = at_ms;
-                    }
-                    MaterialDelay::Until { .. } => {}
-                    MaterialDelay::Short {
-                        material_id,
-                        required,
-                        available,
-                    } => schedule.add_violation(Violation::material_shortage_violation(
-                        &op.id,
-                        &material_id,
-                        required,
-                        available,
-                    )),
-                }
-            }
-        }
-    }
 
     // Placements in the order u-schedule made them, one operation at a time.
     let mut order: Vec<&str> = Vec::new();
@@ -126,8 +96,41 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
         .flat_map(|t| &t.activities)
         .map(|a| (a.id.as_str(), a))
         .collect();
+    // When each job reaches its next operation: its ready time, then the end
+    // of the operation before.
+    let mut reached: HashMap<&str, i64> = request
+        .jobs
+        .iter()
+        .map(|j| (j.id.as_str(), job_ready_ms(request, j)))
+        .collect();
     for op_id in order {
         let (job, op) = operations[op_id];
+        // An operation's materials, checked when the job reaches it: waiting
+        // for one that arrives later, or short of one.
+        let mut at = reached[job.id.as_str()];
+        for delay in material_delays(request, op, at) {
+            match delay {
+                MaterialDelay::Until { material_id, at_ms } if at_ms > at => {
+                    schedule.add_violation(Violation::material_availability_violation(
+                        &op.id,
+                        &material_id,
+                        at_ms - at,
+                    ));
+                    at = at_ms;
+                }
+                MaterialDelay::Until { .. } => {}
+                MaterialDelay::Short {
+                    material_id,
+                    required,
+                    available,
+                } => schedule.add_violation(Violation::material_shortage_violation(
+                    &op.id,
+                    &material_id,
+                    required,
+                    available,
+                )),
+            }
+        }
         let all: Vec<&u_schedule::models::Assignment> = placed
             .assignments
             .iter()
@@ -146,6 +149,7 @@ pub fn schedule(request: &ScheduleRequest) -> Result<Schedule, NotRebased> {
             })
             .collect();
         let (start, end) = (held[0].start_ms, held[0].end_ms);
+        reached.insert(job.id.as_str(), end);
         let setup = held.iter().map(|a| a.setup_ms).max().unwrap_or(0);
         for a in &held {
             let mut assignment =

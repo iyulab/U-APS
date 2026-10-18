@@ -28,6 +28,7 @@ struct Features {
     rule: bool,
     calendar: bool,
     switching: bool,
+    materials: bool,
 }
 
 impl Features {
@@ -42,6 +43,7 @@ impl Features {
         rule: true,
         calendar: true,
         switching: true,
+        materials: true,
     };
 }
 
@@ -107,6 +109,21 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
                         0,
                     )
                     .with_equipment(candidates);
+                if f.materials && rng.random_bool(0.4) {
+                    let mut need = MaterialRequirement::new(
+                        ["STEEL", "BOLT"][rng.random_range(0..2)],
+                        f64::from(rng.random_range(1..6)),
+                    );
+                    if rng.random_bool(0.5) {
+                        need = need.with_availability(
+                            chrono::DateTime::from_timestamp_millis(
+                                MONDAY + rng.random_range(0..6) * HOUR,
+                            )
+                            .expect("valid"),
+                        );
+                    }
+                    op = op.with_material(need);
+                }
                 if n_workers > 0 && rng.random_bool(0.5) {
                     op = if rng.random_bool(0.5) {
                         op.with_workers_load(1, [0.25, 0.5][rng.random_range(0..2)])
@@ -148,8 +165,18 @@ fn random_request(rng: &mut SmallRng, f: Features) -> ScheduleRequest {
             R::Cr,
             R::Wspt,
             R::Atc,
+            R::Mst,
+            R::Sro,
+            R::Winq,
+            R::Lpul,
         ];
         request = request.with_dispatching_rule(rules[rng.random_range(0..rules.len())]);
+    }
+    if f.materials {
+        let mut materials = MaterialManager::new();
+        materials.add_material(Material::new("STEEL", "Steel").with_stock(10.0));
+        materials.add_material(Material::new("BOLT", "Bolt").with_stock(2.0));
+        request = request.with_material_manager(materials);
     }
     if f.switching && rng.random_bool(0.5) {
         use DispatchingRuleName as R;
@@ -242,7 +269,7 @@ fn compare(f: Features, cases: usize) -> (usize, Vec<(usize, String)>, usize) {
 #[ignore = "measurement: run with --ignored --nocapture"]
 fn differences_by_feature() {
     let plain = Features::default();
-    let alone: [(&str, Features); 11] = [
+    let alone: [(&str, Features); 12] = [
         ("plain", plain),
         (
             "alternatives",
@@ -306,6 +333,13 @@ fn differences_by_feature() {
             "switching",
             Features {
                 switching: true,
+                ..plain
+            },
+        ),
+        (
+            "materials",
+            Features {
+                materials: true,
                 ..plain
             },
         ),
