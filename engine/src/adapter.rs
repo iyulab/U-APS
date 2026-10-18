@@ -37,8 +37,6 @@ pub enum Unsupported {
     /// Resources taken together: a robot that occupies its linked cell, a
     /// crew.
     ResourceBundle,
-    /// A set-up charged before a resource's first activity.
-    InitialSetup,
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
     ActivityRelease,
@@ -189,9 +187,10 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
 
     let mut transition_matrices = TransitionMatrixCollection::new();
     for matrix in request.setup_matrices.matrices() {
-        unsupported.insert(Unsupported::InitialSetup);
+        // u-aps charges the default before a resource's first job too.
         let mut m = TransitionMatrix::new(&matrix.resource_id, &matrix.resource_id)
-            .with_default(matrix.default_setup_ms);
+            .with_default(matrix.default_setup_ms)
+            .with_initial(matrix.default_setup_ms);
         for (from, to, ms) in matrix.entries() {
             m.set_transition(from, to, ms);
         }

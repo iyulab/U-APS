@@ -32,14 +32,12 @@
   "g04_setup_matrix": {
     "makespan_ms": {
       "u_aps": 185000,
-      "u_schedule": 175000
+      "u_schedule": 185000
     },
-    "placements_differing": 8,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "InitialSetup"
-    ]
+    "unsupported": []
   },
   "g05_alternative_efficiency": {
     "makespan_ms": {
