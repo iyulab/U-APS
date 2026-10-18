@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-18
+
 ### Changed
 
 - **The default scheduler (a request without `algorithm`, or with
