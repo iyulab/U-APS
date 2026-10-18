@@ -27,15 +27,9 @@ const CALENDAR_HORIZON_MS: i64 = 366 * 24 * 3_600_000;
 /// general capability it needs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Unsupported {
-    /// A processing time that depends on the resource chosen — resource
-    /// efficiency, worker proficiency, a per-worker time override, a crew's
-    /// efficiency.
-    ResourceDependentDuration,
     /// A resource used at less than its whole capacity (a worker's load
     /// factor).
     FractionalResourceUse,
-    /// Resources taken together as a team (a crew).
-    ResourceBundle,
     /// A release for one operation rather than the whole job (a material
     /// arriving for a later operation).
     ActivityRelease,
@@ -130,11 +124,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         }
                     }
                 }
-                if op.crew_id.is_some() {
-                    // A crew's efficiency scales the whole team's time.
-                    unsupported.insert(Unsupported::ResourceBundle);
-                    unsupported.insert(Unsupported::ResourceDependentDuration);
-                }
+                // u-aps takes an operational crew whole, in place of the
+                // operation's worker requirements.
+                let crew = op
+                    .crew_id
+                    .as_deref()
+                    .and_then(|id| request.crew_manager.as_ref()?.get_crew(id))
+                    .filter(|c| c.is_operational());
                 if op.outsourcing_config.is_some() {
                     unsupported.insert(Unsupported::SupplyPlanning);
                 }
@@ -157,7 +153,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     )
                     // u-aps splits every operation at its calendar's breaks.
                     .resumable();
+                if let Some(crew) = crew {
+                    activity = with_crew(activity, request, op, crew);
+                }
                 for req in &op.required_resources {
+                    if crew.is_some() && req.resource_type == ResourceType::Worker {
+                        continue;
+                    }
                     if req.load_factor < 1.0 {
                         unsupported.insert(Unsupported::FractionalResourceUse);
                     }
@@ -218,9 +220,7 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
 }
 
 /// The time of `op` on each resource `req` may take: an equipment's
-/// efficiency as a speed; for a worker, a time override for the operation
-/// type as a duration of its own, otherwise its proficiency × certification
-/// efficiency as a speed (u-aps' order: the override wins).
+/// efficiency as a speed, a worker's as [`with_worker_time`] reads it.
 fn with_timings(
     mut activity: Activity,
     request: &ScheduleRequest,
@@ -236,9 +236,6 @@ fn with_timings(
         .iter()
         .filter(|r| r.kind == kind)
         .filter(|r| req.candidates.is_empty() || req.candidates.contains(&r.id));
-    // u-aps reads a worker's figures under the operation type, or the
-    // operation id when it has none.
-    let op_type = op.operation_type.as_deref().unwrap_or(&op.id);
     for r in pool {
         match kind {
             ResourceKind::Equipment => {
@@ -247,36 +244,84 @@ fn with_timings(
                 }
             }
             ResourceKind::Worker => {
-                let time_override = request
-                    .worker_time_override
-                    .as_ref()
-                    .and_then(|o| o.get_override(&r.id, op_type));
-                if let Some(entry) = time_override {
-                    activity = activity.with_duration_on(
-                        &r.id,
-                        ActivityDuration::new(
-                            entry.setup_ms.unwrap_or(op.time.setup_ms),
-                            entry.process_ms.unwrap_or(op.time.process_ms),
-                            entry.wait_ms.unwrap_or(op.time.wait_ms),
-                        ),
-                    );
-                    continue;
-                }
-                let proficiency = request
-                    .skill_matrix
-                    .as_ref()
-                    .map_or(1.0, |m| m.get_proficiency(&r.id, op_type));
-                let certified = request.certification_matrix.as_ref().map_or(1.0, |m| {
-                    m.get_efficiency_modifier(&r.id, op_type, request.start_time_ms)
-                });
-                let speed = proficiency * certified;
-                if speed > 0.0 && (speed - 1.0).abs() > f64::EPSILON {
-                    activity = activity.with_speed_on(&r.id, speed);
-                }
+                activity = with_worker_time(activity, request, op, &r.id, 1.0);
             }
         }
     }
     activity
+}
+
+/// A worker's time on `op`, its speed scaled by `team_speed`: a time
+/// override for the operation type as a duration of its own (u-aps' order:
+/// the override wins), otherwise proficiency × certification efficiency as a
+/// speed. u-aps reads a worker's figures under the operation type, or the
+/// operation id when it has none.
+fn with_worker_time(
+    activity: Activity,
+    request: &ScheduleRequest,
+    op: &crate::Operation,
+    worker_id: &str,
+    team_speed: f64,
+) -> Activity {
+    let op_type = op.operation_type.as_deref().unwrap_or(&op.id);
+    let time_override = request
+        .worker_time_override
+        .as_ref()
+        .and_then(|o| o.get_override(worker_id, op_type));
+    if let Some(entry) = time_override {
+        return activity.with_duration_on(
+            worker_id,
+            ActivityDuration::new(
+                entry.setup_ms.unwrap_or(op.time.setup_ms),
+                entry.process_ms.unwrap_or(op.time.process_ms),
+                entry.wait_ms.unwrap_or(op.time.wait_ms),
+            ),
+        );
+    }
+    let proficiency = request
+        .skill_matrix
+        .as_ref()
+        .map_or(1.0, |m| m.get_proficiency(worker_id, op_type));
+    let certified = request.certification_matrix.as_ref().map_or(1.0, |m| {
+        m.get_efficiency_modifier(worker_id, op_type, request.start_time_ms)
+    });
+    let speed = proficiency * certified * team_speed;
+    if speed > 0.0 && (speed - 1.0).abs() > f64::EPSILON {
+        activity.with_speed_on(worker_id, speed)
+    } else {
+        activity
+    }
+}
+
+/// `crew` working `op`: every member held for the whole operation, the
+/// crew's efficiency a speed of the team. u-aps reads the first member as
+/// the operation's worker, so that member's own time carries the team's
+/// speed — the members always go together, so which one holds it does not
+/// change the time.
+fn with_crew(
+    mut activity: Activity,
+    request: &ScheduleRequest,
+    op: &crate::Operation,
+    crew: &crate::Crew,
+) -> Activity {
+    let mut held = BTreeSet::new();
+    for member in crew.members() {
+        if held.insert(member.worker_id.as_str()) {
+            activity = activity.with_requirement(
+                USRequirement::new("Worker").with_candidates(vec![member.worker_id.clone()]),
+            );
+        }
+    }
+    match crew.members().first() {
+        Some(first) => with_worker_time(
+            activity,
+            request,
+            op,
+            &first.worker_id,
+            crew.efficiency_modifier,
+        ),
+        None => activity,
+    }
 }
 
 fn add_rule(engine: RuleEngine, rule: DispatchingRuleName, weight: f64) -> RuleEngine {
@@ -342,4 +387,89 @@ fn windows(calendar: &Calendar, start_ms: i64) -> USCalendar {
         t = next;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Crew, CrewManager, Job, Operation, Resource, SkillMatrix, TeamRole};
+
+    fn crew_request(crew: Crew) -> ScheduleRequest {
+        let op = Operation::new("O1", "J1", 1)
+            .with_time(0, 60_000, 0)
+            .with_operation_type("assembly")
+            .with_equipment(vec!["EQP".to_string()])
+            .with_workers(1)
+            .with_crew("TEAM");
+        ScheduleRequest::new(
+            vec![Job::new("J1").with_operation(op)],
+            vec![
+                Resource::equipment("EQP"),
+                Resource::worker("W1"),
+                Resource::worker("W2"),
+                Resource::worker("W3"),
+            ],
+        )
+        .with_crew_manager(CrewManager::new().with_crew(crew))
+    }
+
+    fn only_activity(adapted: &Adapted) -> &Activity {
+        let problem = adapted.problem.as_ref().expect("problem is valid");
+        &problem.tasks()[0].activities[0]
+    }
+
+    fn worker_candidates(activity: &Activity) -> Vec<Vec<String>> {
+        activity
+            .resource_requirements
+            .iter()
+            .filter(|r| r.resource_type == "Worker")
+            .map(|r| r.candidates.clone())
+            .collect()
+    }
+
+    #[test]
+    fn an_operational_crew_replaces_the_worker_requirement() {
+        let crew = Crew::new("TEAM", "Team")
+            .with_efficiency(1.5)
+            .with_worker("W1", TeamRole::Leader)
+            .with_worker("W2", TeamRole::Member);
+        let adapted = to_problem(&crew_request(crew));
+        let activity = only_activity(&adapted);
+        assert_eq!(
+            worker_candidates(activity),
+            vec![vec!["W1".to_string()], vec!["W2".to_string()]]
+        );
+        assert_eq!(activity.duration_on(["EQP", "W1", "W2"]).process_ms, 40_000);
+        assert!(adapted.unsupported.is_empty());
+    }
+
+    #[test]
+    fn the_first_members_proficiency_and_the_crews_efficiency_multiply() {
+        let crew = Crew::new("TEAM", "Team")
+            .with_efficiency(1.5)
+            .with_worker("W1", TeamRole::Leader)
+            .with_worker("W2", TeamRole::Member);
+        let mut request = crew_request(crew);
+        request = request.with_skill_matrix(SkillMatrix::new().with_skill("W1", "assembly", 2.0));
+        let adapted = to_problem(&request);
+        assert_eq!(
+            only_activity(&adapted)
+                .duration_on(["EQP", "W1", "W2"])
+                .process_ms,
+            20_000
+        );
+    }
+
+    #[test]
+    fn a_crew_without_a_leader_leaves_the_worker_requirement() {
+        // u-aps: not operational, so the operation falls back to its workers.
+        let crew = Crew::new("TEAM", "Team")
+            .with_efficiency(1.5)
+            .with_worker("W1", TeamRole::Member)
+            .with_worker("W2", TeamRole::Member);
+        let adapted = to_problem(&crew_request(crew));
+        let activity = only_activity(&adapted);
+        assert_eq!(worker_candidates(activity), vec![Vec::<String>::new()]);
+        assert_eq!(activity.duration_on(["EQP", "W1"]).process_ms, 60_000);
+    }
 }

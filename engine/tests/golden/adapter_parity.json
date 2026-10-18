@@ -104,15 +104,12 @@
   "g11_crew": {
     "makespan_ms": {
       "u_aps": 40000,
-      "u_schedule": 60000
+      "u_schedule": 40000
     },
-    "placements_differing": 4,
-    "same_schedule": false,
+    "placements_differing": 0,
+    "same_schedule": true,
     "u_schedule_violations": 0,
-    "unsupported": [
-      "ResourceDependentDuration",
-      "ResourceBundle"
-    ]
+    "unsupported": []
   },
   "g12_multi_site": {
     "makespan_ms": {
