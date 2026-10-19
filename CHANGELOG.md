@@ -66,6 +66,12 @@ reports `generations`, `fitness` or `converged`.
 
 `OverlapConfig.transfer_batch_size` is not read (there is no quantity model).
 `CpSat` states neither splitting nor overlap and says so in its warning.
+Scheduling an operation that may be split tries several part counts, each
+with the parts placed one after another: with splitting allowed on every
+operation of a request of hundreds of jobs, one schedule takes tens of times
+as long, and `GeneticAlgorithm`, `Production` and `Dynamic` — which consider
+many schedules within their time limit — get through fewer generations. Allow
+splitting only where it pays, or lower `ga_params.max_generations`.
 
 ## [1.6.0] - 2026-10-18
 
