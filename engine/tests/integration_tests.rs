@@ -468,14 +468,16 @@ mod level6_ga_scheduler {
             ..Default::default()
         };
 
-        let scheduler = GaScheduler::new(params, GeneticOperators::default());
-        let result = scheduler.schedule(&jobs, &resources, 0);
+        let request = ScheduleRequest::new(jobs, resources);
+        let schedule = SimpleScheduler::new()
+            .search(&request, &params)
+            .expect("searches");
 
         // GA가 유효한 스케줄 생성
-        assert_eq!(result.schedule.assignments.len(), 2);
-        assert!(result.schedule.makespan_ms > 0);
+        assert_eq!(schedule.assignments.len(), 2);
+        assert!(schedule.makespan_ms > 0);
         // 병렬 처리 가능하므로 makespan <= 40_000
-        assert!(result.schedule.makespan_ms <= 70_000);
+        assert!(schedule.makespan_ms <= 70_000);
     }
 
     /// GA vs Simple 비교
@@ -512,11 +514,10 @@ mod level6_ga_scheduler {
             max_generations: 100,
             ..Default::default()
         };
-        let ga = GaScheduler::new(ga_params, GeneticOperators::default());
-        let ga_result = ga.schedule(&jobs, &resources, 0);
+        let ga_schedule = simple.search(&request, &ga_params).expect("searches");
 
-        // GA가 동등하거나 더 나은 결과
-        assert!(ga_result.schedule.makespan_ms <= simple_schedule.makespan_ms + 5_000);
+        // 탐색은 디스패칭보다 나쁘지 않다
+        assert!(ga_schedule.makespan_ms <= simple_schedule.makespan_ms);
     }
 
     /// Setup Matrix와 GA 통합
@@ -553,13 +554,14 @@ mod level6_ga_scheduler {
             max_generations: 50,
             ..Default::default()
         };
-        let scheduler = GaScheduler::new(params, GeneticOperators::default())
-            .with_setup_matrices(setup_matrices);
-        let result = scheduler.schedule(&jobs, &resources, 0);
+        let request = ScheduleRequest::new(jobs, resources).with_setup_matrices(setup_matrices);
+        let schedule = SimpleScheduler::new()
+            .search(&request, &params)
+            .expect("searches");
 
-        assert_eq!(result.schedule.assignments.len(), 3);
-        // GA가 setup time 최소화 시도
-        assert!(result.schedule.makespan_ms > 0);
+        assert_eq!(schedule.assignments.len(), 3);
+        // 탐색이 준비 시간을 줄이는 순서를 찾는다
+        assert!(schedule.makespan_ms > 0);
     }
 }
 
@@ -750,10 +752,9 @@ mod level8_scalability {
             max_generations: 30,
             ..Default::default()
         };
-        let ga = GaScheduler::new(ga_params, GeneticOperators::default());
-        let ga_result = ga.schedule(&jobs, &resources, 0);
+        let ga_schedule = simple.search(&request, &ga_params).expect("searches");
 
-        assert_eq!(ga_result.schedule.assignments.len(), 50);
+        assert_eq!(ga_schedule.assignments.len(), 50);
     }
 
     /// 복잡한 의존성 체인

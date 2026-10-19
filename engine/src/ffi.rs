@@ -4,7 +4,6 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-use crate::ga::GaParams;
 use crate::scheduler::dispatching::DispatchingConfig;
 use crate::scheduler::engine::{
     EngineConfig, PerformanceMetrics, SchedulingAlgorithm, SchedulingEngine,
@@ -16,6 +15,7 @@ use crate::scheduler::reschedule::{
     RescheduleResult, RescheduleStrategy, Rescheduler, ScheduleEvent,
 };
 use crate::validation::Validator;
+use crate::GaParams;
 use crate::{
     Calendar, MaterialManager, SetupMatrixCollection, SiteTransitions, SkillMatrix,
     WorkerTimeOverride,

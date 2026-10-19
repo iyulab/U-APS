@@ -2,9 +2,9 @@
 //!
 //! 목표: 100+ Jobs, 1분 이내 최적해
 
-use crate::ga::GaParams;
 use crate::models::{Job, Operation, Resource};
 use crate::scheduler::{production::ProductionConfig, SchedulingEngine};
+use crate::GaParams;
 use std::time::Instant;
 
 /// 성능 벤치마크 결과
@@ -152,9 +152,7 @@ pub fn benchmark_ga_50() -> PerformanceBenchmark {
         population_size: 50,
         max_generations: 100,
         elite_ratio: 0.1,
-        tournament_size: 3,
         convergence_generations: 20,
-        convergence_threshold: 0.001,
         time_limit_ms: None,
     };
 

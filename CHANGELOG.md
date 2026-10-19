@@ -52,6 +52,16 @@ frozen stretch of the time fence keeps the whole operation in place, the
 reported delay change compares each part with itself, and a processing-time
 change scales each part's `work_ms` along with its duration.
 
+### Removed
+
+The previous genetic scheduler (`GaScheduler`, its population and operator
+types, `Operation::create_splits`) is gone — no algorithm reaches it any more.
+`GaParams` stays as the parameters of the search over dispatching orders.
+`tournament_size` and `convergence_threshold` (never read by that search) are
+no longer fields of it; a request that still sends them is accepted. The
+benchmark runner measures `SimpleScheduler::search`, and its result no longer
+reports `generations`, `fitness` or `converged`.
+
 ### Known limitations
 
 `OverlapConfig.transfer_batch_size` is not read (there is no quantity model).

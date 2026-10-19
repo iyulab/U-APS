@@ -52,9 +52,9 @@ fn bench_simple_scheduler(c: &mut Criterion) {
     group.finish();
 }
 
-/// GaScheduler 벤치마크
+/// 디스패칭 탐색(`SimpleScheduler::search`) 벤치마크
 fn bench_ga_scheduler(c: &mut Criterion) {
-    let mut group = c.benchmark_group("GaScheduler");
+    let mut group = c.benchmark_group("DispatchSearch");
     group.sample_size(10); // GA는 시간이 오래 걸리므로 샘플 수 줄임
 
     // 소규모 테스트 (GA 특성상 시간이 오래 걸림)
@@ -68,16 +68,12 @@ fn bench_ga_scheduler(c: &mut Criterion) {
             max_generations: 30,
             ..Default::default()
         };
+        let request = ScheduleRequest::new(job_list, resources);
 
         group.bench_with_input(
             BenchmarkId::new("schedule", format!("{}j_{}m", jobs, machines)),
-            &(&job_list, &resources),
-            |b, (jobs, res)| {
-                b.iter(|| {
-                    let scheduler = GaScheduler::new(params.clone(), GeneticOperators::default());
-                    black_box(scheduler.schedule(jobs, res, 0))
-                })
-            },
+            &request,
+            |b, request| b.iter(|| black_box(SimpleScheduler::new().search(request, &params))),
         );
     }
 

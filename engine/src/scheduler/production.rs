@@ -3,7 +3,7 @@
 //! Production runs the same search as the genetic algorithm — over the order
 //! the default scheduler takes the jobs in — within its own budget.
 
-use crate::ga::GaParams;
+use crate::GaParams;
 
 /// Production's settings: the search budget.
 #[derive(Debug, Clone, Default)]

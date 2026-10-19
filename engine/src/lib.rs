@@ -20,8 +20,7 @@
 //! ## Modules
 //!
 //! - [`models`] — Manufacturing domain types (Job, Operation, Resource, SetupMatrix, Calendar, etc.)
-//! - [`scheduler`] — Scheduling algorithms, KPI, rescheduling, analytics, what-if, CTP
-//! - [`ga`] — Genetic Algorithm with dual-vector encoding (OSV/MAV)
+//! - [`scheduler`] — Scheduling algorithms (dispatching, genetic search over dispatching orders), KPI, rescheduling, analytics, what-if, CTP
 //! - [`cp`] — Constraint Programming solver (CP-SAT)
 //! - [`validation`] — Input validation
 //! - [`benchmark`] — Standard JSP/FJSSP benchmark instances (Taillard, Lawrence)
@@ -45,7 +44,6 @@ pub mod benchmark;
 pub mod cp;
 pub mod error;
 pub mod ffi;
-pub mod ga;
 pub mod models;
 pub mod scheduler;
 pub mod validation;
@@ -53,7 +51,6 @@ pub mod validation;
 pub use benchmark::*;
 pub use cp::*;
 pub use error::*;
-pub use ga::*;
 pub use models::*;
 pub use scheduler::*;
 pub use validation::*;

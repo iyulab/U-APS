@@ -66,30 +66,25 @@ let schedule = scheduler.schedule(&request)?;
 
 채울 수 없거나 배치할 수 없는 공정은 `UnfilledRequirement` 위반으로 보고된다.
 
-### GaScheduler
-Hybrid Genetic Algorithm 스케줄러
+### 디스패칭 탐색 (`algorithm: GeneticAlgorithm`)
+난수 키 유전 탐색이 공정 디스패칭 순서를 찾는다. 후보 하나하나가 `SimpleScheduler` 가 만드는 스케줄이라 요청의 제약(분할 · 겹침 · 선행 · 자원 · 달력)을 모두 지키고, 디스패칭보다 나쁘지 않다. 비용은 완료 시각 + 지각 합의 1/10.
 
 ```rust
-let config = GaConfig {
+let params = GaParams {
     population_size: 100,
     max_generations: 500,
-    elite_ratio: 0.1,
-    crossover_rate: 0.8,
-    mutation_rate: 0.1,
     ..Default::default()
 };
-
-let scheduler = GaScheduler::new(config);
-let schedule = scheduler.schedule(&request);
+let schedule = SimpleScheduler::new().search(&request, &params)?;
 ```
 
-**GA 파라미터**:
+**GaParams**:
 - `population_size` - 모집단 크기 (기본: 100)
 - `max_generations` - 최대 세대 (기본: 500)
 - `elite_ratio` - 엘리트 비율 (기본: 0.1)
-- `crossover_rate` - 교차 확률 (기본: 0.8)
-- `mutation_rate` - 돌연변이 확률 (기본: 0.1)
-- `tournament_size` - 토너먼트 크기 (기본: 3)
+- `convergence_generations` - 개선 없는 세대가 이만큼 이어지면 멈춤 (기본: 30)
+- `time_limit_ms` - 시간 제한 (없으면 30 초)
+- `tournament_size` · `convergence_threshold` - 받지만 읽지 않는다(예전 요청 호환 — 보내도 되고 안 보내도 된다)
 
 ---
 

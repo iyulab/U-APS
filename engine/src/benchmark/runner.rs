@@ -1,7 +1,8 @@
 //! Benchmark runner for evaluating scheduler performance
 
-use crate::ga::{GaParams, GaScheduler, GeneticOperators};
 use crate::models::{Job, Resource};
+use crate::scheduler::{ScheduleRequest, SimpleScheduler};
+use crate::GaParams;
 use std::time::Instant;
 
 /// Benchmark result for a single instance
@@ -21,12 +22,6 @@ pub struct BenchmarkResult {
     pub gap_percent: Option<f64>,
     /// Execution time (ms)
     pub execution_time_ms: u128,
-    /// Number of generations
-    pub generations: usize,
-    /// Final fitness
-    pub fitness: f64,
-    /// Whether converged early
-    pub converged: bool,
 }
 
 impl BenchmarkResult {
@@ -43,15 +38,14 @@ impl BenchmarkResult {
         };
 
         format!(
-            "{}: {}x{} | Makespan: {}s | BKS: {} | Gap: {} | Time: {}ms | Gen: {}",
+            "{}: {}x{} | Makespan: {}s | BKS: {} | Gap: {} | Time: {}ms",
             self.instance_name,
             self.num_jobs,
             self.num_machines,
             self.makespan_ms / 1000,
             bks_str,
             gap_str,
-            self.execution_time_ms,
-            self.generations
+            self.execution_time_ms
         )
     }
 }
@@ -74,9 +68,7 @@ impl Default for BenchmarkConfig {
                 population_size: 100,
                 max_generations: 500,
                 elite_ratio: 0.05,
-                tournament_size: 3,
                 convergence_generations: 50,
-                convergence_threshold: 0.001,
                 time_limit_ms: None,
             },
             num_runs: 1,
@@ -95,25 +87,24 @@ pub fn run_benchmark(
 ) -> BenchmarkResult {
     let start = Instant::now();
 
-    let scheduler = GaScheduler::new(config.ga_params.clone(), GeneticOperators::default());
-    let result = scheduler.schedule(jobs, resources, 0);
+    let request = ScheduleRequest::new(jobs.to_vec(), resources.to_vec());
+    let schedule = SimpleScheduler::new()
+        .search(&request, &config.ga_params)
+        .expect("a benchmark instance is a valid request");
 
     let execution_time_ms = start.elapsed().as_millis();
 
-    let gap_percent = best_known_ms
-        .map(|bks| ((result.schedule.makespan_ms as f64 - bks as f64) / bks as f64) * 100.0);
+    let gap_percent =
+        best_known_ms.map(|bks| ((schedule.makespan_ms as f64 - bks as f64) / bks as f64) * 100.0);
 
     BenchmarkResult {
         instance_name: name.to_string(),
         num_jobs: jobs.len(),
         num_machines: resources.len(),
-        makespan_ms: result.schedule.makespan_ms,
+        makespan_ms: schedule.makespan_ms,
         best_known_ms,
         gap_percent,
         execution_time_ms,
-        generations: result.generations,
-        fitness: result.fitness,
-        converged: result.converged,
     }
 }
 
@@ -284,9 +275,6 @@ mod tests {
                 best_known_ms: Some(100_000),
                 gap_percent: Some(5.0),
                 execution_time_ms: 100,
-                generations: 10,
-                fitness: 105.0,
-                converged: true,
             },
             BenchmarkResult {
                 instance_name: "test2".to_string(),
@@ -296,9 +284,6 @@ mod tests {
                 best_known_ms: Some(200_000),
                 gap_percent: Some(0.0),
                 execution_time_ms: 200,
-                generations: 20,
-                fitness: 200.0,
-                converged: true,
             },
         ];
 

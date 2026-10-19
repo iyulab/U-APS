@@ -204,7 +204,6 @@ U-APS/
 │   └── src/
 │       ├── models/         # Job, Operation, Resource, Material, etc.
 │       ├── scheduler/      # Scheduling algorithms, KPI, rescheduling
-│       ├── ga/             # Genetic algorithm with dual-vector encoding
 │       ├── cp/             # Constraint programming solver
 │       ├── benchmark/      # Standard JSP/FJSSP instances
 │       ├── validation.rs   # Input validation

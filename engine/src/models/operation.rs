@@ -224,19 +224,6 @@ impl Default for OverlapConfig {
     }
 }
 
-/// 분할된 Sub-Operation
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SplitOperation {
-    /// 원본 Operation ID
-    pub parent_op_id: String,
-    /// 분할 인덱스 (0-based)
-    pub split_index: usize,
-    /// 이 분할의 처리 시간 (ms)
-    pub process_ms: i64,
-    /// 할당된 기계 ID
-    pub assigned_machine: Option<String>,
-}
-
 impl OperationTime {
     pub fn new(setup_ms: i64, process_ms: i64, wait_ms: i64) -> Self {
         Self {
@@ -526,50 +513,6 @@ impl Operation {
         self
     }
 
-    /// 공정 분할 생성
-    pub fn create_splits(&self, num_splits: usize) -> Vec<SplitOperation> {
-        if !self.is_splittable || num_splits <= 1 {
-            return vec![SplitOperation {
-                parent_op_id: self.id.clone(),
-                split_index: 0,
-                process_ms: self.time.process_ms,
-                assigned_machine: None,
-            }];
-        }
-
-        let default_config = SplitConfig::default();
-        let config = self.split_config.as_ref().unwrap_or(&default_config);
-        let actual_splits = num_splits.min(config.max_splits);
-
-        // 처리 시간을 균등 분할
-        let base_time = self.time.process_ms / actual_splits as i64;
-        let remainder = self.time.process_ms % actual_splits as i64;
-
-        (0..actual_splits)
-            .map(|i| {
-                let extra = if i < remainder as usize { 1 } else { 0 };
-                SplitOperation {
-                    parent_op_id: self.id.clone(),
-                    split_index: i,
-                    process_ms: base_time + extra,
-                    assigned_machine: None,
-                }
-            })
-            .collect()
-    }
-
-    /// 분할 가능한 최대 수 계산
-    pub fn max_possible_splits(&self) -> usize {
-        if !self.is_splittable {
-            return 1;
-        }
-
-        let default_config = SplitConfig::default();
-        let config = self.split_config.as_ref().unwrap_or(&default_config);
-        let time_based_max = (self.time.process_ms / config.min_split_size_ms) as usize;
-        time_based_max.min(config.max_splits).max(1)
-    }
-
     /// Builder: 시간 설정
     pub fn with_time(mut self, setup_ms: i64, process_ms: i64, wait_ms: i64) -> Self {
         self.time = OperationTime::new(setup_ms, process_ms, wait_ms);
@@ -703,60 +646,6 @@ mod tests {
         let deserialized: Operation = serde_json::from_str(&json).unwrap();
 
         assert_eq!(op, deserialized);
-    }
-
-    #[test]
-    fn test_operation_splitting() {
-        let config = SplitConfig {
-            min_split_size_ms: 10_000,
-            max_splits: 4,
-            split_setup_overhead_ms: 1000,
-        };
-
-        let op = Operation::new("OP-001", "JOB-001", 1)
-            .with_time(0, 100_000, 0) // 100초 처리시간
-            .with_splitting(config);
-
-        // 3개로 분할
-        let splits = op.create_splits(3);
-        assert_eq!(splits.len(), 3);
-
-        // 총 처리시간 확인
-        let total: i64 = splits.iter().map(|s| s.process_ms).sum();
-        assert_eq!(total, 100_000);
-
-        // 각 분할 확인
-        assert_eq!(splits[0].split_index, 0);
-        assert_eq!(splits[1].split_index, 1);
-        assert_eq!(splits[2].split_index, 2);
-    }
-
-    #[test]
-    fn test_max_possible_splits() {
-        let config = SplitConfig {
-            min_split_size_ms: 30_000, // 30초 최소
-            max_splits: 5,
-            split_setup_overhead_ms: 0,
-        };
-
-        let op = Operation::new("OP-001", "JOB-001", 1)
-            .with_time(0, 100_000, 0) // 100초
-            .with_splitting(config);
-
-        // 100초 / 30초 = 3, max_splits 5 → 3
-        assert_eq!(op.max_possible_splits(), 3);
-    }
-
-    #[test]
-    fn test_non_splittable_operation() {
-        let op = Operation::new("OP-001", "JOB-001", 1).with_time(0, 100_000, 0);
-
-        // 분할 불가능
-        assert_eq!(op.max_possible_splits(), 1);
-
-        let splits = op.create_splits(3);
-        assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].process_ms, 100_000);
     }
 
     #[test]

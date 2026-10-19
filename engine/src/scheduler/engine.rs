@@ -8,7 +8,6 @@
 
 use crate::cp::{CpSatConfig, CpSatScheduler};
 use crate::error::Result;
-use crate::ga::GaParams;
 use crate::models::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
     SetupMatrixCollection, SiteTransitions, SkillMatrix, WorkerTimeOverride,
@@ -24,6 +23,7 @@ use crate::scheduler::{
     Schedule, ScheduleRequest,
 };
 use crate::validation::{ValidationResult, Validator};
+use crate::GaParams;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -261,7 +261,7 @@ impl SchedulingEngine {
                 time_limit_ms: 10_000,
                 ..Default::default()
             }),
-            ga_params: Some(crate::ga::GaParams::balanced()),
+            ga_params: Some(GaParams::balanced()),
             ..Default::default()
         })
     }
