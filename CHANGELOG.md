@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-20
+
 ### Added
 
 - `Job.IsSplittable` is applied: every operation of the job may be split, as
