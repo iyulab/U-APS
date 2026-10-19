@@ -420,7 +420,7 @@ impl Rescheduler {
     ) -> RescheduleResult {
         // Frozen Zone 공정은 유지
         let mut fixed_ops = Vec::new();
-        let mut regenerate_ops = Vec::new();
+        let mut regenerate_ops: Vec<String> = Vec::new();
 
         if let Some(ref fence) = self.fence_config {
             for assign in &schedule.assignments {
@@ -437,6 +437,9 @@ impl Rescheduler {
                 .map(|a| a.operation_id.clone())
                 .collect();
         }
+        // 분할 공정은 조각마다 배정이 있어도 한 공정이다 — 목록 · 통계는 공정 단위
+        let mut seen = HashSet::new();
+        regenerate_ops.retain(|id| seen.insert(id.clone()));
 
         // Frozen 공정 유지 + 나머지 공정을 greedy forward-scheduling으로 재생성
         let mut new_schedule = Schedule::new();
@@ -541,17 +544,14 @@ impl Rescheduler {
         delay_ms: i64,
         affected: &mut HashSet<String>,
     ) {
-        // 지연된 공정 찾기
+        // 지연된 공정 찾기 — 로트 분할 공정은 같은 ID 의 배정이 조각 수만큼 있으니 모두 민다
         let mut op_end_time = 0i64;
         for assign in &mut schedule.assignments {
-            if assign.operation_id == operation_id {
-                if self.can_reschedule_assignment(assign) {
-                    assign.start_ms += delay_ms;
-                    assign.end_ms += delay_ms;
-                    op_end_time = assign.end_ms;
-                    affected.insert(operation_id.to_string());
-                }
-                break;
+            if assign.operation_id == operation_id && self.can_reschedule_assignment(assign) {
+                assign.start_ms += delay_ms;
+                assign.end_ms += delay_ms;
+                op_end_time = op_end_time.max(assign.end_ms);
+                affected.insert(operation_id.to_string());
             }
         }
 
@@ -596,11 +596,20 @@ impl Rescheduler {
         }
     }
 
+    /// 영향받는 공정 ID(처음 나온 순서, 중복 없음 — 분할 공정의 조각은 한 공정이다).
     fn identify_affected_operations(
         &self,
         schedule: &Schedule,
         event: &ScheduleEvent,
     ) -> Vec<String> {
+        let mut seen = HashSet::new();
+        self.affected_assignment_ops(schedule, event)
+            .into_iter()
+            .filter(|id| seen.insert(id.clone()))
+            .collect()
+    }
+
+    fn affected_assignment_ops(&self, schedule: &Schedule, event: &ScheduleEvent) -> Vec<String> {
         match event {
             ScheduleEvent::OperationDelay { operation_id, .. } => {
                 // 지연된 공정과 관련 공정들
@@ -667,14 +676,13 @@ impl Rescheduler {
     }
 
     fn can_reschedule_operation(&self, schedule: &Schedule, operation_id: &str) -> bool {
+        // 조각이 하나라도 고정 구간에 걸리면 그 공정은 움직이지 않는다.
         if let Some(ref fence) = self.fence_config {
-            if let Some(assign) = schedule
+            return schedule
                 .assignments
                 .iter()
-                .find(|a| a.operation_id == operation_id)
-            {
-                return fence.can_modify_operation(assign.start_ms);
-            }
+                .filter(|a| a.operation_id == operation_id)
+                .all(|a| fence.can_modify_operation(a.start_ms));
         }
         true
     }
@@ -748,20 +756,14 @@ impl Rescheduler {
         let old_makespan = old.assignments.iter().map(|a| a.end_ms).max().unwrap_or(0);
         let new_makespan = new.assignments.iter().map(|a| a.end_ms).max().unwrap_or(0);
 
-        // 공정별 지연 변화 합산
-        let old_times: std::collections::HashMap<&str, i64> = old
-            .assignments
-            .iter()
-            .map(|a| (a.operation_id.as_str(), a.end_ms))
-            .collect();
+        // 배정별 지연 변화 합산 — 키는 (공정, 조각 번호): 분할 공정의 조각이 서로를 덮어쓰지 않게
+        let key = |a: &'_ Assignment| (a.operation_id.clone(), a.part.map(|p| p.index));
+        let old_times: std::collections::HashMap<(String, Option<i32>), i64> =
+            old.assignments.iter().map(|a| (key(a), a.end_ms)).collect();
         let total_delay_change_ms: i64 = new
             .assignments
             .iter()
-            .filter_map(|a| {
-                old_times
-                    .get(a.operation_id.as_str())
-                    .map(|&old_end| a.end_ms - old_end)
-            })
+            .filter_map(|a| old_times.get(&key(a)).map(|&old_end| a.end_ms - old_end))
             .sum();
 
         RescheduleStats {
@@ -781,6 +783,7 @@ impl Default for Rescheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AssignmentPart;
 
     fn create_test_schedule() -> Schedule {
         Schedule {
@@ -820,6 +823,80 @@ mod tests {
             violations: vec![],
             tasks: vec![],
         }
+    }
+
+    /// 분할 공정 `sp` 의 조각 둘(m1 · m2 에서 병행) + 다른 공정 하나.
+    fn create_split_schedule() -> Schedule {
+        let piece = |idx: i32, res: &str| Assignment {
+            operation_id: "sp".into(),
+            job_id: "job1".into(),
+            resource_id: res.into(),
+            start_ms: 0,
+            end_ms: 5_000,
+            setup_ms: 0,
+            site_id: None,
+            part: Some(AssignmentPart {
+                index: idx,
+                work_ms: 5_000,
+            }),
+        };
+        Schedule {
+            assignments: vec![
+                piece(0, "m1"),
+                piece(1, "m2"),
+                Assignment {
+                    operation_id: "op2".into(),
+                    job_id: "job2".into(),
+                    resource_id: "m3".into(),
+                    start_ms: 0,
+                    end_ms: 5_000,
+                    setup_ms: 0,
+                    site_id: None,
+                    part: None,
+                },
+            ],
+            makespan_ms: 5_000,
+            violations: vec![],
+            tasks: vec![],
+        }
+    }
+
+    #[test]
+    fn test_delay_shifts_every_part_of_a_split_operation() {
+        let schedule = create_split_schedule();
+        let event = ScheduleEvent::OperationDelay {
+            operation_id: "sp".into(),
+            delay_ms: 2_000,
+        };
+        let result = Rescheduler::new().right_shift(&schedule, &event);
+        for a in result
+            .schedule
+            .assignments
+            .iter()
+            .filter(|a| a.operation_id == "sp")
+        {
+            assert_eq!((a.start_ms, a.end_ms), (2_000, 7_000), "조각 {:?}", a.part);
+        }
+        assert_eq!(result.affected_operations, vec!["sp".to_string()]);
+        // 조각마다 +2 s — 같은 키끼리 비교한 합
+        assert_eq!(result.stats.total_delay_change_ms, 4_000);
+    }
+
+    #[test]
+    fn test_affected_operations_lists_a_split_operation_once() {
+        let schedule = create_split_schedule();
+        let event = ScheduleEvent::UrgentOrder {
+            job_id: "urgent".into(),
+            priority: 1,
+        };
+        let r = Rescheduler::new();
+        assert_eq!(
+            r.identify_affected_operations(&schedule, &event),
+            vec!["sp".to_string(), "op2".to_string()]
+        );
+        let total = r.total_regeneration(&schedule, &event);
+        assert_eq!(total.affected_operations.len(), 2);
+        assert_eq!(total.stats.operations_changed, 2);
     }
 
     #[test]

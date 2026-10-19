@@ -245,6 +245,10 @@ impl WhatIfEngine {
                 let duration = assign.end_ms - assign.start_ms;
                 let new_duration = (duration as f64 * (1.0 + change_percent)) as i64;
                 assign.end_ms = assign.start_ms + new_duration;
+                // 분할 조각의 처리 시간도 같은 비율로 — 조각 work_ms 합 = 공정 처리 시간 불변량
+                if let Some(part) = assign.part.as_mut() {
+                    part.work_ms = (part.work_ms as f64 * (1.0 + change_percent)) as i64;
+                }
             }
         }
     }
@@ -406,6 +410,28 @@ mod tests {
                 .with_priority(2)
                 .with_due_date(Utc.timestamp_millis_opt(80_000).unwrap()),
         ]
+    }
+
+    #[test]
+    fn processing_time_change_scales_part_work_with_the_piece() {
+        let mut schedule = create_test_schedule();
+        schedule.assignments[0].end_ms = 10_000;
+        schedule.assignments[0].part = Some(crate::AssignmentPart {
+            index: 0,
+            work_ms: 10_000,
+        });
+        let engine = WhatIfEngine::new(schedule, create_test_jobs(), 100_000);
+        let scenario = Scenario {
+            id: "s".into(),
+            name: "+50%".into(),
+            changes: vec![ScenarioChange::ProcessingTime {
+                operation_id: Some("op1".into()),
+                change_percent: 0.5,
+            }],
+        };
+        let a = &engine.apply_scenario(&scenario).schedule.assignments[0];
+        assert_eq!(a.end_ms - a.start_ms, 15_000);
+        assert_eq!(a.part.map(|p| p.work_ms), Some(15_000));
     }
 
     #[test]

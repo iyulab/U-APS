@@ -43,6 +43,15 @@ published to a registry — it ships inside those packages.
   part's equipment. A part was reported as an assignment of an operation
   `<id>_split_<n>` that the request does not have.
 
+### Fixed
+
+Rescheduling and what-if scenarios handle a split operation (one assignment
+per part, same `operation_id`) as one operation: a delay shifts every part
+rather than the first, an operation is listed and counted once, a part on a
+frozen stretch of the time fence keeps the whole operation in place, the
+reported delay change compares each part with itself, and a processing-time
+change scales each part's `work_ms` along with its duration.
+
 ### Known limitations
 
 `OverlapConfig.transfer_batch_size` is not read (there is no quantity model).
