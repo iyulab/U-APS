@@ -2,6 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::local_time::{
+    local_day, local_day_start, minute_of_day, weekday_monday0, UtcOffsets, DAY_MS,
+};
+
 /// 근무 윈도우 종료 이유
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WorkingWindowEndReason {
@@ -143,8 +147,11 @@ pub struct Calendar {
     pub name: String,
     pub shifts: Vec<Shift>,
     pub breaks: Vec<BreakTime>,
-    /// 휴일 (epoch ms 목록)
+    /// 휴일 — 날짜 목록(그 날짜의 epoch ms — 날짜만 읽는다 · UTC 자정이 관례). 시간대와 무관하게 «그 날짜»다.
     pub holidays: Vec<i64>,
+    /// 교대 · 휴식 · 휴일을 읽는 벽시계의 시간대 — 비면 UTC(종전과 같다).
+    #[serde(default)]
+    pub utc_offsets: UtcOffsets,
 }
 
 impl Calendar {
@@ -155,6 +162,7 @@ impl Calendar {
             shifts: Vec::new(),
             breaks: Vec::new(),
             holidays: Vec::new(),
+            utc_offsets: UtcOffsets::utc(),
         }
     }
 
@@ -166,6 +174,7 @@ impl Calendar {
             shifts: vec![Shift::day_shift()],
             breaks: vec![BreakTime::lunch()],
             holidays: Vec::new(),
+            utc_offsets: UtcOffsets::utc(),
         }
     }
 
@@ -181,22 +190,21 @@ impl Calendar {
         self
     }
 
+    /// Builder: 벽시계의 시간대(UTC 와의 차 일정표)
+    pub fn with_utc_offsets(mut self, utc_offsets: UtcOffsets) -> Self {
+        self.utc_offsets = utc_offsets;
+        self
+    }
+
     /// Builder: 휴일 추가
     pub fn with_holiday(mut self, date_ms: i64) -> Self {
         self.holidays.push(date_ms);
         self
     }
 
-    /// 특정 시간이 휴일인지 확인
+    /// 특정 시각(UTC ms)이 휴일인지 — 그 시각의 **현지 날짜**가 휴일 목록에 있는가.
     pub fn is_holiday(&self, time_ms: i64) -> bool {
-        // 간단히 날짜만 비교 (00:00 기준)
-        let day_ms = 24 * 60 * 60 * 1000;
-        let day_start = (time_ms / day_ms) * day_ms;
-
-        self.holidays.iter().any(|&h| {
-            let h_start = (h / day_ms) * day_ms;
-            h_start == day_start
-        })
+        self.holiday_on(local_day(self.utc_offsets.to_local(time_ms)))
     }
 
     /// 하루 작업 가능 시간 (분)
@@ -206,205 +214,40 @@ impl Calendar {
         shift_total - break_total
     }
 
-    /// 특정 시간이 근무 시간인지 확인
+    /// 특정 시각(UTC ms)이 근무 시간인지 — 교대 · 휴식 · 휴일을 캘린더 시간대의 벽시계로 읽는다.
     pub fn is_working_time(&self, time_ms: i64) -> bool {
-        // 휴일 체크
-        if self.is_holiday(time_ms) {
-            return false;
-        }
-
-        // 시프트가 없으면 항상 근무 가능 (24/7)
-        if self.shifts.is_empty() {
-            return true;
-        }
-
-        // 요일 계산 (1970-01-01 = 목요일 = 3 in Mon=0 system)
-        let day_ms = 24 * 60 * 60 * 1000i64;
-        let days_since_epoch = time_ms / day_ms;
-        let day_of_week = ((days_since_epoch + 3) % 7) as usize; // 0=월요일
-        let current_day = match day_of_week {
-            0 => DayOfWeek::Monday,
-            1 => DayOfWeek::Tuesday,
-            2 => DayOfWeek::Wednesday,
-            3 => DayOfWeek::Thursday,
-            4 => DayOfWeek::Friday,
-            5 => DayOfWeek::Saturday,
-            _ => DayOfWeek::Sunday,
-        };
-
-        // 하루 내 시간 (분)
-        let time_in_day_ms = time_ms % day_ms;
-        let time_in_day_min = (time_in_day_ms / 60000) as i32;
-
-        // 휴식 시간 체크
-        for break_time in &self.breaks {
-            let break_start = break_time.start.to_minutes();
-            let break_end = break_time.end.to_minutes();
-            if time_in_day_min >= break_start && time_in_day_min < break_end {
-                return false;
-            }
-        }
-
-        // 시프트 체크
-        for shift in &self.shifts {
-            if !shift.days.contains(&current_day) {
-                continue;
-            }
-
-            let shift_start = shift.start.to_minutes();
-            let shift_end = shift.end.to_minutes();
-
-            if shift_end > shift_start {
-                // 일반 시프트 (같은 날 시작-종료)
-                if time_in_day_min >= shift_start && time_in_day_min < shift_end {
-                    return true;
-                }
-            } else {
-                // 자정을 넘는 시프트
-                if time_in_day_min >= shift_start || time_in_day_min < shift_end {
-                    return true;
-                }
-            }
-        }
-
-        false
+        self.working_local(self.utc_offsets.to_local(time_ms))
     }
 
-    /// 특정 시간 이후 다음 근무 시작 시간 찾기 (ms)
+    /// 특정 시각(UTC ms) 이후 다음 근무 시작 시각(UTC ms). 찾지 못하면 그대로 돌려준다.
     pub fn next_working_time(&self, from_ms: i64) -> i64 {
         // 시프트가 없으면 현재 시간 반환 (24/7)
         if self.shifts.is_empty() {
             return from_ms;
         }
-
-        let day_ms = 24 * 60 * 60 * 1000i64;
-        let mut current_ms = from_ms;
-
-        // 최대 8일 탐색 (1주일 + 여유)
-        for _ in 0..8 {
-            if self.is_working_time(current_ms) {
-                return current_ms;
-            }
-
-            // 다음 시프트 시작 시간으로 이동
-            let day_start_ms = (current_ms / day_ms) * day_ms;
-            let time_in_day_min = ((current_ms % day_ms) / 60000) as i32;
-
-            // 요일 계산 (1970-01-01 = 목요일 = 3 in Mon=0 system)
-            let days_since_epoch = current_ms / day_ms;
-            let day_of_week = ((days_since_epoch + 3) % 7) as usize;
-            let current_day = match day_of_week {
-                0 => DayOfWeek::Monday,
-                1 => DayOfWeek::Tuesday,
-                2 => DayOfWeek::Wednesday,
-                3 => DayOfWeek::Thursday,
-                4 => DayOfWeek::Friday,
-                5 => DayOfWeek::Saturday,
-                _ => DayOfWeek::Sunday,
-            };
-
-            // 휴일이면 다음 날로
-            if self.is_holiday(current_ms) {
-                current_ms = day_start_ms + day_ms;
-                continue;
-            }
-
-            // 휴식 시간 중인지 체크 - 시프트 내 휴식이면 휴식 종료 시간 반환
-            for break_time in &self.breaks {
-                let break_start = break_time.start.to_minutes();
-                let break_end = break_time.end.to_minutes();
-                if time_in_day_min >= break_start && time_in_day_min < break_end {
-                    // 현재 활성화된 시프트가 있는지 확인
-                    for shift in &self.shifts {
-                        if !shift.days.contains(&current_day) {
-                            continue;
-                        }
-                        let shift_start = shift.start.to_minutes();
-                        let shift_end = shift.end.to_minutes();
-
-                        // 휴식 시간이 시프트 범위 내에 있으면 휴식 종료 시간 반환
-                        let in_shift = if shift_end > shift_start {
-                            break_start >= shift_start && break_end <= shift_end
-                        } else {
-                            // 자정을 넘는 시프트
-                            break_start >= shift_start || break_end <= shift_end
-                        };
-
-                        if in_shift {
-                            let resume_ms = day_start_ms + (break_end as i64) * 60000;
-                            if self.is_working_time(resume_ms) {
-                                return resume_ms;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 오늘 시프트 중 아직 시작하지 않은 것 찾기
-            let mut next_start_today: Option<i32> = None;
-            for shift in &self.shifts {
-                if !shift.days.contains(&current_day) {
-                    continue;
-                }
-                let shift_start = shift.start.to_minutes();
-                if shift_start > time_in_day_min {
-                    match next_start_today {
-                        None => next_start_today = Some(shift_start),
-                        Some(prev) if shift_start < prev => next_start_today = Some(shift_start),
-                        _ => {}
-                    }
-                }
-            }
-
-            if let Some(start_min) = next_start_today {
-                // 오늘 시프트 시작까지 이동
-                current_ms = day_start_ms + (start_min as i64) * 60000;
-
-                // 휴식 시간이면 휴식 후로 이동
-                for break_time in &self.breaks {
-                    let break_start = break_time.start.to_minutes();
-                    let break_end = break_time.end.to_minutes();
-                    let current_min = ((current_ms % day_ms) / 60000) as i32;
-                    if current_min >= break_start && current_min < break_end {
-                        current_ms = day_start_ms + (break_end as i64) * 60000;
-                    }
-                }
-
-                if self.is_working_time(current_ms) {
-                    return current_ms;
-                }
-            }
-
-            // 다음 날로 이동
-            current_ms = day_start_ms + day_ms;
+        let local = self.utc_offsets.to_local(from_ms);
+        match self.next_working_local(local) {
+            Some(next) if next != local => self.utc_offsets.to_utc(next).max(from_ms),
+            _ => from_ms,
         }
-
-        // 탐색 실패 시 원본 반환
-        from_ms
     }
 
-    /// 현재 근무 윈도우의 종료 시간 찾기
-    /// 다음 비근무 시간(휴식/시프트종료)까지 남은 시간을 반환
-    /// Returns: (window_end_ms, reason) - 비근무 시작 시간과 이유
+    /// 현재 근무 윈도우의 종료 시각(UTC ms)과 이유 — 다음 비근무(휴식 · 시프트 종료)가 시작하는 때.
     pub fn find_working_window_end(&self, from_ms: i64) -> Option<(i64, WorkingWindowEndReason)> {
-        // 시프트가 없으면 24/7 - 윈도우 끝 없음
-        if self.shifts.is_empty() {
-            return None;
-        }
+        let local = self.utc_offsets.to_local(from_ms);
+        self.window_end_local(local)
+            .map(|(end, reason)| (self.utc_offsets.to_utc(end).max(from_ms), reason))
+    }
 
-        // 현재 시간이 근무 시간이 아니면 None
-        if !self.is_working_time(from_ms) {
-            return None;
-        }
+    // ── 현지 벽시계(naive local ms) 위의 계산 — 날짜 · 요일 · 하루 안 분은 `local_time` 도우미 하나로.
 
-        let day_ms = 24 * 60 * 60 * 1000i64;
-        let day_start_ms = (from_ms / day_ms) * day_ms;
-        let time_in_day_min = ((from_ms % day_ms) / 60000) as i32;
+    fn holiday_on(&self, day: i64) -> bool {
+        // 휴일 값은 «날짜»다 — 그 날짜의 epoch ms(UTC 자정이 관례)에서 날짜만 읽는다.
+        self.holidays.iter().any(|&h| local_day(h) == day)
+    }
 
-        // 요일 계산
-        let days_since_epoch = from_ms / day_ms;
-        let day_of_week = ((days_since_epoch + 3) % 7) as usize;
-        let current_day = match day_of_week {
+    fn day_of_week(day: i64) -> DayOfWeek {
+        match weekday_monday0(day) {
             0 => DayOfWeek::Monday,
             1 => DayOfWeek::Tuesday,
             2 => DayOfWeek::Wednesday,
@@ -412,66 +255,134 @@ impl Calendar {
             4 => DayOfWeek::Friday,
             5 => DayOfWeek::Saturday,
             _ => DayOfWeek::Sunday,
-        };
-
-        let mut earliest_end: Option<(i64, WorkingWindowEndReason)> = None;
-
-        // 1. 휴식 시간 체크 - 가장 빠른 휴식 시작 시간 찾기
-        for break_time in &self.breaks {
-            let break_start_min = break_time.start.to_minutes();
-            if break_start_min > time_in_day_min {
-                let break_start_ms = day_start_ms + (break_start_min as i64) * 60000;
-                match earliest_end {
-                    None => {
-                        earliest_end = Some((break_start_ms, WorkingWindowEndReason::BreakStart))
-                    }
-                    Some((current, _)) if break_start_ms < current => {
-                        earliest_end = Some((break_start_ms, WorkingWindowEndReason::BreakStart));
-                    }
-                    _ => {}
-                }
-            }
         }
+    }
 
-        // 2. 시프트 종료 시간 체크
-        for shift in &self.shifts {
-            if !shift.days.contains(&current_day) {
-                continue;
-            }
+    /// 그 날(현지 날짜) 그 교대가 시작하는가 — 요일이 맞고 휴일이 아니다.
+    fn shift_starts_on(&self, shift: &Shift, day: i64) -> bool {
+        shift.days.contains(&Self::day_of_week(day)) && !self.holiday_on(day)
+    }
 
-            let shift_start_min = shift.start.to_minutes();
-            let shift_end_min = shift.end.to_minutes();
+    fn in_break(&self, minute: i32) -> bool {
+        self.breaks
+            .iter()
+            .any(|b| minute >= b.start.to_minutes() && minute < b.end.to_minutes())
+    }
 
-            let shift_end_ms = if shift_end_min > shift_start_min {
-                // 일반 시프트
-                if time_in_day_min >= shift_start_min && time_in_day_min < shift_end_min {
-                    day_start_ms + (shift_end_min as i64) * 60000
-                } else {
-                    continue;
-                }
+    fn working_local(&self, local: i64) -> bool {
+        let day = local_day(local);
+        if self.shifts.is_empty() {
+            // 시프트가 없으면 휴일이 아닌 날 내내 근무 (24/7)
+            return !self.holiday_on(day);
+        }
+        let minute = minute_of_day(local);
+        if self.in_break(minute) {
+            return false;
+        }
+        self.shifts.iter().any(|shift| {
+            let (start, end) = (shift.start.to_minutes(), shift.end.to_minutes());
+            if end > start {
+                self.shift_starts_on(shift, day) && minute >= start && minute < end
             } else {
-                // 자정을 넘는 시프트
-                if time_in_day_min >= shift_start_min {
-                    // 오늘 시작, 내일 종료
-                    day_start_ms + day_ms + (shift_end_min as i64) * 60000
-                } else if time_in_day_min < shift_end_min {
-                    // 어제 시작, 오늘 종료
-                    day_start_ms + (shift_end_min as i64) * 60000
-                } else {
-                    continue;
-                }
-            };
-
-            match earliest_end {
-                None => earliest_end = Some((shift_end_ms, WorkingWindowEndReason::ShiftEnd)),
-                Some((current, _)) if shift_end_ms < current => {
-                    earliest_end = Some((shift_end_ms, WorkingWindowEndReason::ShiftEnd));
-                }
-                _ => {}
+                // 자정을 넘는 시프트 — 자정 뒤 몫은 **전날 시작한** 교대의 것이다.
+                (minute >= start && self.shift_starts_on(shift, day))
+                    || (minute < end && self.shift_starts_on(shift, day - 1))
             }
-        }
+        })
+    }
 
-        earliest_end
+    fn next_working_local(&self, from: i64) -> Option<i64> {
+        let mut current = from;
+        // 긴 연휴(명절 + 대체공휴일 + 주말)를 넘도록 한 달을 본다.
+        for _ in 0..32 {
+            if self.working_local(current) {
+                return Some(current);
+            }
+            let day = local_day(current);
+            let day_start = local_day_start(current);
+            let minute = minute_of_day(current);
+
+            // 휴식 중이면 휴식이 끝나는 때
+            for b in &self.breaks {
+                let (bs, be) = (b.start.to_minutes(), b.end.to_minutes());
+                if minute >= bs && minute < be {
+                    let resume = day_start + be as i64 * 60_000;
+                    if self.working_local(resume) {
+                        return Some(resume);
+                    }
+                }
+            }
+
+            // 오늘 아직 시작하지 않은 시프트 중 가장 이른 것
+            let next_start_today = self
+                .shifts
+                .iter()
+                .filter(|s| self.shift_starts_on(s, day))
+                .map(|s| s.start.to_minutes())
+                .filter(|&start| start > minute)
+                .min();
+            if let Some(start) = next_start_today {
+                let mut candidate = day_start + start as i64 * 60_000;
+                for b in &self.breaks {
+                    let m = minute_of_day(candidate);
+                    if m >= b.start.to_minutes() && m < b.end.to_minutes() {
+                        candidate = day_start + b.end.to_minutes() as i64 * 60_000;
+                    }
+                }
+                if self.working_local(candidate) {
+                    return Some(candidate);
+                }
+            }
+
+            // 다음 날 자정으로
+            current = day_start + DAY_MS;
+        }
+        None
+    }
+
+    fn window_end_local(&self, from: i64) -> Option<(i64, WorkingWindowEndReason)> {
+        // 시프트가 없으면 24/7 - 윈도우 끝 없음
+        if self.shifts.is_empty() || !self.working_local(from) {
+            return None;
+        }
+        let day = local_day(from);
+        let day_start = local_day_start(from);
+        let minute = minute_of_day(from);
+
+        // 지금 근무 중인 시프트의 끝 — 가장 이른 것
+        let shift_end = self
+            .shifts
+            .iter()
+            .filter_map(|shift| {
+                let (start, end) = (shift.start.to_minutes(), shift.end.to_minutes());
+                if end > start {
+                    (self.shift_starts_on(shift, day) && minute >= start && minute < end)
+                        .then(|| day_start + end as i64 * 60_000)
+                } else if minute >= start && self.shift_starts_on(shift, day) {
+                    Some(day_start + DAY_MS + end as i64 * 60_000)
+                } else if minute < end && self.shift_starts_on(shift, day - 1) {
+                    Some(day_start + end as i64 * 60_000)
+                } else {
+                    None
+                }
+            })
+            .min()?;
+
+        // 그 끝 전에 시작하는 휴식(오늘 · 자정을 넘는 시프트면 다음 날 것까지)
+        let break_start = [day_start, day_start + DAY_MS]
+            .iter()
+            .flat_map(|&d| {
+                self.breaks
+                    .iter()
+                    .map(move |b| d + b.start.to_minutes() as i64 * 60_000)
+            })
+            .filter(|&t| t > from && t < shift_end)
+            .min();
+
+        Some(match break_start {
+            Some(t) => (t, WorkingWindowEndReason::BreakStart),
+            None => (shift_end, WorkingWindowEndReason::ShiftEnd),
+        })
     }
 
     /// 연속 근무 가능 시간 계산 (현재 윈도우에서 남은 시간)
@@ -769,5 +680,114 @@ mod tests {
         let monday_3pm = monday_midnight + 15 * 60 * 60 * 1000;
         let remaining = cal.remaining_working_time_in_window(monday_3pm);
         assert_eq!(remaining, 2 * 60 * 60 * 1000); // 2시간
+    }
+
+    // ── 시간대 — 교대 · 휴일을 캘린더 시간대의 벽시계로 읽는다(비면 UTC — 위 시험들이 그 경우다).
+
+    const HOUR: i64 = 60 * 60 * 1000;
+    /// 2027-02-08 00:00 UTC — 월요일
+    const MON_UTC: i64 = 1_802_044_800_000;
+
+    fn seoul_day_shift() -> Calendar {
+        Calendar::new("KST", "1공장")
+            .with_shift(Shift::day_shift())
+            .with_break(BreakTime::lunch())
+            .with_utc_offsets(UtcOffsets::fixed(9 * 60))
+    }
+
+    #[test]
+    fn test_time_zone_reads_shifts_on_the_local_wall_clock() {
+        let kst = seoul_day_shift();
+        let utc = Calendar::default_day();
+        // 월요일 08:00 서울 = 일요일 23:00 UTC
+        let monday_8am_seoul = MON_UTC - HOUR;
+        assert!(kst.is_working_time(monday_8am_seoul));
+        assert!(!utc.is_working_time(monday_8am_seoul)); // UTC 로 읽으면 일요일 밤
+                                                         // 월요일 12:30 서울(점심) — 휴식
+        assert!(!kst.is_working_time(MON_UTC - 9 * HOUR + 12 * HOUR + 30 * 60_000));
+        // 월요일 17:00 서울 = 08:00 UTC — 끝났다
+        assert!(!kst.is_working_time(MON_UTC + 8 * HOUR));
+    }
+
+    #[test]
+    fn test_time_zone_reads_holidays_as_local_dates() {
+        // 휴일은 날짜다 — 2027-02-09(그 날짜의 UTC 자정 ms).
+        let holiday = MON_UTC + 24 * HOUR;
+        let kst = seoul_day_shift().with_holiday(holiday);
+        // 화요일 08:30 서울 = 월요일 23:30 UTC — 서울의 날짜로는 휴일
+        let tuesday_830_seoul = MON_UTC + 23 * HOUR + 30 * 60_000;
+        assert!(kst.is_holiday(tuesday_830_seoul));
+        assert!(!kst.is_working_time(tuesday_830_seoul));
+        let utc = Calendar::default_day().with_holiday(holiday);
+        assert!(!utc.is_holiday(tuesday_830_seoul)); // UTC 로 읽으면 아직 월요일
+    }
+
+    #[test]
+    fn test_time_zone_returns_absolute_instants() {
+        let kst = seoul_day_shift();
+        // 일요일 12:00 서울 → 다음 근무 = 월요일 08:00 서울 = 일요일 23:00 UTC
+        let sunday_noon_seoul = MON_UTC - 12 * HOUR - 9 * HOUR;
+        assert_eq!(kst.next_working_time(sunday_noon_seoul), MON_UTC - HOUR);
+        // 월요일 09:00 서울에서 창의 끝 = 12:00 서울(점심) = 03:00 UTC
+        let (end, reason) = kst.find_working_window_end(MON_UTC).unwrap();
+        assert_eq!(
+            (end, reason),
+            (MON_UTC + 3 * HOUR, WorkingWindowEndReason::BreakStart)
+        );
+    }
+
+    #[test]
+    fn test_overnight_shift_tail_belongs_to_the_day_it_started() {
+        // 금요일에만 시작하는 22:00~06:00 교대
+        let cal = Calendar::new("N", "야간").with_shift(Shift::new(
+            "금요 야간",
+            Time::new(22, 0),
+            Time::new(6, 0),
+            vec![DayOfWeek::Friday],
+        ));
+        let friday = MON_UTC + 4 * 24 * HOUR;
+        assert!(cal.is_working_time(friday + 23 * HOUR));
+        assert!(cal.is_working_time(friday + 24 * HOUR + 3 * HOUR)); // 토요일 03:00 — 금요일 교대의 몫
+        assert!(!cal.is_working_time(friday + 3 * HOUR)); // 금요일 03:00 — 목요일 교대는 없다
+                                                          // 금요일 23:00 에서 창의 끝 = 토요일 06:00
+        assert_eq!(
+            cal.find_working_window_end(friday + 23 * HOUR),
+            Some((friday + 30 * HOUR, WorkingWindowEndReason::ShiftEnd))
+        );
+        // 시작한 날이 휴일이면 자정 뒤 몫도 없다
+        let off = cal.clone().with_holiday(friday);
+        assert!(!off.is_working_time(friday + 27 * HOUR));
+    }
+
+    #[test]
+    fn test_overnight_window_stops_at_a_break_after_midnight() {
+        let cal = Calendar::new("N", "야간")
+            .with_shift(Shift::new(
+                "야간",
+                Time::new(22, 0),
+                Time::new(6, 0),
+                vec![DayOfWeek::Monday],
+            ))
+            .with_break(BreakTime::new(Time::new(2, 0), Time::new(2, 30)));
+        assert_eq!(
+            cal.find_working_window_end(MON_UTC + 23 * HOUR),
+            Some((MON_UTC + 26 * HOUR, WorkingWindowEndReason::BreakStart))
+        );
+        // 휴식 뒤에 다시 이어진다
+        assert_eq!(
+            cal.next_working_time(MON_UTC + 26 * HOUR),
+            MON_UTC + 26 * HOUR + 30 * 60_000
+        );
+    }
+
+    #[test]
+    fn test_next_working_time_crosses_a_long_holiday() {
+        // 화요일부터 아흐레 연휴(주말 포함 — 다음 주 수요일까지) 뒤의 첫 근무일까지 찾는다 — 종전 8일 탐색은 찾지 못하고 시작 시각을 그대로 돌려줬다.
+        let mut cal = Calendar::default_day();
+        for d in 1..10 {
+            cal = cal.with_holiday(MON_UTC + d * 24 * HOUR);
+        }
+        let next = cal.next_working_time(MON_UTC + 18 * HOUR);
+        assert_eq!(next, MON_UTC + 10 * 24 * HOUR + 8 * HOUR); // 다음 주 목요일 08:00
     }
 }

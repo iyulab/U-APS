@@ -13,6 +13,26 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- Engine calendars read shifts, breaks and holidays on a time zone's wall
+  clock: `Calendar.utc_offsets` takes the zone as a schedule of offsets from
+  UTC (a base offset and the instants it changes, for daylight saving). An
+  empty schedule is UTC, so calendars that name no zone schedule as before.
+  Holidays are dates — the calendar date of each value — compared with the
+  local date. Crews, outsourcing and the SDK follow in the next change.
+
+### Fixed
+
+- The part of an overnight shift after midnight belongs to the day the shift
+  started: a Friday 22:00–06:00 shift now covers Saturday 00:00–06:00, and
+  does not cover Friday 00:00–06:00 unless a Thursday shift does. A shift that
+  starts on a holiday contributes no hours after midnight either.
+- A working window of an overnight shift ends at a break that starts after
+  midnight, instead of running through it.
+- The next working time is found across holidays of up to a month; a calendar
+  closed for more than a week used to return the starting time unchanged.
+
 ## [1.7.0] - 2026-10-20
 
 ### Added

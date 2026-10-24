@@ -13,6 +13,7 @@
 mod calendar;
 mod crew;
 mod job;
+mod local_time;
 mod material;
 mod operation;
 mod outsourcing;
@@ -25,6 +26,7 @@ mod task;
 pub use calendar::*;
 pub use crew::*;
 pub use job::*;
+pub use local_time::*;
 pub use material::*;
 pub use operation::*;
 pub use outsourcing::*;
