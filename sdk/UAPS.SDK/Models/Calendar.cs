@@ -85,6 +85,26 @@ public class BreakTime
 }
 
 /// <summary>
+/// A one-date exception that overrides the weekday rule and the holidays for that date (overtime day, swapped holiday, closure).
+/// <para><see cref="Working"/> <c>false</c>: no shift starts that date. <c>true</c>: the shifts named in <see cref="Shifts"/> start that date,
+/// or, when none are named, that weekday's shifts — even on a holiday. To work on a weekday that normally has no shift, name the shifts.</para>
+/// </summary>
+public class CalendarException
+{
+    /// <summary>The date, read like a holiday (its epoch ms — UTC midnight by convention).</summary>
+    public long Date { get; set; }
+    public bool Working { get; set; }
+    /// <summary>Names of the shifts (<see cref="Shift.Name"/>) that start that date — read only when <see cref="Working"/>.</summary>
+    public List<string> Shifts { get; set; } = [];
+
+    public static CalendarException Closed(DateOnly date) => new() { Date = EpochMs(date), Working = false };
+
+    public static CalendarException WorkingDay(DateOnly date, params string[] shifts) => new() { Date = EpochMs(date), Working = true, Shifts = [.. shifts] };
+
+    private static long EpochMs(DateOnly date) => new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeMilliseconds();
+}
+
+/// <summary>
 /// Calendar - 운영 캘린더
 /// </summary>
 public class Calendar
@@ -94,6 +114,9 @@ public class Calendar
     public List<Shift> Shifts { get; set; } = [];
     public List<BreakTime> Breaks { get; set; } = [];
     public List<long> Holidays { get; set; } = [];
+
+    /// <summary>One-date exceptions that override the weekday rule and the holidays (the first one wins when a date repeats).</summary>
+    public List<CalendarException> Exceptions { get; set; } = [];
 
     /// <summary>
     /// The time zone whose wall clock the shifts, breaks and holidays are read on. <c>null</c> reads them in UTC
@@ -153,6 +176,13 @@ public class Calendar
         return this;
     }
 
+    /// <summary>Add a one-date exception (overtime day, swapped holiday, closure).</summary>
+    public Calendar WithException(CalendarException exception)
+    {
+        Exceptions.Add(exception);
+        return this;
+    }
+
     // ===== Computed =====
 
     public int WorkingMinutesPerDay()
@@ -200,7 +230,8 @@ public class Calendar
             Start = new TimeDto { Hour = b.Start.Hour, Minute = b.Start.Minute },
             End = new TimeDto { Hour = b.End.Hour, Minute = b.End.Minute }
         }).ToList(),
-        Holidays = Holidays
+        Holidays = Holidays,
+        Exceptions = Exceptions.Count == 0 ? null : Exceptions.Select(e => new CalendarExceptionDto { Date = e.Date, Working = e.Working, Shifts = [.. e.Shifts] }).ToList()
     };
 }
 
@@ -226,6 +257,13 @@ public class BreakTimeDto
     public TimeDto End { get; set; } = new();
 }
 
+public class CalendarExceptionDto
+{
+    public long Date { get; set; }
+    public bool Working { get; set; }
+    public List<string> Shifts { get; set; } = [];
+}
+
 public class CalendarDto
 {
     public string Id { get; set; } = string.Empty;
@@ -233,6 +271,8 @@ public class CalendarDto
     public List<ShiftDto> Shifts { get; set; } = [];
     public List<BreakTimeDto> Breaks { get; set; } = [];
     public List<long> Holidays { get; set; } = [];
+    /// <summary>One-date exceptions — omitted when there are none (the engine reads a missing list as none).</summary>
+    public List<CalendarExceptionDto>? Exceptions { get; set; }
 
     /// <summary>The wall clock's time zone — omitted for UTC.</summary>
     public UtcOffsetsDto? UtcOffsets { get; set; }

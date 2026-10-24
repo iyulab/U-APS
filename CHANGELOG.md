@@ -27,6 +27,14 @@ published to a registry — it ships inside those packages.
   engine as `UtcOffsetsDto`, laid out from a day before `StartTimeMs` to 367
   days after. `Calendar.IsHoliday` compares the date on the calendar's wall
   clock. `Resource.WithCalendar(id)`.
+- Calendar date exceptions — overtime days, swapped holidays and closures:
+  `Calendar.exceptions` (engine) lists dates that override the weekday rule
+  and the holidays. A closed date starts no shift; a working date starts the
+  shifts it names, or that weekday's shifts when it names none — even on a
+  holiday. To work on a weekday that normally has no shift, name the shifts.
+  Calendars without the list read as before. SDK: `CalendarException.Closed`
+  / `CalendarException.WorkingDay(date, shifts…)` and
+  `Calendar.WithException`; the request omits the list when it is empty.
 
 ### Fixed
 

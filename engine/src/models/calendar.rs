@@ -140,6 +140,41 @@ impl BreakTime {
     }
 }
 
+/// 한 날짜의 예외 — 그날만 요일 규칙 · 휴일을 덮는다(특근 · 휴일 대체 · 임시 휴무).
+///
+/// - `working == false` — 그날은 쉰다(요일 교대가 있어도).
+/// - `working == true` — 그날은 일한다(휴일이어도): `shifts` 에 이름이 있으면 그 교대들이, 비면 그 요일의 교대들이 시작한다
+///   (평소 쉬는 요일에 일하려면 교대 이름을 적는다 — 비면 그 요일에 교대가 없어 일할 시간이 없다).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalendarException {
+    /// 그 날짜의 epoch ms — 휴일과 같이 날짜만 읽는다(UTC 자정이 관례).
+    pub date: i64,
+    pub working: bool,
+    /// 그날 시작하는 교대의 이름(`Shift::name`) — `working` 일 때만 읽는다.
+    #[serde(default)]
+    pub shifts: Vec<String>,
+}
+
+impl CalendarException {
+    /// 그날 쉰다.
+    pub fn closed(date_ms: i64) -> Self {
+        Self {
+            date: date_ms,
+            working: false,
+            shifts: Vec::new(),
+        }
+    }
+
+    /// 그날 일한다 — `shifts` 가 비면 그 요일의 교대.
+    pub fn working(date_ms: i64, shifts: Vec<String>) -> Self {
+        Self {
+            date: date_ms,
+            working: true,
+            shifts,
+        }
+    }
+}
+
 /// Calendar - 운영 캘린더
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Calendar {
@@ -149,6 +184,9 @@ pub struct Calendar {
     pub breaks: Vec<BreakTime>,
     /// 휴일 — 날짜 목록(그 날짜의 epoch ms — 날짜만 읽는다 · UTC 자정이 관례). 시간대와 무관하게 «그 날짜»다.
     pub holidays: Vec<i64>,
+    /// 날짜 예외 — 그날만 요일 규칙과 휴일을 덮는다(같은 날짜가 둘이면 먼저 적힌 것).
+    #[serde(default)]
+    pub exceptions: Vec<CalendarException>,
     /// 교대 · 휴식 · 휴일을 읽는 벽시계의 시간대 — 비면 UTC(종전과 같다).
     #[serde(default)]
     pub utc_offsets: UtcOffsets,
@@ -162,6 +200,7 @@ impl Calendar {
             shifts: Vec::new(),
             breaks: Vec::new(),
             holidays: Vec::new(),
+            exceptions: Vec::new(),
             utc_offsets: UtcOffsets::utc(),
         }
     }
@@ -174,6 +213,7 @@ impl Calendar {
             shifts: vec![Shift::day_shift()],
             breaks: vec![BreakTime::lunch()],
             holidays: Vec::new(),
+            exceptions: Vec::new(),
             utc_offsets: UtcOffsets::utc(),
         }
     }
@@ -199,6 +239,12 @@ impl Calendar {
     /// Builder: 휴일 추가
     pub fn with_holiday(mut self, date_ms: i64) -> Self {
         self.holidays.push(date_ms);
+        self
+    }
+
+    /// Builder: 날짜 예외 추가(특근 · 휴일 대체 · 임시 휴무)
+    pub fn with_exception(mut self, exception: CalendarException) -> Self {
+        self.exceptions.push(exception);
         self
     }
 
@@ -258,9 +304,27 @@ impl Calendar {
         }
     }
 
-    /// 그 날(현지 날짜) 그 교대가 시작하는가 — 요일이 맞고 휴일이 아니다.
+    fn exception_on(&self, day: i64) -> Option<&CalendarException> {
+        self.exceptions.iter().find(|e| local_day(e.date) == day)
+    }
+
+    /// 그 날(현지 날짜)을 쉬는가 — 예외가 있으면 그것(쉰다 · 일한다), 없으면 휴일.
+    fn day_off(&self, day: i64) -> bool {
+        match self.exception_on(day) {
+            Some(e) => !e.working,
+            None => self.holiday_on(day),
+        }
+    }
+
+    /// 그 날(현지 날짜) 그 교대가 시작하는가 — 예외가 있으면 예외가(쉰다 → 아니다 · 일한다 → 적힌 교대, 비면 그 요일의 교대 · 휴일이어도),
+    /// 없으면 요일이 맞고 휴일이 아니다.
     fn shift_starts_on(&self, shift: &Shift, day: i64) -> bool {
-        shift.days.contains(&Self::day_of_week(day)) && !self.holiday_on(day)
+        match self.exception_on(day) {
+            Some(e) if !e.working => false,
+            Some(e) if !e.shifts.is_empty() => e.shifts.iter().any(|name| name == &shift.name),
+            Some(_) => shift.days.contains(&Self::day_of_week(day)),
+            None => shift.days.contains(&Self::day_of_week(day)) && !self.holiday_on(day),
+        }
     }
 
     fn in_break(&self, minute: i32) -> bool {
@@ -272,8 +336,8 @@ impl Calendar {
     fn working_local(&self, local: i64) -> bool {
         let day = local_day(local);
         if self.shifts.is_empty() {
-            // 시프트가 없으면 휴일이 아닌 날 내내 근무 (24/7)
-            return !self.holiday_on(day);
+            // 시프트가 없으면 쉬는 날(예외 · 휴일)이 아닌 날 내내 근무 (24/7)
+            return !self.day_off(day);
         }
         let minute = minute_of_day(local);
         if self.in_break(minute) {
@@ -789,5 +853,52 @@ mod tests {
         }
         let next = cal.next_working_time(MON_UTC + 18 * HOUR);
         assert_eq!(next, MON_UTC + 10 * 24 * HOUR + 8 * HOUR); // 다음 주 목요일 08:00
+    }
+
+    #[test]
+    fn test_exception_closes_a_working_day_and_opens_a_holiday() {
+        // 월요일 임시 휴무 · 화요일은 휴일인데 일한다(휴일 대체) — 예외가 요일 규칙과 휴일을 덮는다.
+        let day = 24 * HOUR;
+        let cal = Calendar::default_day()
+            .with_holiday(MON_UTC + day)
+            .with_exception(CalendarException::closed(MON_UTC))
+            .with_exception(CalendarException::working(MON_UTC + day, Vec::new()));
+        assert!(!cal.is_working_time(MON_UTC + 10 * HOUR));
+        assert!(cal.is_working_time(MON_UTC + day + 10 * HOUR));
+        // 월요일 아침에서 다음 근무는 화요일 08:00(월요일은 쉰다)
+        assert_eq!(
+            cal.next_working_time(MON_UTC + 7 * HOUR),
+            MON_UTC + day + 8 * HOUR
+        );
+    }
+
+    #[test]
+    fn test_working_exception_on_a_rest_day_names_its_shifts() {
+        // 토요일 특근 — 평소 쉬는 요일은 교대 이름을 적어야 일한다(비면 그 요일에 교대가 없어 일할 시간이 없다).
+        let sat = MON_UTC + 5 * 24 * HOUR;
+        let named = Calendar::default_day()
+            .with_exception(CalendarException::working(sat, vec!["주간".to_string()]));
+        assert!(named.is_working_time(sat + 10 * HOUR));
+        assert_eq!(
+            named.find_working_window_end(sat + 10 * HOUR),
+            Some((sat + 12 * HOUR, WorkingWindowEndReason::BreakStart))
+        );
+        let unnamed =
+            Calendar::default_day().with_exception(CalendarException::working(sat, Vec::new()));
+        assert!(!unnamed.is_working_time(sat + 10 * HOUR));
+    }
+
+    #[test]
+    fn test_exception_on_a_round_the_clock_calendar_and_from_json() {
+        // 교대 없는(24/7) 캘린더도 쉬는 날 예외를 따른다 · JSON 은 `exceptions` 를 빼도 읽힌다(종전 요청 그대로).
+        let cal = Calendar::new("C", "상시").with_exception(CalendarException::closed(MON_UTC));
+        assert!(!cal.is_working_time(MON_UTC + HOUR));
+        assert!(cal.is_working_time(MON_UTC + 24 * HOUR + HOUR));
+        let old: Calendar =
+            serde_json::from_str(r#"{"id":"C","name":"n","shifts":[],"breaks":[],"holidays":[]}"#)
+                .unwrap();
+        assert!(old.exceptions.is_empty());
+        let new: Calendar = serde_json::from_str(r#"{"id":"C","name":"n","shifts":[],"breaks":[],"holidays":[],"exceptions":[{"date":0,"working":false}]}"#).unwrap();
+        assert!(!new.exceptions[0].working && new.exceptions[0].shifts.is_empty());
     }
 }

@@ -752,7 +752,8 @@ fn intersection(a: &USCalendar, b: &USCalendar) -> USCalendar {
 /// as u-aps itself reads them (shifts, breaks, holidays).
 fn windows(calendar: &Calendar, start_ms: i64) -> USCalendar {
     let mut out = USCalendar::new(&calendar.id);
-    if calendar.shifts.is_empty() && calendar.holidays.is_empty() {
+    if calendar.shifts.is_empty() && calendar.holidays.is_empty() && calendar.exceptions.is_empty()
+    {
         return out;
     }
     let horizon = start_ms + CALENDAR_HORIZON_MS;

@@ -82,4 +82,39 @@ public class CalendarTimeZoneTests
         seoul.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc - Hour);
         utc.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc + 8 * Hour);
     }
+
+    [Fact]
+    public void Exceptions_reach_the_engine_only_when_there_are_some()
+    {
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+        JsonSerializer.Serialize(Calendar.DefaultDay().ToEngineDto(MondayUtc), options).Should().NotContain("exceptions");
+        var dto = Calendar.DefaultDay().WithException(CalendarException.WorkingDay(new DateOnly(2027, 2, 13), "Day")).ToEngineDto(MondayUtc);
+        JsonSerializer.Serialize(dto, options).Should().Contain("\"exceptions\":[{\"date\":1802476800000,\"working\":true,\"shifts\":[\"Day\"]}]");
+    }
+
+    [Fact]
+    public void The_engine_skips_a_closed_date_and_works_a_named_rest_day()
+    {
+        // Monday 2027-02-08 is closed; Saturday 2027-02-13 works the day shift. An hour-long job started Monday morning
+        // runs Tuesday 08:00 instead; one started Saturday morning runs that Saturday from 08:00.
+        ScheduleRequest Request(Calendar calendar, long start) => new()
+        {
+            Jobs = [Job.Create("J1").WithOperation(Operation.Create("J1-1", "J1", 1).WithTime(0, Hour, 0).WithEquipment("EQP-1"))],
+            Resources = [Resource.Equipment("EQP-1").WithCalendar(calendar.Id)],
+            StartTimeMs = start,
+            Calendars = [calendar],
+        };
+        var calendar = Calendar.DefaultDay()
+            .WithException(CalendarException.Closed(new DateOnly(2027, 2, 8)))
+            .WithException(CalendarException.WorkingDay(new DateOnly(2027, 2, 13), "주간"));
+        using var client = new SchedulerClient();
+
+        var monday = client.Schedule(Request(calendar, MondayUtc));
+        var saturday = client.Schedule(Request(calendar, MondayUtc + 5 * 24 * Hour));
+
+        monday.Success.Should().BeTrue(monday.Error ?? "no error");
+        saturday.Success.Should().BeTrue(saturday.Error ?? "no error");
+        monday.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc + 24 * Hour + 8 * Hour);
+        saturday.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc + 5 * 24 * Hour + 8 * Hour);
+    }
 }
