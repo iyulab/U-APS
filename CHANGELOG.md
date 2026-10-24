@@ -62,6 +62,10 @@ published to a registry — it ships inside those packages.
 
 ### Fixed
 
+- Build: the repository declares its own test runner (`global.json` — VSTest), so
+  `dotnet test` on the SDK tests runs the same way from any checkout. Before, a
+  `global.json` in a parent directory that chose Microsoft.Testing.Platform
+  stopped the run with «All projects must use that test runner».
 - SDK: `Resource.CalendarId` reaches the engine. It was accepted and never
   sent, so a resource with a calendar was scheduled as always available.
 - The part of an overnight shift after midnight belongs to the day the shift
