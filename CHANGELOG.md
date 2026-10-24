@@ -49,6 +49,17 @@ published to a registry — it ships inside those packages.
 - A calendar-wide break whose end is earlier than its start now spans
   midnight (23:50–00:10) instead of matching no minute.
 
+### Deprecated
+
+- `UAPS.SDK.Handlers` — `ICalendarHandler`, `RecurrenceHandler`, `ShiftHandler`,
+  `CalendarPattern`, `BreakPeriod`, `ShiftDefinition`, `DateRange` and `TimeWindow`.
+  Nothing in the SDK or the engine reads them: calendars reach the engine through
+  `UAPS.SDK.Models.Calendar`, which now carries shifts, per-shift breaks, date
+  exceptions and a time zone. The handlers expand dates on the machine's local time
+  zone, so the same pattern gives different windows on differently configured
+  machines. They are kept for compatibility only; move to
+  `Calendar`.
+
 ### Fixed
 
 - SDK: `Resource.CalendarId` reaches the engine. It was accepted and never

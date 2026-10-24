@@ -80,8 +80,10 @@ WorkCalendar {
 
 ### 컴포넌트 구조
 
-#### Handlers (변환기)
-사용자 친화적 입력을 Engine 명시 데이터로 변환
+#### Handlers (변환기) — 사용 중단
+사용자 친화적 입력을 Engine 명시 데이터로 변환하던 표면이다. 캘린더는 이제 `UAPS.SDK.Models.Calendar`(교대 · 교대마다 휴식 · 날짜 예외 · 시간대)가
+엔진에 직접 싣는다 — `UAPS.SDK.Handlers` 의 캘린더 변환기는 엔진에 닿지 않고 기계의 지역 시간대로 날짜를 펼쳐 `[Obsolete]` 다(호환을 위해서만 남는다).
+아래 예시의 `Calendar` 가 그 길이다.
 
 ```csharp
 // 사용자 입력: 편리한 형식
@@ -240,7 +242,7 @@ pub trait Scheduler {
 
 ## 확장 패턴
 
-### Custom Handler
+### Custom Handler — 사용 중단(위 «Handlers» 참조)
 
 ```csharp
 public class RecurrenceHandler : ITimeWindowHandler

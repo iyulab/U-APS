@@ -3,6 +3,7 @@ namespace UAPS.SDK.Handlers;
 /// <summary>
 /// Default calendar handler that expands recurring patterns to TimeWindows
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public class RecurrenceHandler : ICalendarHandler
 {
     /// <summary>
@@ -83,6 +84,7 @@ public class RecurrenceHandler : ICalendarHandler
 /// <summary>
 /// Shift-based calendar handler for multi-shift operations
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public class ShiftHandler : ICalendarHandler
 {
     private readonly List<ShiftDefinition> _shifts = [];
@@ -159,4 +161,5 @@ public class ShiftHandler : ICalendarHandler
 /// <summary>
 /// Shift definition
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public record ShiftDefinition(string Name, TimeOnly Start, TimeOnly End, DayOfWeek[] WorkingDays);

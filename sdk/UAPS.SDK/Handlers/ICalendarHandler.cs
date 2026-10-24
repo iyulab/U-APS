@@ -3,6 +3,7 @@ namespace UAPS.SDK.Handlers;
 /// <summary>
 /// Calendar pattern to TimeWindow array transformation handler
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public interface ICalendarHandler
 {
     /// <summary>
@@ -17,6 +18,7 @@ public interface ICalendarHandler
 /// <summary>
 /// Time window representing a working period (explicit data for engine)
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public record TimeWindow
 {
     /// <summary>
@@ -55,6 +57,7 @@ public record TimeWindow
 /// <summary>
 /// Date range for calendar expansion
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public record DateRange
 {
     public DateOnly Start { get; init; }
@@ -92,6 +95,7 @@ public record DateRange
 /// <summary>
 /// User-friendly calendar pattern
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public class CalendarPattern
 {
     /// <summary>
@@ -177,4 +181,5 @@ public class CalendarPattern
 /// <summary>
 /// Break period during working day
 /// </summary>
+[Obsolete(HandlersDeprecation.Message)]
 public record BreakPeriod(TimeOnly Start, TimeOnly End);
