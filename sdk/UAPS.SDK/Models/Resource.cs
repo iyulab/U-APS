@@ -34,7 +34,15 @@ public class Resource
     public List<string> Capabilities { get; set; } = [];
     public int Capacity { get; set; } = 1;
     public double Efficiency { get; set; } = 1.0;
+    /// <summary>The calendar (one of the request's <c>Calendars</c>) whose working time this resource keeps — empty: always available.</summary>
     public string CalendarId { get; set; } = string.Empty;
+
+    /// <summary>Keep the working time of the calendar <paramref name="calendarId"/>.</summary>
+    public Resource WithCalendar(string calendarId)
+    {
+        CalendarId = calendarId;
+        return this;
+    }
     public List<TimeSlot> Unavailable { get; set; } = [];
     /// <summary>
     /// 연결된 자원 ID (로봇-설비 연동 등)
@@ -157,7 +165,9 @@ public class Resource
             EndMs = s.EndMs
         }).ToList(),
         LinkedResourceId = LinkedResourceId,
-        IsRobot = IsRobot
+        IsRobot = IsRobot,
+        // 빈 값은 «캘린더 없음»(언제나 가용) — 엔진의 Option 과 같은 뜻.
+        CalendarId = string.IsNullOrEmpty(CalendarId) ? null : CalendarId
     };
 
     /// <summary>
@@ -193,6 +203,7 @@ public class ResourceDto
     public List<TimeSlotDto> Unavailable { get; set; } = [];
     public string? LinkedResourceId { get; set; }
     public bool IsRobot { get; set; }
+    public string? CalendarId { get; set; }
 }
 
 public class TimeSlotDto

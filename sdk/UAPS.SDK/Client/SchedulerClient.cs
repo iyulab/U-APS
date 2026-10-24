@@ -89,7 +89,7 @@ public class SchedulerClient : IDisposable
             MaterialManager = request.MaterialManager?.ToDto(),
             OutsourcingManager = request.OutsourcingManager?.ToDto(),
             Calendars = request.Calendars.Count > 0
-                ? request.Calendars.Select(c => c.ToEngineDto()).ToList()
+                ? request.Calendars.Select(c => c.ToEngineDto(request.StartTimeMs)).ToList()
                 : null,
         };
 

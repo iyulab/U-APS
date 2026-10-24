@@ -95,6 +95,12 @@ public class Calendar
     public List<BreakTime> Breaks { get; set; } = [];
     public List<long> Holidays { get; set; } = [];
 
+    /// <summary>
+    /// The time zone whose wall clock the shifts, breaks and holidays are read on. <c>null</c> reads them in UTC
+    /// (as before this property existed).
+    /// </summary>
+    public TimeZoneInfo? TimeZone { get; set; }
+
     // ===== Factory Methods =====
 
     public static Calendar Create(string id, string name) => new()
@@ -125,6 +131,16 @@ public class Calendar
         return this;
     }
 
+    /// <summary>Read the calendar on <paramref name="zone"/>'s wall clock.</summary>
+    public Calendar WithTimeZone(TimeZoneInfo zone)
+    {
+        TimeZone = zone;
+        return this;
+    }
+
+    /// <summary>Read the calendar on the wall clock of the IANA time zone <paramref name="ianaId"/> (for example <c>Asia/Seoul</c>).</summary>
+    public Calendar WithTimeZone(string ianaId) => WithTimeZone(TimeZoneInfo.FindSystemTimeZoneById(ianaId));
+
     public Calendar WithHoliday(DateTime date)
     {
         Holidays.Add(new DateTimeOffset(date.Date, TimeSpan.Zero).ToUnixTimeMilliseconds());
@@ -146,17 +162,30 @@ public class Calendar
         return shiftTotal - breakTotal;
     }
 
+    /// <summary>Whether the instant falls on a holiday — holidays are dates, compared with the date on the calendar's wall clock.</summary>
     public bool IsHoliday(long timeMs)
     {
-        long dayMs = 24 * 60 * 60 * 1000;
-        long dayStart = (timeMs / dayMs) * dayMs;
-        return Holidays.Any(h => (h / dayMs) * dayMs == dayStart);
+        const long dayMs = 24 * 60 * 60 * 1000;
+        var instant = DateTimeOffset.FromUnixTimeMilliseconds(timeMs);
+        var local = TimeZone is null ? instant : TimeZoneInfo.ConvertTime(instant, TimeZone);
+        var day = Math.Floor((local.DateTime - DateTime.UnixEpoch).TotalMilliseconds / dayMs);
+        return Holidays.Any(h => Math.Floor((double)h / dayMs) == day);
     }
 
     // ===== Engine DTO Conversion =====
 
-    public CalendarDto ToEngineDto() => new()
+    /// <summary>The engine's calendar, its time zone laid out from now over a planning year.</summary>
+    public CalendarDto ToEngineDto() => ToEngineDto(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+    /// <summary>The engine's calendar, its time zone laid out over the planning horizon from <paramref name="startTimeMs"/> (a day before it to 367 days after).</summary>
+    public CalendarDto ToEngineDto(long startTimeMs) => new()
     {
+        UtcOffsets = TimeZone is null
+            ? null
+            : UtcOffsetsDto.For(
+                TimeZone,
+                DateTimeOffset.FromUnixTimeMilliseconds(startTimeMs).AddDays(-1),
+                DateTimeOffset.FromUnixTimeMilliseconds(startTimeMs).AddDays(367)),
         Id = Id,
         Name = Name,
         Shifts = Shifts.Select(s => new ShiftDto
@@ -204,4 +233,7 @@ public class CalendarDto
     public List<ShiftDto> Shifts { get; set; } = [];
     public List<BreakTimeDto> Breaks { get; set; } = [];
     public List<long> Holidays { get; set; } = [];
+
+    /// <summary>The wall clock's time zone — omitted for UTC.</summary>
+    public UtcOffsetsDto? UtcOffsets { get; set; }
 }

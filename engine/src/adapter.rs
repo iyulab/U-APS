@@ -961,4 +961,19 @@ mod tests {
         // Nothing left to hold: it runs in time only.
         assert!(only_activity(&adapted).resource_requirements.is_empty());
     }
+
+    #[test]
+    fn a_calendar_on_a_time_zone_lays_out_the_zones_shifts() {
+        const HOUR: i64 = 3_600_000;
+        // 2027-02-08 00:00 UTC, a Monday; Monday 00:00 in Seoul is nine hours earlier.
+        let monday_utc = 1_802_044_800_000;
+        let seoul = Calendar::default_day().with_utc_offsets(crate::UtcOffsets::fixed(9 * 60));
+        let laid = windows(&seoul, monday_utc - 9 * HOUR);
+        let first = laid.time_windows.first().cloned().expect("a window");
+        // Monday 08:00–12:00 Seoul = Sunday 23:00 – Monday 03:00 UTC
+        assert_eq!(
+            (first.start_ms, first.end_ms),
+            (monday_utc - HOUR, monday_utc + 3 * HOUR)
+        );
+    }
 }

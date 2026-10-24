@@ -20,10 +20,18 @@ published to a registry — it ships inside those packages.
   UTC (a base offset and the instants it changes, for daylight saving). An
   empty schedule is UTC, so calendars that name no zone schedule as before.
   Holidays are dates — the calendar date of each value — compared with the
-  local date. Crews, outsourcing and the SDK follow in the next change.
+  local date. Crew shift assignments and outsourcing working days still read
+  UTC.
+- SDK: `Calendar.TimeZone` / `Calendar.WithTimeZone(TimeZoneInfo | string)`
+  (an IANA name such as `Asia/Seoul`) — the request carries the zone to the
+  engine as `UtcOffsetsDto`, laid out from a day before `StartTimeMs` to 367
+  days after. `Calendar.IsHoliday` compares the date on the calendar's wall
+  clock. `Resource.WithCalendar(id)`.
 
 ### Fixed
 
+- SDK: `Resource.CalendarId` reaches the engine. It was accepted and never
+  sent, so a resource with a calendar was scheduled as always available.
 - The part of an overnight shift after midnight belongs to the day the shift
   started: a Friday 22:00–06:00 shift now covers Saturday 00:00–06:00, and
   does not cover Friday 00:00–06:00 unless a Thursday shift does. A shift that
