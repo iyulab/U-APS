@@ -59,6 +59,10 @@ pub struct Shift {
     pub start: Time,
     pub end: Time,
     pub days: Vec<DayOfWeek>,
+    /// 이 교대만의 휴식(주간 점심 · 야간 야식) — 캘린더 전체 휴식(`Calendar::breaks`)은 모든 교대에 그대로 든다.
+    /// 자정을 넘는 교대의 자정 뒤 휴식은 그 교대(시작한 날)의 것이다. 비면 없다(옛 JSON 그대로).
+    #[serde(default)]
+    pub breaks: Vec<BreakTime>,
 }
 
 impl Shift {
@@ -68,7 +72,14 @@ impl Shift {
             start,
             end,
             days,
+            breaks: Vec::new(),
         }
+    }
+
+    /// Builder: 이 교대만의 휴식 추가
+    pub fn with_break(mut self, break_time: BreakTime) -> Self {
+        self.breaks.push(break_time);
+        self
     }
 
     /// 주간 근무 (월-금 08:00-17:00)
@@ -137,6 +148,16 @@ impl BreakTime {
     /// 휴식 길이 (분)
     pub fn duration_minutes(&self) -> i32 {
         self.end.to_minutes() - self.start.to_minutes()
+    }
+
+    /// 하루 안 분 `minute` 이 이 휴식 안인가 — 끝이 시작보다 이르면 자정을 넘는 휴식(23:50~00:10).
+    fn covers(&self, minute: i32) -> bool {
+        let (start, end) = (self.start.to_minutes(), self.end.to_minutes());
+        if end > start {
+            minute >= start && minute < end
+        } else {
+            minute >= start || minute < end
+        }
     }
 }
 
@@ -257,7 +278,13 @@ impl Calendar {
     pub fn working_minutes_per_day(&self) -> i32 {
         let shift_total: i32 = self.shifts.iter().map(|s| s.duration_minutes()).sum();
         let break_total: i32 = self.breaks.iter().map(|b| b.duration_minutes()).sum();
-        shift_total - break_total
+        let shift_break_total: i32 = self
+            .shifts
+            .iter()
+            .flat_map(|s| s.breaks.iter())
+            .map(|b| b.duration_minutes())
+            .sum();
+        shift_total - break_total - shift_break_total
     }
 
     /// 특정 시각(UTC ms)이 근무 시간인지 — 교대 · 휴식 · 휴일을 캘린더 시간대의 벽시계로 읽는다.
@@ -328,9 +355,19 @@ impl Calendar {
     }
 
     fn in_break(&self, minute: i32) -> bool {
-        self.breaks
-            .iter()
-            .any(|b| minute >= b.start.to_minutes() && minute < b.end.to_minutes())
+        self.breaks.iter().any(|b| b.covers(minute))
+    }
+
+    /// 그 시각(현지 날짜 `day` · 하루 안 분 `minute`)이 그 교대의 시간 안인가 — 휴식은 보지 않는다.
+    /// 자정을 넘는 교대의 자정 뒤 몫은 **전날 시작한** 교대의 것이다.
+    fn on_shift(&self, shift: &Shift, day: i64, minute: i32) -> bool {
+        let (start, end) = (shift.start.to_minutes(), shift.end.to_minutes());
+        if end > start {
+            self.shift_starts_on(shift, day) && minute >= start && minute < end
+        } else {
+            (minute >= start && self.shift_starts_on(shift, day))
+                || (minute < end && self.shift_starts_on(shift, day - 1))
+        }
     }
 
     fn working_local(&self, local: i64) -> bool {
@@ -343,15 +380,9 @@ impl Calendar {
         if self.in_break(minute) {
             return false;
         }
+        // 그 시각에 근무 중인 교대가 하나라도 있고 그 교대가 자기 휴식 중이 아니면 근무다.
         self.shifts.iter().any(|shift| {
-            let (start, end) = (shift.start.to_minutes(), shift.end.to_minutes());
-            if end > start {
-                self.shift_starts_on(shift, day) && minute >= start && minute < end
-            } else {
-                // 자정을 넘는 시프트 — 자정 뒤 몫은 **전날 시작한** 교대의 것이다.
-                (minute >= start && self.shift_starts_on(shift, day))
-                    || (minute < end && self.shift_starts_on(shift, day - 1))
-            }
+            self.on_shift(shift, day, minute) && !shift.breaks.iter().any(|b| b.covers(minute))
         })
     }
 
@@ -366,36 +397,25 @@ impl Calendar {
             let day_start = local_day_start(current);
             let minute = minute_of_day(current);
 
-            // 휴식 중이면 휴식이 끝나는 때
-            for b in &self.breaks {
-                let (bs, be) = (b.start.to_minutes(), b.end.to_minutes());
-                if minute >= bs && minute < be {
-                    let resume = day_start + be as i64 * 60_000;
-                    if self.working_local(resume) {
-                        return Some(resume);
-                    }
-                }
-            }
-
-            // 오늘 아직 시작하지 않은 시프트 중 가장 이른 것
-            let next_start_today = self
+            // 오늘 근무가 다시 설 수 있는 때 — 아직 시작하지 않은 교대의 시작 · 휴식(캘린더 전체 · 교대마다)의 끝 —
+            // 를 이른 순으로 보고 처음으로 근무인 때. 휴식 안에서 시작하는 교대는 그 휴식의 끝이 후보로 잡는다.
+            let mut candidates: Vec<i64> = self
                 .shifts
                 .iter()
                 .filter(|s| self.shift_starts_on(s, day))
                 .map(|s| s.start.to_minutes())
-                .filter(|&start| start > minute)
-                .min();
-            if let Some(start) = next_start_today {
-                let mut candidate = day_start + start as i64 * 60_000;
-                for b in &self.breaks {
-                    let m = minute_of_day(candidate);
-                    if m >= b.start.to_minutes() && m < b.end.to_minutes() {
-                        candidate = day_start + b.end.to_minutes() as i64 * 60_000;
-                    }
-                }
-                if self.working_local(candidate) {
-                    return Some(candidate);
-                }
+                .chain(
+                    self.breaks
+                        .iter()
+                        .chain(self.shifts.iter().flat_map(|s| s.breaks.iter()))
+                        .map(|b| b.end.to_minutes()),
+                )
+                .filter(|&m| m > minute)
+                .map(|m| day_start + m as i64 * 60_000)
+                .collect();
+            candidates.sort_unstable();
+            if let Some(next) = candidates.into_iter().find(|&c| self.working_local(c)) {
+                return Some(next);
             }
 
             // 다음 날 자정으로
@@ -417,31 +437,39 @@ impl Calendar {
         let shift_end = self
             .shifts
             .iter()
-            .filter_map(|shift| {
+            .filter(|shift| self.on_shift(shift, day, minute))
+            .map(|shift| {
                 let (start, end) = (shift.start.to_minutes(), shift.end.to_minutes());
-                if end > start {
-                    (self.shift_starts_on(shift, day) && minute >= start && minute < end)
-                        .then(|| day_start + end as i64 * 60_000)
-                } else if minute >= start && self.shift_starts_on(shift, day) {
-                    Some(day_start + DAY_MS + end as i64 * 60_000)
-                } else if minute < end && self.shift_starts_on(shift, day - 1) {
-                    Some(day_start + end as i64 * 60_000)
+                if end > start || minute < end {
+                    day_start + end as i64 * 60_000
                 } else {
-                    None
+                    day_start + DAY_MS + end as i64 * 60_000
                 }
             })
             .min()?;
 
-        // 그 끝 전에 시작하는 휴식(오늘 · 자정을 넘는 시프트면 다음 날 것까지)
-        let break_start = [day_start, day_start + DAY_MS]
+        // 그 끝 전에 시작하는 휴식(오늘 · 자정을 넘는 시프트면 다음 날 것까지) — 캘린더 전체 휴식은 언제나 멈추고,
+        // 지금 근무 중인 교대의 휴식은 그때 다른 교대가 이어 근무하지 않을 때만 멈춘다.
+        let days = [day_start, day_start + DAY_MS];
+        let calendar_break = days
             .iter()
             .flat_map(|&d| {
                 self.breaks
                     .iter()
                     .map(move |b| d + b.start.to_minutes() as i64 * 60_000)
             })
-            .filter(|&t| t > from && t < shift_end)
-            .min();
+            .filter(|&t| t > from && t < shift_end);
+        let shift_break = self
+            .shifts
+            .iter()
+            .filter(|s| self.on_shift(s, day, minute))
+            .flat_map(|s| s.breaks.iter())
+            .flat_map(|b| {
+                days.iter()
+                    .map(move |&d| d + b.start.to_minutes() as i64 * 60_000)
+            })
+            .filter(|&t| t > from && t < shift_end && !self.working_local(t));
+        let break_start = calendar_break.chain(shift_break).min();
 
         Some(match break_start {
             Some(t) => (t, WorkingWindowEndReason::BreakStart),
@@ -900,5 +928,60 @@ mod tests {
         assert!(old.exceptions.is_empty());
         let new: Calendar = serde_json::from_str(r#"{"id":"C","name":"n","shifts":[],"breaks":[],"holidays":[],"exceptions":[{"date":0,"working":false}]}"#).unwrap();
         assert!(!new.exceptions[0].working && new.exceptions[0].shifts.is_empty());
+    }
+
+    #[test]
+    fn test_each_shift_keeps_its_own_breaks() {
+        // 주간(08~17 · 점심 12~13) · 야간(22~06 · 야식 02:00~02:30) — 휴식은 그 교대의 것이다.
+        let cal = Calendar::new("C", "두 교대")
+            .with_shift(Shift::day_shift().with_break(BreakTime::lunch()))
+            .with_shift(
+                Shift::new(
+                    "야간",
+                    Time::new(22, 0),
+                    Time::new(6, 0),
+                    vec![DayOfWeek::Monday],
+                )
+                .with_break(BreakTime::new(Time::new(2, 0), Time::new(2, 30))),
+            );
+        assert!(!cal.is_working_time(MON_UTC + 12 * HOUR + 30 * 60_000));
+        assert_eq!(
+            cal.find_working_window_end(MON_UTC + 9 * HOUR),
+            Some((MON_UTC + 12 * HOUR, WorkingWindowEndReason::BreakStart))
+        );
+        assert_eq!(
+            cal.next_working_time(MON_UTC + 12 * HOUR + 10 * 60_000),
+            MON_UTC + 13 * HOUR
+        );
+        // 야간의 자정 뒤 휴식은 월요일에 시작한 교대의 것 — 화요일 02:00 에 멈추고 02:30 에 잇는다.
+        assert_eq!(
+            cal.find_working_window_end(MON_UTC + 23 * HOUR),
+            Some((MON_UTC + 26 * HOUR, WorkingWindowEndReason::BreakStart))
+        );
+        assert_eq!(
+            cal.next_working_time(MON_UTC + 26 * HOUR),
+            MON_UTC + 26 * HOUR + 30 * 60_000
+        );
+        assert_eq!(cal.working_minutes_per_day(), 9 * 60 + 8 * 60 - 60 - 30);
+    }
+
+    #[test]
+    fn test_a_shift_break_does_not_stop_a_parallel_shift() {
+        // A 08~17(휴식 12~13) · B 10~14(휴식 없음) — 12:30 에는 B 가 일한다 · 창은 B 가 끝나는 14:00 까지.
+        let week = vec![DayOfWeek::Monday];
+        let cal = Calendar::new("C", "겹침")
+            .with_shift(
+                Shift::new("A", Time::new(8, 0), Time::new(17, 0), week.clone())
+                    .with_break(BreakTime::lunch()),
+            )
+            .with_shift(Shift::new("B", Time::new(10, 0), Time::new(14, 0), week));
+        assert!(cal.is_working_time(MON_UTC + 12 * HOUR + 30 * 60_000));
+        assert_eq!(
+            cal.find_working_window_end(MON_UTC + 11 * HOUR),
+            Some((MON_UTC + 14 * HOUR, WorkingWindowEndReason::ShiftEnd))
+        );
+        // 교대의 휴식 없는 옛 JSON 도 읽힌다
+        let old: Shift = serde_json::from_str(r#"{"name":"n","start":{"hour":8,"minute":0},"end":{"hour":17,"minute":0},"days":["Monday"]}"#).unwrap();
+        assert!(old.breaks.is_empty());
     }
 }

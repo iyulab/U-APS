@@ -33,6 +33,19 @@ public class Shift
     public TimeOfDay End { get; set; } = new(0, 0);
     public List<DayOfWeekType> Days { get; set; } = [];
 
+    /// <summary>
+    /// Breaks of this shift only (a day shift's lunch, a night shift's meal break). The calendar's <see cref="Calendar.Breaks"/> still apply to every shift.
+    /// A break after midnight in an overnight shift belongs to the shift that started the day before.
+    /// </summary>
+    public List<BreakTime> Breaks { get; set; } = [];
+
+    /// <summary>Add a break of this shift only.</summary>
+    public Shift WithBreak(BreakTime breakTime)
+    {
+        Breaks.Add(breakTime);
+        return this;
+    }
+
     // ===== Factory Methods =====
 
     public static Shift DayShift() => new()
@@ -189,7 +202,8 @@ public class Calendar
     {
         int shiftTotal = Shifts.Sum(s => s.DurationMinutes());
         int breakTotal = Breaks.Sum(b => b.DurationMinutes());
-        return shiftTotal - breakTotal;
+        int shiftBreakTotal = Shifts.Sum(s => s.Breaks.Sum(b => b.DurationMinutes()));
+        return shiftTotal - breakTotal - shiftBreakTotal;
     }
 
     /// <summary>Whether the instant falls on a holiday — holidays are dates, compared with the date on the calendar's wall clock.</summary>
@@ -223,7 +237,12 @@ public class Calendar
             Name = s.Name,
             Start = new TimeDto { Hour = s.Start.Hour, Minute = s.Start.Minute },
             End = new TimeDto { Hour = s.End.Hour, Minute = s.End.Minute },
-            Days = s.Days.Select(d => d.ToString()).ToList()
+            Days = s.Days.Select(d => d.ToString()).ToList(),
+            Breaks = s.Breaks.Count == 0 ? null : s.Breaks.Select(b => new BreakTimeDto
+            {
+                Start = new TimeDto { Hour = b.Start.Hour, Minute = b.Start.Minute },
+                End = new TimeDto { Hour = b.End.Hour, Minute = b.End.Minute }
+            }).ToList()
         }).ToList(),
         Breaks = Breaks.Select(b => new BreakTimeDto
         {
@@ -249,6 +268,9 @@ public class ShiftDto
     public TimeDto Start { get; set; } = new();
     public TimeDto End { get; set; } = new();
     public List<string> Days { get; set; } = [];
+
+    /// <summary>This shift's own breaks — omitted when there are none.</summary>
+    public List<BreakTimeDto>? Breaks { get; set; }
 }
 
 public class BreakTimeDto

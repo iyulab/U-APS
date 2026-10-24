@@ -35,6 +35,19 @@ published to a registry — it ships inside those packages.
   Calendars without the list read as before. SDK: `CalendarException.Closed`
   / `CalendarException.WorkingDay(date, shifts…)` and
   `Calendar.WithException`; the request omits the list when it is empty.
+- Breaks per shift — a day shift's lunch, a night shift's meal break:
+  `Shift.breaks` (engine) holds breaks of that shift only, while
+  `Calendar.breaks` still apply to every shift. A break after midnight in an
+  overnight shift belongs to the shift that started the day before, and a
+  shift's break does not stop work while another shift is on. Shifts without
+  the list read as before. SDK: `Shift.Breaks` / `Shift.WithBreak`; the
+  request omits the list when it is empty. `WorkingMinutesPerDay` subtracts
+  them.
+
+### Changed
+
+- A calendar-wide break whose end is earlier than its start now spans
+  midnight (23:50–00:10) instead of matching no minute.
 
 ### Fixed
 

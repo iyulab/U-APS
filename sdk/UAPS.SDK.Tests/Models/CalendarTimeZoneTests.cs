@@ -117,4 +117,30 @@ public class CalendarTimeZoneTests
         monday.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc + 24 * Hour + 8 * Hour);
         saturday.Schedule!.Assignments.Single().StartMs.Should().Be(MondayUtc + 5 * 24 * Hour + 8 * Hour);
     }
+
+    [Fact]
+    public void The_engine_stops_at_a_shifts_own_break()
+    {
+        // A day shift with its own 12:00-13:00 lunch and no calendar-wide break: a two-hour job started Monday 11:00
+        // runs 11:00-12:00 and 13:00-14:00, so it ends at 14:00 rather than 13:00.
+        var calendar = new Calendar { Id = "CAL-SHIFT-BREAK", Name = "shift break" }
+            .WithShift(Shift.DayShift().WithBreak(BreakTime.Lunch()));
+        var request = new ScheduleRequest
+        {
+            Jobs = [Job.Create("J1").WithOperation(Operation.Create("J1-1", "J1", 1).WithTime(0, 2 * Hour, 0).WithEquipment("EQP-1"))],
+            Resources = [Resource.Equipment("EQP-1").WithCalendar(calendar.Id)],
+            StartTimeMs = MondayUtc + 11 * Hour,
+            Calendars = [calendar],
+        };
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+        JsonSerializer.Serialize(Calendar.DefaultDay().ToEngineDto(MondayUtc), options).Should().NotContain("\"days\":[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"],\"breaks\"");
+        using var client = new SchedulerClient();
+
+        var result = client.Schedule(request);
+
+        result.Success.Should().BeTrue(result.Error ?? "no error");
+        var assignment = result.Schedule!.Assignments.Single();
+        assignment.StartMs.Should().Be(MondayUtc + 11 * Hour);
+        assignment.EndMs.Should().Be(MondayUtc + 14 * Hour);
+    }
 }
