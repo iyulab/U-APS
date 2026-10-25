@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-25
+
 ### Added
 
 - Engine calendars read shifts, breaks and holidays on a time zone's wall
