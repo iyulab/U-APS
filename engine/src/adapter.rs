@@ -135,13 +135,25 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                     })
                     .chain(pegged)
                     .max();
+                // An operation's earliest start (its time window) holds it the same
+                // way a late material does: the first operation's holds the job.
+                let window = op.time_window.as_ref();
+                let earliest = window.and_then(|w| w.earliest_start_ms);
                 let mut op_release = None;
-                if let Some(at) = arrival {
+                for at in [arrival, earliest].into_iter().flatten() {
                     if i == 0 {
                         release = Some(release.map_or(at, |r| r.max(at)));
                     } else {
-                        op_release = Some(at);
+                        op_release = Some(op_release.map_or(at, |r: i64| r.max(at)));
                     }
+                }
+                // The other bounds of a time window are not applied — say so rather
+                // than accept them in silence.
+                if window.is_some_and(|w| w.latest_start_ms.is_some() || w.earliest_end_ms.is_some() || w.latest_end_ms.is_some()) {
+                    unfilled.push((
+                        op.id.clone(),
+                        format!("Operation {} has a time window with a latest start or an end bound; only its earliest start is applied", op.id),
+                    ));
                 }
                 // u-aps takes an operational crew whole, in place of the
                 // operation's worker requirements.
@@ -164,7 +176,6 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                         crew = None;
                     }
                 }
-                // An operation's `time_window` is not stated (u-aps never read it).
                 let mut activity = Activity::new(&op.id, &job.id, op.sequence)
                     .with_duration(
                         // A u-aps wait holds the resource after processing.

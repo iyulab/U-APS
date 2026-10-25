@@ -13,6 +13,14 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- An operation's earliest start (`Operation.WithEarliestStart` · `time_window.earliest_start_ms`)
+  holds it: the first operation's holds its job, a later operation's holds that operation. It
+  was accepted and never read, so the operation could be placed before it. The other bounds of a
+  time window (latest start, earliest and latest end) are still not applied, and a window that
+  carries one is now reported as an unfilled requirement instead of being accepted in silence.
+
 ## [1.8.0] - 2026-10-25
 
 ### Added
