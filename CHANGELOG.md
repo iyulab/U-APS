@@ -15,6 +15,9 @@ published to a registry — it ships inside those packages.
 
 ### Fixed
 
+- The `UAPS.SDK` and `UAPS.CLI` packages declare their license (MIT, the repository's `LICENSE`). They
+  carried none, so a consumer that gathers third-party license texts from its packages found
+  nothing to read for them.
 - An operation's earliest start (`Operation.WithEarliestStart` · `time_window.earliest_start_ms`)
   holds it: the first operation's holds its job, a later operation's holds that operation. It
   was accepted and never read, so the operation could be placed before it. The other bounds of a

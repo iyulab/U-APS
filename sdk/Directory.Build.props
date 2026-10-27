@@ -27,6 +27,9 @@
     <Copyright>Copyright © 2025 U-APS</Copyright>
     <RepositoryUrl>https://github.com/iyulab/U-APS</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <!-- The repository's LICENSE is MIT. Without this the packages carry no license, and a consumer
+         that collects third-party notices cannot tell what the package is licensed under. -->
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
 
     <!-- Build Settings -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
