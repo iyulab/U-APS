@@ -14,8 +14,10 @@
 //! `bks.csv` (optional) has lines `instance,makespan` -- the optimum or best
 //! known upper bound; the gap column is against it. `rules` is a comma list of
 //! `SPT,LPT,LWKR,MWKR,FIFO,WINQ,LPUL,EDD,PRIORITY` (default `MWKR,SPT,FIFO`),
-//! `GA@<ms>` runs the genetic search over dispatching orders with that time
-//! limit, and `CP@<ms>` the exact search (`CpSat`).
+//! `GA@<ms>` runs the engine's `GeneticAlgorithm` with that time limit (the
+//! operation-sequence search for a request the exact model states whole, as
+//! these are, else the search over dispatching orders), and `CP@<ms>` the
+//! exact search (`CpSat`).
 //! A flexible job shop (`.fjs`, Brandimarte's format) is read too: an
 //! operation's machines are its requirement's candidates, and its time on
 //! each machine is its `resource_times` entry for that machine.
@@ -28,7 +30,7 @@ use std::time::Instant;
 
 use uaps_engine::{
     CpSatConfig, CpSatScheduler, DispatchingRuleName, GaParams, Job, Operation, Resource,
-    ScheduleRequest, SimpleScheduler, TimeOverrideEntry,
+    ScheduleRequest, SchedulingEngine, SimpleScheduler, TimeOverrideEntry,
 };
 
 /// Reads one instance: jobs whose operations each need one machine -- in a
@@ -100,7 +102,7 @@ fn main() {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| (n.starts_with("ta") && !n.contains('.')) || n.ends_with(".fjs"))
+                .is_some_and(|n| !n.contains('.') || n.ends_with(".fjs"))
         })
         .collect();
     names.sort();
@@ -132,13 +134,13 @@ fn main() {
             }
             let started = Instant::now();
             let schedule = match (ga_limit, cp_limit) {
-                (Some(ms), _) => SimpleScheduler::new().search(
-                    &request,
-                    &GaParams {
-                        time_limit_ms: Some(ms),
-                        ..Default::default()
-                    },
-                ),
+                (Some(ms), _) => SchedulingEngine::genetic(GaParams {
+                    time_limit_ms: Some(ms),
+                    ..Default::default()
+                })
+                .schedule(&jobs, &resources, 0)
+                .map(|result| result.schedule)
+                .map_err(|e| panic!("GA: {e}")),
                 (_, Some(ms)) => CpSatScheduler::new(CpSatConfig {
                     time_limit_ms: ms,
                     ..Default::default()

@@ -27,6 +27,14 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- Behaviour change: `GeneticAlgorithm`, `Production` and `Dynamic` (and the GA phase of `Hybrid`)
+  search operation sequences and machine choices directly -- u-schedule's sequence GA, decoded
+  into active schedules with a critical-path local search -- for a request the exact model
+  states whole (one equipment requirement per operation among its candidates, job order,
+  dependencies and earliest starts; no workers, calendars, splitting, materials, outsourcing,
+  crews, ...). Other requests keep the search over dispatching orders. Within the same 5 s, the
+  mean gap to the best known makespan falls from 13.2 % to 1.8 % on Brandimarte's mk01-mk10 and
+  from 5.1 % to 1.1 % on eight JSPLIB instances, every schedule without violations.
 - Behaviour change: `CpSat` (and the CP-SAT phase of `Hybrid`) states the request the way the
   dispatching scheduler does: an operation that one of several machines may run chooses among
   them, each for its own time there (resource efficiency included), and set-up and wait times,

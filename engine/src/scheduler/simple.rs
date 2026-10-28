@@ -244,6 +244,27 @@ impl SimpleScheduler {
         super::placement::search(request, config, 0.1 / 1.1)
     }
 
+    /// As [`search`](Self::search), for a request the exact model states
+    /// whole (a flexible job shop with releases and dependencies — no
+    /// workers, calendars, splitting, materials, …): u-schedule's
+    /// operation-sequence genetic algorithm with `params`' population,
+    /// generations, elite share, stall limit and time limit, which searches
+    /// active schedules of that class directly rather than dispatching orders.
+    pub fn sequence_search(
+        &self,
+        request: &ScheduleRequest,
+        params: &crate::GaParams,
+    ) -> Result<Schedule, ScheduleError> {
+        let limit = params.time_limit_ms.unwrap_or(DEFAULT_SEARCH_TIME_LIMIT_MS);
+        let config = u_metaheur::ga::GaConfig::default()
+            .with_population_size(params.population_size)
+            .with_max_generations(params.max_generations)
+            .with_elite_ratio(params.elite_ratio)
+            .with_stagnation_limit(params.convergence_generations)
+            .with_time_limit_ms(u64::try_from(limit).unwrap_or(0));
+        super::placement::sequence_search(request, config, 0.1 / 1.1)
+    }
+
     /// 납기 위반 체크
     pub(crate) fn check_due_dates(schedule: &mut Schedule, jobs: &[Job]) {
         for job in jobs {

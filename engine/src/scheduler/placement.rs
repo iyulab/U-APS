@@ -46,6 +46,30 @@ pub(super) fn search(
     })
 }
 
+/// Schedules `request` with u-schedule's operation-sequence genetic algorithm
+/// (`SchedulingGaProblem`: an operation-sequence and machine-assignment
+/// chromosome decoded into an active schedule, local search on the critical
+/// path), `config`'s budget, weighing total tardiness by `tardiness_weight`.
+/// Only for a request the exact model states whole (the engine's
+/// `cp_unstated` is empty): the chromosome states an operation on one machine
+/// among its candidates after its job's previous one and its dependencies,
+/// from its release -- the same class.
+pub(super) fn sequence_search(
+    request: &ScheduleRequest,
+    config: u_metaheur::ga::GaConfig,
+    tardiness_weight: f64,
+) -> Result<Schedule, ScheduleError> {
+    use u_metaheur::ga::GaRunner;
+    use u_schedule::ga::SchedulingGaProblem;
+    place(request, |_, problem, _| {
+        let ga = SchedulingGaProblem::new(problem)
+            .with_tardiness_weight(tardiness_weight)
+            .expect("the engine's tardiness weight is in [0, 1]");
+        let found = GaRunner::run(&ga, &config).map_err(ScheduleError::Settings)?;
+        Ok(ga.decode(&found.best))
+    })
+}
+
 /// Schedules `request` exactly: u-schedule's `ScheduleCpBuilder` model of the
 /// problem the dispatching scheduler places (an operation choosing among the
 /// machines that may run it), solved by u-metaheur's `BranchAndBoundSolver`
