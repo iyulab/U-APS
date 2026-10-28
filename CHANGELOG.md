@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-29
+
 ### Added
 
 - `Operation.ResourceTimes` (engine `resource_times`, builder `WithTimeOn`): an operation's time on
