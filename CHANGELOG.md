@@ -13,6 +13,19 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- Behaviour change: `CpSat` (and the CP-SAT phase of `Hybrid`) searches by branching on which
+  operation a machine runs next, among those that could start before the earliest finish
+  (Giffler-Thompson active schedules), with lower bounds from each job's remaining work and each
+  machine's remaining load. The earlier search branched on start times and did not finish on five
+  single-operation jobs, so it always ran to its time limit and reported `Feasible`; it now
+  proves small job shops optimal well within it (Fisher & Thompson's 6 × 6 instance in under a
+  thousand nodes) and returns as soon as it has. Schedules can differ from earlier results;
+  makespans are never longer when the search finishes. `search_strategy`,
+  `propagation_strength`, `restart_policy` and `num_workers` of the CP-SAT settings are accepted
+  and not read: only the time limit changes the search.
+
 ### Fixed
 
 - The `UAPS.SDK` and `UAPS.CLI` packages declare their license (MIT, the repository's `LICENSE`). They

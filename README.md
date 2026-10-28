@@ -114,7 +114,7 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | **GeneticAlgorithm** | Search over the dispatching order (random keys) | Better than Simple when there is time to search; keeps everything Simple keeps |
 | **Production** | Search (as GeneticAlgorithm) | The engine's default algorithm; its own budget (`ProductionConfig.ga_params`) |
 | **Dynamic** | Search (as GeneticAlgorithm) | Its own budget (`DynamicSchedulerConfig`); pegged materials are release times for every algorithm |
-| **CpSat** | Branch and bound (own search, not OR-Tools CP-SAT) | Small problems — optimal when the search finishes within the time limit |
+| **CpSat** | Branch and bound over active schedules (Giffler-Thompson; not OR-Tools CP-SAT) | Small problems — optimal when the search finishes within the time limit |
 | **Hybrid** | CpSat, then GeneticAlgorithm | Keeps whichever schedule breaks the request less, then the shorter |
 | **Auto** | Adaptive | By size: `CpSat` only for a plain job shop its model states whole, else the search |
 
