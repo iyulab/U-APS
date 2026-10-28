@@ -159,9 +159,7 @@ class Program
             Console.WriteLine("Running scheduler...");
             Schedule schedule;
 
-            try
             {
-                // Rust 엔진 시도
                 var client = new SchedulerClient();
                 var request = new ScheduleRequest { Jobs = jobs, Resources = resources };
 
@@ -190,12 +188,6 @@ class Program
                     throw new Exception(result.Error ?? "Scheduling failed");
                 }
                 schedule = result.Schedule;
-            }
-            catch (DllNotFoundException)
-            {
-                // Rust DLL 없으면 Mock 스케줄러 사용
-                Console.WriteLine("  (Using mock scheduler - Rust engine not available)");
-                schedule = RunMockScheduler(jobs, resources);
             }
 
             Console.WriteLine($"  - Makespan: {schedule.MakespanMs / 60000.0:F1} minutes");
@@ -573,97 +565,5 @@ class Program
         }
 
         Console.WriteLine($"  Native library updated: {targetPath}");
-    }
-
-    /// <summary>
-    /// Mock 스케줄러 - Rust 엔진 없을 때 사용
-    /// </summary>
-    static Schedule RunMockScheduler(List<Job> jobs, List<Resource> resources)
-    {
-        var assignments = new List<Assignment>();
-        var violations = new List<Violation>();
-
-        // 자원 가용 시간 추적
-        var resourceAvailability = resources.ToDictionary(r => r.Id, r => 0L);
-
-        // 우선순위 순으로 정렬
-        var sortedJobs = jobs.OrderBy(j => j.Priority).ToList();
-
-        foreach (var job in sortedJobs)
-        {
-            var jobStartTime = 0L;
-
-            foreach (var op in job.Operations.OrderBy(o => o.Sequence))
-            {
-                // 사용 가능한 자원 찾기 (RequiredResources에서 Equipment 타입 후보 추출)
-                var equipmentCandidates = op.RequiredResources
-                    .Where(r => r.ResourceType == ResourceType.Equipment)
-                    .SelectMany(r => r.Candidates)
-                    .ToList();
-
-                var availableResource = equipmentCandidates
-                    .Where(id => resourceAvailability.ContainsKey(id))
-                    .OrderBy(id => resourceAvailability[id])
-                    .FirstOrDefault();
-
-                if (availableResource == null && resources.Count > 0)
-                {
-                    availableResource = resources[0].Id;
-                }
-
-                availableResource ??= "DEFAULT";
-
-                // 시작 시간 계산
-                var resourceReady = resourceAvailability.GetValueOrDefault(availableResource, 0);
-                var startTime = Math.Max(jobStartTime, resourceReady);
-
-                // 종료 시간 계산
-                var duration = op.Time.SetupMs + op.Time.ProcessMs + op.Time.WaitMs;
-                var endTime = startTime + duration;
-
-                assignments.Add(new Assignment
-                {
-                    OperationId = op.Id,
-                    ResourceId = availableResource,
-                    StartMs = startTime,
-                    EndMs = endTime
-                });
-
-                // 자원 가용 시간 업데이트
-                if (resourceAvailability.ContainsKey(availableResource))
-                {
-                    resourceAvailability[availableResource] = endTime;
-                }
-
-                jobStartTime = endTime;
-            }
-
-            // 납기 위반 확인
-            if (job.DueDate.HasValue)
-            {
-                var completionTime = jobStartTime;
-                var dueTimeMs = (long)(job.DueDate.Value - DateTime.UnixEpoch).TotalMilliseconds;
-
-                if (completionTime > dueTimeMs && dueTimeMs > 0)
-                {
-                    violations.Add(new Violation
-                    {
-                        ConstraintType = "DueDate",
-                        TargetId = job.Id,
-                        Amount = completionTime - dueTimeMs,
-                        Description = $"Job {job.Id} completes {(completionTime - dueTimeMs) / 60000.0:F1} minutes late"
-                    });
-                }
-            }
-        }
-
-        var makespan = assignments.Count > 0 ? assignments.Max(a => a.EndMs) : 0;
-
-        return new Schedule
-        {
-            Assignments = assignments,
-            Violations = violations,
-            MakespanMs = makespan
-        };
     }
 }

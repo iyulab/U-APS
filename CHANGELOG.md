@@ -27,6 +27,11 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- Behaviour change: the CLI no longer falls back to a built-in mock scheduler when the engine
+  library cannot be loaded. The mock sequenced jobs by priority alone -- it ignored the
+  dispatching rule, worker requirements, efficiency and per-resource times, and could put an
+  operation on a resource that cannot run it -- so its schedule looked like an answer without
+  being one. The CLI now fails with the loader's error (`uaps update` restores the library).
 - Behaviour change: `GeneticAlgorithm`, `Production` and `Dynamic` (and the GA phase of `Hybrid`)
   search operation sequences and machine choices directly -- u-schedule's sequence GA, decoded
   into active schedules with a critical-path local search -- for a request the exact model

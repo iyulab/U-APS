@@ -153,6 +153,11 @@ jobs:
       - name: Test SDK against the engine
         run: dotnet test UAPS.SDK.Tests -p:EnableWindowsTargeting=true
         working-directory: sdk
+      # The samples' documented answers (samples/README.md), read through the
+      # CLI's parser and scheduled by the same engine.
+      - name: Test CLI samples against the engine
+        run: dotnet test UAPS.CLI.Tests -p:EnableWindowsTargeting=true
+        working-directory: sdk
 
   changelog:
     name: Changelog Entry
