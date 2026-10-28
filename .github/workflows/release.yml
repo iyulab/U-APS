@@ -157,17 +157,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Download native library for tests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: native-linux-x64
-          path: sdk/UAPS.SDK.Tests/bin/Release/net10.0/
-
-      - name: Rename native library for tests
-        run: |
-          mv sdk/UAPS.SDK.Tests/bin/Release/net10.0/uaps_engine-linux-x64.so sdk/UAPS.SDK.Tests/bin/Release/net10.0/libuaps_engine.so
-
-      - name: Download native libraries for packaging
+      - name: Download native libraries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: native-*
@@ -190,6 +180,16 @@ jobs:
             cp "$src" "$dest/${rid_file[$rid]}"
           done
           find sdk/UAPS.SDK/runtimes -type f
+
+      # The tests run against the engine being released: put this run's linux
+      # build where `cargo build --release` would leave it, so
+      # sdk/EngineUnderTest.targets copies it next to every test project that
+      # imports it — the same path ci.yml takes, instead of one test project's
+      # output folder.
+      - name: Place the engine under test
+        run: |
+          mkdir -p engine/target/release
+          cp native-artifacts/native-linux-x64/uaps_engine-linux-x64.so engine/target/release/libuaps_engine.so
 
       - name: Restore dependencies
         working-directory: sdk
