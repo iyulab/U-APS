@@ -556,8 +556,8 @@ impl SchedulingEngine {
                 }
                 let config = self.effective_cpsat_config();
                 let scheduler = CpSatScheduler::new(config);
-                let result = scheduler.schedule(jobs, resources, start_time_ms);
-                Ok(result.schedule)
+                let request = self.build_schedule_request(jobs, resources, start_time_ms);
+                Ok(scheduler.schedule(&request)?.schedule)
             }
 
             SchedulingAlgorithm::Auto => {
@@ -620,8 +620,11 @@ impl SchedulingEngine {
                 }
                 let cpsat_config = self.effective_cpsat_config();
                 let cpsat_scheduler = CpSatScheduler::new(cpsat_config);
-                let cpsat_result =
-                    cpsat_scheduler.schedule_from(jobs, resources, start_time_ms, &ga_schedule);
+                let request = self.build_schedule_request(jobs, resources, start_time_ms);
+                let cpsat_result = match cpsat_scheduler.schedule_from(&request, &ga_schedule) {
+                    Ok(result) => result,
+                    Err(_) => return Ok(ga_schedule),
+                };
                 self.log(
                     LogLevel::Info,
                     &format!(
@@ -630,17 +633,17 @@ impl SchedulingEngine {
                         match cpsat_result.status {
                             CpSatStatus::Optimal => "proved optimal",
                             CpSatStatus::Feasible => "time limit reached",
-                            CpSatStatus::Timeout | CpSatStatus::Infeasible => "no schedule",
+                            CpSatStatus::Timeout
+                            | CpSatStatus::Infeasible
+                            | CpSatStatus::Unknown => "no schedule",
                         }
                     ),
                     None,
                 );
 
                 // The one that keeps more of the request, then the shorter.
-                // CP-SAT reads one machine per operation and may find nothing
-                // in its time: its schedule then breaks the request, and its
-                // makespan of 0 is no reason to take it.
-                let request = self.build_schedule_request(jobs, resources, start_time_ms);
+                // CP-SAT may find nothing in its time: its schedule then
+                // leaves operations out, and that is no reason to take it.
                 let score =
                     |s: &Schedule| (super::placement::breaks(&request, s).len(), s.makespan_ms);
                 if score(&ga_schedule) <= score(&cpsat_result.schedule) {
@@ -704,9 +707,11 @@ impl SchedulingEngine {
 }
 
 /// What a request has that the CP-SAT model does not state — it states each
-/// operation as its processing time on the first candidate of its first
-/// requirement, in its job's list order, from the start time. Empty when the
-/// model is the whole request (a plain job shop).
+/// operation with one requirement on the machine it chooses among its
+/// candidates (each for its time there, set-up and wait included), after its
+/// job's previous operation and its dependencies, from its earliest start.
+/// Empty when the model is the whole request (a flexible job shop with
+/// releases and dependencies).
 fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> Vec<&'static str> {
     use crate::ResourceType;
     let ops = || jobs.iter().flat_map(|j| &j.operations);
@@ -717,10 +722,10 @@ fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> V
         }
     };
     note(
-        "alternative or several resources",
+        "several resources or unnamed candidates",
         ops().any(|o| {
             o.required_resources.len() > 1
-                || o.required_resources.iter().any(|r| r.candidates.len() != 1)
+                || o.required_resources.iter().any(|r| r.candidates.is_empty())
         }),
     );
     note(
@@ -736,10 +741,6 @@ fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> V
         ops().any(|o| o.required_resources.is_empty()),
     );
     note(
-        "set-up or wait times",
-        ops().any(|o| o.time.setup_ms > 0 || o.time.wait_ms > 0),
-    );
-    note(
         "operations out of sequence order",
         jobs.iter().any(|j| {
             j.operations
@@ -748,10 +749,15 @@ fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> V
         }),
     );
     note(
-        "release times or time windows",
-        jobs.iter().any(|j| j.earliest_start.is_some()) || ops().any(|o| o.time_window.is_some()),
+        "time windows beyond an earliest start",
+        ops().any(|o| {
+            o.time_window.as_ref().is_some_and(|w| {
+                w.latest_start_ms.is_some()
+                    || w.earliest_end_ms.is_some()
+                    || w.latest_end_ms.is_some()
+            })
+        }),
     );
-    note("dependencies", ops().any(|o| !o.dependencies.is_empty()));
     note(
         "daily work windows",
         ops().any(|o| o.daily_work_window.is_some()),
@@ -777,10 +783,8 @@ fn cp_unstated(jobs: &[Job], resources: &[Resource], config: &EngineConfig) -> V
         jobs.iter().any(|j| j.target_site_id.is_some()),
     );
     note(
-        "resource efficiencies or capacities",
-        resources
-            .iter()
-            .any(|r| r.efficiency != 1.0 || r.capacity > 1),
+        "resource capacities",
+        resources.iter().any(|r| r.capacity > 1),
     );
     note(
         "calendars",
@@ -1062,7 +1066,10 @@ mod tests {
         crewed[0].operations[0] = crewed[0].operations[0].clone().with_workers(1);
         assert_eq!(
             cp_unstated(&crewed, &resources, &EngineConfig::default()),
-            ["alternative or several resources", "worker requirements"]
+            [
+                "several resources or unnamed candidates",
+                "worker requirements"
+            ]
         );
 
         let quick = Some(GaParams {

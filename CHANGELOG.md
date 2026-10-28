@@ -15,6 +15,16 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- Behaviour change: `CpSat` (and the CP-SAT phase of `Hybrid`) states the request the way the
+  dispatching scheduler does: an operation that one of several machines may run chooses among
+  them, each for its own time there (resource efficiency included), and set-up and wait times,
+  earliest starts and dependencies on other jobs' operations are kept. Before, every operation
+  ran on its first candidate for its processing time alone, and a request with any of these was
+  reported as breaking. `Auto` and `Hybrid` therefore use the exact search for more requests:
+  what still keeps it out is several requirements per operation, workers, time windows beyond an
+  earliest start, overlap or splitting, calendars, set-up matrices, materials, outsourcing, crews,
+  sites, capacities above one and skill matrices. The schedule is read back with each
+  operation's sites, tasks and due-date violations, as the other algorithms report it.
 - Behaviour change: `CpSat` (and the CP-SAT phase of `Hybrid`) searches by branching on which
   operation a machine runs next, among those that could start before the earliest finish
   (Giffler-Thompson active schedules), with lower bounds from each job's remaining work and each

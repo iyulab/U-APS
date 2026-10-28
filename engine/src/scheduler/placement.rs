@@ -46,6 +46,70 @@ pub(super) fn search(
     })
 }
 
+/// Schedules `request` exactly: u-schedule's `ScheduleCpBuilder` model of the
+/// problem the dispatching scheduler places (an operation choosing among the
+/// machines that may run it), solved by u-metaheur's `BranchAndBoundSolver`
+/// within `time_limit_ms`, from `start_from` when one is given. Returns the
+/// schedule read back as the dispatching scheduler's is, and the solver's
+/// solution (its status says how the search ended).
+pub(crate) fn exact(
+    request: &ScheduleRequest,
+    time_limit_ms: i64,
+    start_from: Option<&Schedule>,
+) -> Result<(Schedule, u_metaheur::cp::CpSolution), ScheduleError> {
+    use u_metaheur::cp::{BranchAndBoundSolver, CpSolution, SolverConfig, SolverStatus};
+    use u_schedule::cp::ScheduleCpBuilder;
+    let mut solution = CpSolution::empty(SolverStatus::Unknown);
+    let schedule = place(request, |_, problem, start| {
+        let builder = ScheduleCpBuilder::new(problem);
+        // Room for every operation one after another on its slowest machine,
+        // after the latest release.
+        let work: i64 = problem
+            .tasks()
+            .iter()
+            .flat_map(|t| &t.activities)
+            .map(|a| {
+                a.eligible_resources(problem.resources())
+                    .into_iter()
+                    .map(|r| a.duration_on([r]).total_ms())
+                    .max()
+                    .unwrap_or_else(|| a.duration.total_ms())
+            })
+            .sum();
+        let released = problem
+            .tasks()
+            .iter()
+            .flat_map(|t| {
+                t.release_time
+                    .into_iter()
+                    .chain(t.activities.iter().filter_map(|a| a.release_time))
+            })
+            .fold(start, i64::max);
+        let mut solver = BranchAndBoundSolver::new();
+        if let Some(schedule) = start_from {
+            let mut stated = u_schedule::models::Schedule::new();
+            for a in &schedule.assignments {
+                stated.add_assignment(u_schedule::models::Assignment::new(
+                    &a.operation_id,
+                    &a.job_id,
+                    &a.resource_id,
+                    a.start_ms,
+                    a.end_ms,
+                ));
+            }
+            solver = solver.with_incumbent(builder.incumbent(&stated));
+        }
+        let config = SolverConfig {
+            time_limit_ms,
+            ..SolverConfig::default()
+        };
+        let (placed, found) = builder.solve(&solver, &config, released + 2 * work);
+        solution = found;
+        Ok(placed)
+    })?;
+    Ok((schedule, solution))
+}
+
 /// Where `schedule` — by any of this engine's algorithms — breaks `request`,
 /// judged by u-schedule's check on the request as the default scheduler
 /// states it: an operation without resources (`NONE`) or away at a provider

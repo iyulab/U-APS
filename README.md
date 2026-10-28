@@ -116,7 +116,7 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | **Dynamic** | Search (as GeneticAlgorithm) | Its own budget (`DynamicSchedulerConfig`); pegged materials are release times for every algorithm |
 | **CpSat** | Branch and bound over active schedules (Giffler-Thompson; not OR-Tools CP-SAT) | Small problems — optimal when the search finishes within the time limit |
 | **Hybrid** | GeneticAlgorithm, then CpSat from its schedule | CpSat improves on the GA's schedule or proves it optimal; keeps whichever breaks the request less, then the shorter |
-| **Auto** | Adaptive | By size: `CpSat` only for a plain job shop its model states whole, else the search |
+| **Auto** | Adaptive | By size: `CpSat` only for a (flexible) job shop its model states whole, else the search |
 
 ### Dispatching Rules
 

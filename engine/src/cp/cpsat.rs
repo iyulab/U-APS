@@ -1,20 +1,21 @@
 //! Exact scheduler over a CP model.
 //!
-//! The request becomes a disjunctive model (each operation on its first
-//! candidate resource, job order as precedence, makespan objective), solved
-//! by u-metaheur's `BranchAndBoundSolver` -- branch and bound over active
-//! schedules, not OR-Tools CP-SAT. The result is `Optimal` only when the
-//! search finishes within the time limit; a search cut off by the limit
-//! reports `Feasible` (best found) or `Timeout` (none found).
+//! The request is stated as a u-schedule problem the way the dispatching
+//! scheduler states it ([`crate::adapter`]), modelled by u-schedule's
+//! `ScheduleCpBuilder` -- an operation that one of several machines may run
+//! chooses among them, each for its own time -- and solved by u-metaheur's
+//! `BranchAndBoundSolver`: branch and bound over active schedules, not
+//! OR-Tools CP-SAT. The result is `Optimal` only when the search finishes
+//! within the time limit; a search cut off by the limit reports `Feasible`
+//! (best found) or `Timeout` (none found), and a model outside the solver's
+//! class (an overlap between steps, among others) `Unknown`.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::time::Instant;
-use u_metaheur::cp::BranchAndBoundSolver;
 
-use crate::cp::{CpModel, CpSolution, CpSolver, IntervalSolution, SolverConfig, SolverStatus};
-use crate::models::{Job, Resource};
-use crate::scheduler::Schedule;
+use crate::cp::{CpSolution, SolverStatus};
+use crate::scheduler::{Schedule, ScheduleError};
+use crate::ScheduleRequest;
 
 pub struct CpSatScheduler {
     config: CpSatConfig,
@@ -72,158 +73,47 @@ impl CpSatScheduler {
         Self { config }
     }
 
-    pub fn schedule(
-        &self,
-        jobs: &[Job],
-        resources: &[Resource],
-        start_time_ms: i64,
-    ) -> CpSatResult {
-        self.run(jobs, resources, start_time_ms, None)
+    /// Schedules `request` exactly, or says why it cannot be stated.
+    pub fn schedule(&self, request: &ScheduleRequest) -> Result<CpSatResult, ScheduleError> {
+        self.run(request, None)
     }
 
     /// As [`schedule`](Self::schedule), starting the search from
     /// `start_from` -- a schedule of the same request, from another
     /// algorithm. Its makespan bounds the search from the start, and it is
     /// the answer unless a shorter one is found: a search that finishes proves
-    /// it `Optimal`. A schedule the model does not admit (another resource
-    /// than an operation's first candidate, a different length) is not used.
+    /// it `Optimal`. A schedule the model does not admit (an operation on a
+    /// machine it may not choose, a different length) is not used.
     pub fn schedule_from(
         &self,
-        jobs: &[Job],
-        resources: &[Resource],
-        start_time_ms: i64,
+        request: &ScheduleRequest,
         start_from: &Schedule,
-    ) -> CpSatResult {
-        self.run(jobs, resources, start_time_ms, Some(start_from))
+    ) -> Result<CpSatResult, ScheduleError> {
+        self.run(request, Some(start_from))
     }
 
     fn run(
         &self,
-        jobs: &[Job],
-        resources: &[Resource],
-        start_time_ms: i64,
+        request: &ScheduleRequest,
         start_from: Option<&Schedule>,
-    ) -> CpSatResult {
+    ) -> Result<CpSatResult, ScheduleError> {
         let start_instant = Instant::now();
-        let model = self.build_model(jobs, resources, start_time_ms);
-        let solution = self.solve_internal(&model, start_from);
-        let schedule = self.solution_to_schedule(&solution, jobs, resources, start_time_ms);
-        let elapsed = start_instant.elapsed().as_millis() as i64;
+        let (schedule, solution) =
+            crate::scheduler::placement::exact(request, self.config.time_limit_ms, start_from)?;
         // The search says how it ended; a solution found is not a proof.
         let status = match solution.status {
             SolverStatus::Optimal => CpSatStatus::Optimal,
             SolverStatus::Feasible => CpSatStatus::Feasible,
             SolverStatus::Timeout => CpSatStatus::Timeout,
-            _ => CpSatStatus::Infeasible,
+            SolverStatus::Infeasible => CpSatStatus::Infeasible,
+            SolverStatus::Unknown | SolverStatus::ModelInvalid => CpSatStatus::Unknown,
         };
-        CpSatResult {
+        Ok(CpSatResult {
             schedule,
             solution,
-            solve_time_ms: elapsed,
+            solve_time_ms: start_instant.elapsed().as_millis() as i64,
             status,
-        }
-    }
-
-    fn build_model(&self, jobs: &[Job], _resources: &[Resource], start_time_ms: i64) -> CpModel {
-        use crate::cp::IntervalVar;
-        let horizon = start_time_ms + 30 * 24 * 3600 * 1000;
-        let mut model = CpModel::new("scheduling", horizon);
-        let mut resource_intervals: HashMap<String, Vec<String>> = HashMap::new();
-        for job in jobs {
-            let mut prev_op: Option<String> = None;
-            for op in &job.operations {
-                let resource_id = op
-                    .required_resources
-                    .first()
-                    .and_then(|req| req.candidates.first())
-                    .cloned()
-                    .unwrap_or_else(|| "default".to_string());
-                let interval =
-                    IntervalVar::new(&op.id, start_time_ms, horizon, op.time.process_ms, horizon);
-                model.add_interval(interval);
-                resource_intervals
-                    .entry(resource_id)
-                    .or_default()
-                    .push(op.id.clone());
-                if let Some(prev) = prev_op {
-                    model.add_precedence(prev, op.id.clone(), 0);
-                }
-                prev_op = Some(op.id.clone());
-            }
-        }
-        for (_res_id, intervals) in resource_intervals {
-            if intervals.len() > 1 {
-                model.add_no_overlap(intervals);
-            }
-        }
-        model.set_objective(crate::cp::CpObjective::MinimizeMaxEnd);
-        model
-    }
-
-    /// The model's exact solution by u-metaheur's branch and bound, within
-    /// the time limit, from `start_from` when one is given.
-    fn solve_internal(&self, model: &CpModel, start_from: Option<&Schedule>) -> CpSolution {
-        let config = SolverConfig {
-            time_limit_ms: self.config.time_limit_ms,
-            num_workers: self.config.num_workers,
-            stop_after_first: false,
-        };
-        let mut solver = BranchAndBoundSolver::new();
-        if let Some(schedule) = start_from {
-            let mut incumbent = CpSolution::empty(SolverStatus::Feasible);
-            for a in &schedule.assignments {
-                incumbent.intervals.insert(
-                    a.operation_id.clone(),
-                    IntervalSolution {
-                        start: a.start_ms,
-                        end: a.end_ms,
-                        duration: a.end_ms - a.start_ms,
-                        is_present: true,
-                    },
-                );
-            }
-            solver = solver.with_incumbent(incumbent);
-        }
-        solver.solve(model, &config)
-    }
-
-    fn solution_to_schedule(
-        &self,
-        solution: &CpSolution,
-        jobs: &[Job],
-        _resources: &[Resource],
-        _start_time_ms: i64,
-    ) -> Schedule {
-        use crate::scheduler::{Assignment, Schedule};
-        let mut assignments = Vec::new();
-        for job in jobs {
-            for op in &job.operations {
-                if let Some(interval_sol) = solution.intervals.get(&op.id) {
-                    let resource_id = op
-                        .required_resources
-                        .first()
-                        .and_then(|req| req.candidates.first())
-                        .cloned()
-                        .unwrap_or_else(|| "default".to_string());
-                    assignments.push(Assignment {
-                        operation_id: op.id.clone(),
-                        job_id: job.id.clone(),
-                        resource_id,
-                        start_ms: interval_sol.start,
-                        end_ms: interval_sol.end,
-                        setup_ms: 0,
-                        site_id: None,
-                        part: None,
-                    });
-                }
-            }
-        }
-        Schedule {
-            assignments,
-            makespan_ms: solution.max_end(),
-            violations: vec![],
-            tasks: vec![],
-        }
+        })
     }
 }
 
@@ -241,12 +131,15 @@ pub enum CpSatStatus {
     Feasible,
     Infeasible,
     Timeout,
+    /// The request states something the exact solver does not search (an
+    /// overlap between steps, among others): no schedule.
+    Unknown,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Operation;
+    use crate::models::{Job, Operation, Resource};
 
     fn create_test_jobs() -> Vec<Job> {
         (0..5)
@@ -276,7 +169,9 @@ mod tests {
             time_limit_ms: 1000,
             ..Default::default()
         });
-        let result = scheduler.schedule(&jobs, &resources, 0);
+        let result = scheduler
+            .schedule(&ScheduleRequest::new(jobs, resources))
+            .expect("stated");
         // Five operations on one machine: the optimum is their total length.
         assert_eq!(result.status, CpSatStatus::Optimal);
         assert_eq!(result.schedule.makespan_ms, 60_000);
@@ -302,7 +197,9 @@ mod tests {
             time_limit_ms: 1000,
             ..Default::default()
         });
-        let result = scheduler.schedule(&jobs, &resources, 0);
+        let result = scheduler
+            .schedule(&ScheduleRequest::new(jobs, resources))
+            .expect("stated");
         assert_eq!(result.status, CpSatStatus::Optimal);
         assert_eq!(result.schedule.makespan_ms, 8000);
         let o1 = result
@@ -352,10 +249,19 @@ mod tests {
             time_limit_ms: 5000,
             ..Default::default()
         });
-        let result = scheduler.schedule(&jobs, &create_test_resources(), 0);
+        let machines = vec![Resource::equipment("M1"), Resource::equipment("M2")];
+        let result = scheduler
+            .schedule(&ScheduleRequest::new(jobs.clone(), machines))
+            .expect("stated");
         // Johnson's order J2 J0 J3 J4 J1 gives 24 000.
         assert_eq!(result.status, CpSatStatus::Optimal);
         assert_eq!(result.schedule.makespan_ms, 24_000);
+        // M2 at 90 % efficiency takes each second operation 1/0.9 as long.
+        let request = ScheduleRequest::new(jobs, create_test_resources());
+        let slower = scheduler.schedule(&request).expect("stated");
+        assert_eq!(slower.status, CpSatStatus::Optimal);
+        assert!(slower.schedule.makespan_ms > 24_000);
+        assert!(crate::scheduler::placement::breaks(&request, &slower.schedule).is_empty());
     }
 
     #[test]
@@ -366,10 +272,97 @@ mod tests {
             time_limit_ms: 1000,
             ..Default::default()
         });
-        let first = scheduler.schedule(&jobs, &resources, 0);
-        let again = scheduler.schedule_from(&jobs, &resources, 0, &first.schedule);
+        let request = ScheduleRequest::new(jobs, resources);
+        let first = scheduler.schedule(&request).expect("stated");
+        let again = scheduler
+            .schedule_from(&request, &first.schedule)
+            .expect("stated");
         assert_eq!(again.status, CpSatStatus::Optimal);
         assert_eq!(again.schedule.makespan_ms, 60_000);
         assert!(again.solution.num_nodes <= first.solution.num_nodes);
+    }
+
+    #[test]
+    fn an_operation_takes_the_machine_that_finishes_first() {
+        // "J0-O1" may run on M1 or M2, "J1-O1" on M1 alone: the exact
+        // schedule runs them together, J0 on M2.
+        let jobs = vec![
+            Job::new("J0").with_operation(
+                Operation::new("J0-O1", "J0", 1)
+                    .with_time(0, 10_000, 0)
+                    .with_equipment(vec!["M1".to_string(), "M2".to_string()]),
+            ),
+            Job::new("J1").with_operation(
+                Operation::new("J1-O1", "J1", 1)
+                    .with_time(0, 10_000, 0)
+                    .with_equipment(vec!["M1".to_string()]),
+            ),
+        ];
+        let resources = vec![Resource::equipment("M1"), Resource::equipment("M2")];
+        let scheduler = CpSatScheduler::new(CpSatConfig {
+            time_limit_ms: 1000,
+            ..Default::default()
+        });
+        let result = scheduler
+            .schedule(&ScheduleRequest::new(jobs, resources))
+            .expect("stated");
+        assert_eq!(result.status, CpSatStatus::Optimal);
+        assert_eq!(result.schedule.makespan_ms, 10_000);
+        let on = |op: &str| {
+            result
+                .schedule
+                .assignment_for_operation(op)
+                .expect("placed")
+                .resource_id
+                .clone()
+        };
+        assert_eq!(on("J0-O1"), "M2");
+        assert_eq!(on("J1-O1"), "M1");
+    }
+
+    #[test]
+    fn set_up_wait_release_and_dependencies_are_kept() {
+        // J0's operation: 1 s set-up, 4 s processing, 2 s wait, released at
+        // 3 s. J1's waits for it (a dependency across jobs) on the same
+        // machine.
+        let jobs = vec![
+            Job::new("J0").with_operation(
+                Operation::new("J0-O1", "J0", 1)
+                    .with_time(1_000, 4_000, 2_000)
+                    .with_equipment(vec!["M1".to_string()])
+                    .with_time_window(crate::models::OperationTimeWindow {
+                        earliest_start_ms: Some(3_000),
+                        latest_start_ms: None,
+                        earliest_end_ms: None,
+                        latest_end_ms: None,
+                        is_hard: true,
+                        penalty_per_ms: 0.0,
+                    }),
+            ),
+            Job::new("J1").with_operation(
+                Operation::new("J1-O1", "J1", 1)
+                    .with_time(0, 1_000, 0)
+                    .with_equipment(vec!["M1".to_string()])
+                    .with_dependencies(["J0-O1"]),
+            ),
+        ];
+        let request = ScheduleRequest::new(jobs, vec![Resource::equipment("M1")]);
+        let scheduler = CpSatScheduler::new(CpSatConfig {
+            time_limit_ms: 1000,
+            ..Default::default()
+        });
+        let result = scheduler.schedule(&request).expect("stated");
+        assert_eq!(result.status, CpSatStatus::Optimal);
+        let j0 = result
+            .schedule
+            .assignment_for_operation("J0-O1")
+            .expect("placed");
+        let j1 = result
+            .schedule
+            .assignment_for_operation("J1-O1")
+            .expect("placed");
+        assert_eq!((j0.start_ms, j0.end_ms), (3_000, 10_000));
+        assert!(j1.start_ms >= j0.end_ms);
+        assert!(crate::scheduler::placement::breaks(&request, &result.schedule).is_empty());
     }
 }

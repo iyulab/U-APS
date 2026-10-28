@@ -57,7 +57,7 @@ Console.WriteLine($"Makespan: {result.Schedule.MakespanMs}ms");
 | `Dynamic` | Search (as `GeneticAlgorithm`) | Its own search budget |
 | `CpSat` | Constraint programming | Exact solutions for small problems |
 | `Hybrid` | `GeneticAlgorithm`, then `CpSat` from its schedule | Keeps the schedule that breaks the request less; `CpSat` improves on the GA's or proves it optimal |
-| `Auto` | Adaptive | By size: `CpSat` only for a plain job shop, else the search |
+| `Auto` | Adaptive | By size: `CpSat` only for a (flexible) job shop its model states whole, else the search |
 
 Dispatching rules: `FIFO`, `SPT`, `LPT`, `EDD`, `SLACK`, `CR`, `PRIORITY`,
 `LWKR`, `MWKR`, `MOPNR`, `RANDOM`.

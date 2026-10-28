@@ -24,7 +24,7 @@ pub mod dynamic;
 pub mod engine;
 pub mod kpi;
 pub mod pegging;
-mod placement;
+pub(crate) mod placement;
 pub mod production;
 pub mod reschedule;
 mod schedule;
