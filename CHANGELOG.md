@@ -68,6 +68,10 @@ published to a registry — it ships inside those packages.
 
 ### Fixed
 
+- The engine builds on u-schedule 0.34 and u-metaheur 0.18, whose random-key search decodes its
+  first population within the time limit: an algorithm that searches the dispatching order
+  (`GeneticAlgorithm`, `Production`, `Dynamic`, the GA phase of `Hybrid`) with a `timeout_ms`
+  no longer runs past it by the time the first population takes to decode.
 - The `UAPS.SDK` and `UAPS.CLI` packages declare their license (MIT, the repository's `LICENSE`). They
   carried none, so a consumer that gathers third-party license texts from its packages found
   nothing to read for them.
