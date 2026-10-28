@@ -14,8 +14,11 @@
 //! `bks.csv` (optional) has lines `instance,makespan` -- the optimum or best
 //! known upper bound; the gap column is against it. `rules` is a comma list of
 //! `SPT,LPT,LWKR,MWKR,FIFO,WINQ,LPUL,EDD,PRIORITY` (default `MWKR,SPT,FIFO`),
-//! and `GA@<ms>` runs the genetic search over dispatching orders with that
-//! time limit.
+//! `GA@<ms>` runs the genetic search over dispatching orders with that time
+//! limit, and `CP@<ms>` the exact search (`CpSat`).
+//! A flexible job shop (`.fjs`, Brandimarte's format) whose operations take
+//! the same time on each of their machines is read too: an operation's
+//! machines are its requirement's candidates.
 //! One machine is one equipment resource, one operation one equipment
 //! requirement; no worker, calendar or set-up is involved, so the numbers are
 //! the dispatching alone.
@@ -24,26 +27,37 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use uaps_engine::{
-    DispatchingRuleName, GaParams, Job, Operation, Resource, ScheduleRequest, SimpleScheduler,
+    CpSatConfig, CpSatScheduler, DispatchingRuleName, GaParams, Job, Operation, Resource,
+    ScheduleRequest, SimpleScheduler,
 };
 
-/// Reads one instance: jobs whose operations each need one machine.
+/// Reads one instance: jobs whose operations each need one machine -- in a
+/// flexible one (`.fjs`), any of several, all for the operation's one time.
 fn read(path: &std::path::Path) -> (Vec<Job>, Vec<Resource>) {
+    let flexible = path.extension().is_some_and(|e| e == "fjs");
     let text = std::fs::read_to_string(path).expect("instance file is readable");
     let mut numbers = text
         .split_whitespace()
-        .map(|t| t.parse::<i64>().expect("instance holds integers"));
+        .filter_map(|t| t.parse::<i64>().ok());
     let mut next = || numbers.next().expect("instance is complete");
     let (jobs, machines) = (next() as usize, next() as usize);
     let jobs = (0..jobs)
         .map(|j| {
             let id = format!("J{j}");
-            (0..machines).fold(Job::new(&id), |job, k| {
-                let (machine, time) = (next(), next());
+            let steps = if flexible { next() as usize } else { machines };
+            (0..steps).fold(Job::new(&id), |job, k| {
+                let choices = if flexible { next() as usize } else { 1 };
+                let options: Vec<(i64, i64)> = (0..choices).map(|_| (next(), next())).collect();
+                let time = options[0].1;
+                assert!(
+                    options.iter().all(|&(_, t)| t == time),
+                    "{}: an operation's machines differ in time, which an operation states once",
+                    path.display()
+                );
                 job.with_operation(
                     Operation::new(format!("{id}-O{k}"), &id, k as i32 + 1)
                         .with_time(0, time, 0)
-                        .with_equipment(vec![format!("M{machine}")]),
+                        .with_equipment(options.iter().map(|&(m, _)| format!("M{m}")).collect()),
                 )
             })
         })
@@ -86,7 +100,7 @@ fn main() {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("ta") && !n.contains('.'))
+                .is_some_and(|n| (n.starts_with("ta") && !n.contains('.')) || n.ends_with(".fjs"))
         })
         .collect();
     names.sort();
@@ -106,22 +120,32 @@ fn main() {
                 ms.parse::<i64>()
                     .unwrap_or_else(|_| panic!("GA@<ms> takes milliseconds, got {rule:?}"))
             });
-            if ga_limit.is_none() && rule != "PRIORITY" {
+            let cp_limit = rule.strip_prefix("CP@").map(|ms| {
+                ms.parse::<i64>()
+                    .unwrap_or_else(|_| panic!("CP@<ms> takes milliseconds, got {rule:?}"))
+            });
+            if ga_limit.is_none() && cp_limit.is_none() && rule != "PRIORITY" {
                 request = request.with_dispatching_rule(
                     DispatchingRuleName::parse(rule)
                         .unwrap_or_else(|| panic!("unknown rule {rule:?}")),
                 );
             }
             let started = Instant::now();
-            let schedule = match ga_limit {
-                Some(ms) => SimpleScheduler::new().search(
+            let schedule = match (ga_limit, cp_limit) {
+                (Some(ms), _) => SimpleScheduler::new().search(
                     &request,
                     &GaParams {
                         time_limit_ms: Some(ms),
                         ..Default::default()
                     },
                 ),
-                None => SimpleScheduler::new().schedule(&request),
+                (_, Some(ms)) => CpSatScheduler::new(CpSatConfig {
+                    time_limit_ms: ms,
+                    ..Default::default()
+                })
+                .schedule(&request)
+                .map(|result| result.schedule),
+                _ => SimpleScheduler::new().schedule(&request),
             }
             .expect("schedules");
             let ms = started.elapsed().as_millis();
