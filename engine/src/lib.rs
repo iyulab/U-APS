@@ -23,7 +23,6 @@
 //! - [`scheduler`] — Scheduling algorithms (dispatching, genetic search over dispatching orders), KPI, rescheduling, analytics, what-if, CTP
 //! - [`cp`] — the `CpSat` path: the request as a disjunctive CP model, solved exactly
 //! - [`validation`] — Input validation
-//! - [`benchmark`] — Standard JSP/FJSSP benchmark instances (Taillard, Lawrence)
 //! - [`error`] — Error types
 //! - [`ffi`] — C-ABI FFI interface for C# SDK interop
 //!
@@ -40,7 +39,6 @@
 //! | `uaps_free_string()` | Free allocated string memory |
 
 pub mod adapter;
-pub mod benchmark;
 pub mod cp;
 pub mod error;
 pub mod ffi;
@@ -48,7 +46,6 @@ pub mod models;
 pub mod scheduler;
 pub mod validation;
 
-pub use benchmark::*;
 pub use cp::*;
 pub use error::*;
 pub use models::*;

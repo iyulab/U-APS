@@ -13,7 +13,9 @@
 //!
 //! `bks.csv` (optional) has lines `instance,makespan` -- the optimum or best
 //! known upper bound; the gap column is against it. `rules` is a comma list of
-//! `SPT,LPT,LWKR,MWKR,FIFO,WINQ,LPUL,EDD,PRIORITY` (default `MWKR,SPT,FIFO`).
+//! `SPT,LPT,LWKR,MWKR,FIFO,WINQ,LPUL,EDD,PRIORITY` (default `MWKR,SPT,FIFO`),
+//! and `GA@<ms>` runs the genetic search over dispatching orders with that
+//! time limit.
 //! One machine is one equipment resource, one operation one equipment
 //! requirement; no worker, calendar or set-up is involved, so the numbers are
 //! the dispatching alone.
@@ -22,7 +24,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use uaps_engine::{
-    DispatchingRuleName, Job, Operation, Resource, ScheduleRequest, SimpleScheduler,
+    DispatchingRuleName, GaParams, Job, Operation, Resource, ScheduleRequest, SimpleScheduler,
 };
 
 /// Reads one instance: jobs whose operations each need one machine.
@@ -100,16 +102,28 @@ fn main() {
         let size = format!("{}x{}", jobs.len(), resources.len());
         for rule in &chosen {
             let mut request = ScheduleRequest::new(jobs.clone(), resources.clone());
-            if rule != "PRIORITY" {
+            let ga_limit = rule.strip_prefix("GA@").map(|ms| {
+                ms.parse::<i64>()
+                    .unwrap_or_else(|_| panic!("GA@<ms> takes milliseconds, got {rule:?}"))
+            });
+            if ga_limit.is_none() && rule != "PRIORITY" {
                 request = request.with_dispatching_rule(
                     DispatchingRuleName::parse(rule)
                         .unwrap_or_else(|| panic!("unknown rule {rule:?}")),
                 );
             }
             let started = Instant::now();
-            let schedule = SimpleScheduler::new()
-                .schedule(&request)
-                .expect("schedules");
+            let schedule = match ga_limit {
+                Some(ms) => SimpleScheduler::new().search(
+                    &request,
+                    &GaParams {
+                        time_limit_ms: Some(ms),
+                        ..Default::default()
+                    },
+                ),
+                None => SimpleScheduler::new().schedule(&request),
+            }
+            .expect("schedules");
             let ms = started.elapsed().as_millis();
             let makespan = schedule.makespan_ms as f64;
             let reference = best.get(name).copied();
