@@ -747,6 +747,7 @@ mod tests {
                 job_id: id.to_string(),
                 sequence: 1,
                 operation_type: None,
+                resource_times: Default::default(),
                 time: OperationTime {
                     setup_ms: 0,
                     process_ms: duration_ms,

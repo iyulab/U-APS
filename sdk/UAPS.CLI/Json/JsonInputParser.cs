@@ -49,6 +49,9 @@ public class JsonInputParser
                 JobId = j.Id,
                 Sequence = o.Sequence,
                 Time = new OperationTime(o.SetupMs, o.ProcessMs, o.WaitMs),
+                ResourceTimes = o.ResourceTimes?.ToDictionary(
+                    t => t.Key,
+                    t => new TimeOverrideEntry { SetupMs = t.Value.SetupMs, ProcessMs = t.Value.ProcessMs, WaitMs = t.Value.WaitMs }) ?? [],
                 RequiredResources = o.RequiredResources?.Select(r => new ResourceRequirement
                 {
                     ResourceType = r.ResourceType,
@@ -110,7 +113,16 @@ public class OperationInput
     public long SetupMs { get; set; }
     public long ProcessMs { get; set; }
     public long WaitMs { get; set; }
+    /// <summary>The operation's time on particular resources, by resource id; fields left out keep the operation's own.</summary>
+    public Dictionary<string, ResourceTimeInput>? ResourceTimes { get; set; }
     public List<ResourceRequirementInput>? RequiredResources { get; set; }
+}
+
+public class ResourceTimeInput
+{
+    public long? SetupMs { get; set; }
+    public long? ProcessMs { get; set; }
+    public long? WaitMs { get; set; }
 }
 
 public class ResourceRequirementInput

@@ -42,7 +42,8 @@ public class RequestWireContractTests
         job1.Operations[0].OperationType = "welding";
         var job2 = Job.Create("J2").WithPriority(2)
             .WithOperation(Operation.Create("J2-1", "J2", 1).WithTime(0, 45_000, 0)
-                .WithEquipment("EQP-1").WithWorkers(1).WithDependencies("J1-2"))
+                .WithEquipment("EQP-1", "EQP-2").WithWorkers(1).WithDependencies("J1-2")
+                .WithTimeOn("EQP-2", TimeOverrideEntry.ProcessOnly(30_000)))
             .WithOperation(Operation.Create("J2-2", "J2", 2).WithTime(0, 20_000, 0)
                 .WithOutsourcing("VENDOR-1", leadTimeDays: 1));
         job2.ProductName = "ProductB";

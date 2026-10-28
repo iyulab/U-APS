@@ -13,6 +13,18 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- `Operation.ResourceTimes` (engine `resource_times`, builder `WithTimeOn`): an operation's time on
+  a particular resource -- set-up, process and wait, each falling back to the operation's own
+  `Time` when not given. It states the time there outright, so the resource's efficiency, a
+  worker's proficiency and `WorkerTimeOverride` are not applied on top. A flexible shop whose
+  machines run the same operation in different times (unrelated parallel machines) can now be
+  stated as it is; every algorithm reads it. A time on a resource none of the operation's
+  requirements may take, or a negative one, is a validation error (`InvalidReference`,
+  `InvalidTimeRange`). The CLI's JSON input reads it as `resourceTimes`
+  (`samples/004-machines-with-their-own-times.json`).
+
 ### Changed
 
 - Behaviour change: `CpSat` (and the CP-SAT phase of `Hybrid`) states the request the way the

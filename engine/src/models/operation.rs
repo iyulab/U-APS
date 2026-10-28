@@ -1,7 +1,10 @@
 //! Operation - 작업 단위 (공정)
 
+use std::collections::BTreeMap;
+
 use super::material::MaterialRequirement;
 use super::outsourcing::OutsourcingConfig;
+use super::skill::TimeOverrideEntry;
 use serde::{Deserialize, Serialize};
 
 /// Operation Time Window - 공정 시간 제약 (Phase 11)
@@ -314,6 +317,12 @@ pub struct Operation {
     pub operation_type: Option<String>,
     /// 작업 시간
     pub time: OperationTime,
+    /// 자원별 작업 시간 — 자원 id 마다 그 자원에서 걸리는 시간(준비 · 가공 · 대기, 적지 않은
+    /// 항목은 `time`). 그 자원에서의 시간을 그대로 말하므로 설비 효율 · 작업자 숙련도 ·
+    /// `worker_time_override` 를 그 위에 다시 적용하지 않는다. 기계마다 가공 시간이 다른
+    /// 유연 공장(비관련 병렬 기계)을 적는 자리.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource_times: BTreeMap<String, TimeOverrideEntry>,
     /// 필요 자원
     pub required_resources: Vec<ResourceRequirement>,
     /// 필요 자재
@@ -364,6 +373,7 @@ impl Operation {
             sequence,
             operation_type: None,
             time: OperationTime::new(0, 0, 0),
+            resource_times: BTreeMap::new(),
             required_resources: Vec::new(),
             material_requirements: Vec::new(),
             is_splittable: false,
@@ -388,6 +398,12 @@ impl Operation {
     {
         self.dependencies
             .extend(operation_ids.into_iter().map(Into::into));
+        self
+    }
+
+    /// Builder: `resource_id` 에서의 작업 시간(적지 않은 항목은 `time`).
+    pub fn with_time_on(mut self, resource_id: impl Into<String>, time: TimeOverrideEntry) -> Self {
+        self.resource_times.insert(resource_id.into(), time);
         self
     }
 

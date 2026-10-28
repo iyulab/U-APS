@@ -87,12 +87,18 @@
             "process_ms": 45000,
             "wait_ms": 0
           },
+          "resource_times": {
+            "EQP-2": {
+              "process_ms": 30000
+            }
+          },
           "required_resources": [
             {
               "resource_type": "Equipment",
               "quantity": 1,
               "candidates": [
-                "EQP-1"
+                "EQP-1",
+                "EQP-2"
               ],
               "load_factor": 1
             },

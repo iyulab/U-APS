@@ -255,7 +255,7 @@ impl SkillMatrix {
 }
 
 /// 작업자별 시간 오버라이드 항목
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimeOverrideEntry {
     /// Setup 시간 오버라이드 (ms, None이면 기본값 사용)
     #[serde(default, skip_serializing_if = "Option::is_none")]

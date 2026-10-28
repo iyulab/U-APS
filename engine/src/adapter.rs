@@ -428,6 +428,18 @@ fn with_timings(
         .filter(|r| r.kind == kind)
         .filter(|r| req.candidates.is_empty() || req.candidates.contains(&r.id));
     for r in pool {
+        // The operation's own time on this resource states it outright.
+        if let Some(entry) = op.resource_times.get(&r.id) {
+            activity = activity.with_duration_on(
+                &r.id,
+                ActivityDuration::new(
+                    entry.setup_ms.unwrap_or(op.time.setup_ms),
+                    entry.process_ms.unwrap_or(op.time.process_ms),
+                    entry.wait_ms.unwrap_or(op.time.wait_ms),
+                ),
+            );
+            continue;
+        }
         match kind {
             ResourceKind::Equipment => {
                 if (r.efficiency - 1.0).abs() > f64::EPSILON {
@@ -820,6 +832,34 @@ mod tests {
             .filter(|r| r.resource_type == "Worker")
             .map(|r| r.candidates.clone())
             .collect()
+    }
+
+    #[test]
+    fn an_operations_time_on_a_resource_states_it_outright() {
+        // M2's 90 % efficiency would make 60 s take 66.7 s; the operation's own
+        // time there (30 s process, 5 s set-up) is what it takes instead. M1
+        // keeps the operation's time.
+        let op = Operation::new("O1", "J1", 1)
+            .with_time(0, 60_000, 0)
+            .with_equipment(vec!["M1".to_string(), "M2".to_string()])
+            .with_time_on(
+                "M2",
+                crate::TimeOverrideEntry::new()
+                    .with_process(30_000)
+                    .with_setup(5_000),
+            );
+        let request = ScheduleRequest::new(
+            vec![Job::new("J1").with_operation(op)],
+            vec![
+                Resource::equipment("M1"),
+                Resource::equipment("M2").with_efficiency(0.9),
+            ],
+        );
+        let adapted = to_problem(&request);
+        let activity = only_activity(&adapted);
+        let on_m2 = activity.duration_on(["M2"]);
+        assert_eq!((on_m2.setup_ms, on_m2.process_ms), (5_000, 30_000));
+        assert_eq!(activity.duration_on(["M1"]).process_ms, 60_000);
     }
 
     #[test]

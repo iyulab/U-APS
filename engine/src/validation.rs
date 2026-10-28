@@ -296,6 +296,37 @@ impl Validator {
                     );
                 }
             }
+            for (resource, entry) in &op.resource_times {
+                let candidate = op.required_resources.iter().any(|req| {
+                    req.candidates.iter().any(|c| c == resource)
+                        || (req.candidates.is_empty() && resource_ids.contains(resource.as_str()))
+                });
+                if !candidate {
+                    result.add_error(
+                        UapsError::new(
+                            ErrorCode::InvalidReference,
+                            format!(
+                                "Operation {} gives a time on {resource}, which none of its resource requirements may take",
+                                op.id
+                            ),
+                        )
+                        .with_entity(&op.id),
+                    );
+                }
+                if [entry.setup_ms, entry.process_ms, entry.wait_ms]
+                    .iter()
+                    .flatten()
+                    .any(|&ms| ms < 0)
+                {
+                    result.add_error(
+                        UapsError::new(
+                            ErrorCode::InvalidTimeRange,
+                            format!("Operation {} has a negative time on {resource}", op.id),
+                        )
+                        .with_entity(&op.id),
+                    );
+                }
+            }
             for req in &op.required_resources {
                 for candidate in &req.candidates {
                     if !resource_ids.contains(candidate.as_str()) {
@@ -481,6 +512,31 @@ mod tests {
         Validator::validate_operations(&ops, &jobs, &mut result);
 
         assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn a_time_on_a_resource_the_operation_cannot_take_or_below_zero_is_refused() {
+        let jobs = vec![Job::new("job1").with_priority(1)];
+        let resources = vec![Resource::equipment("m1"), Resource::equipment("m2")];
+        let on = |resource: &str, ms: i64| {
+            vec![Operation::new("op1", "job1", 1)
+                .with_time(0, 5000, 0)
+                .with_equipment(vec!["m1".into()])
+                .with_time_on(resource, crate::TimeOverrideEntry::new().with_process(ms))]
+        };
+        assert!(
+            Validator::validate_schedule_request(&jobs, &on("m1", 3000), &resources).is_valid()
+        );
+        let elsewhere = Validator::validate_schedule_request(&jobs, &on("m2", 3000), &resources);
+        assert!(elsewhere
+            .errors
+            .iter()
+            .any(|e| e.code == ErrorCode::InvalidReference));
+        let negative = Validator::validate_schedule_request(&jobs, &on("m1", -1), &resources);
+        assert!(negative
+            .errors
+            .iter()
+            .any(|e| e.code == ErrorCode::InvalidTimeRange));
     }
 
     #[test]

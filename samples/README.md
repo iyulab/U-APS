@@ -13,6 +13,7 @@ uaps samples/001-single-job.json out.json
 | `001-single-job.json` | The smallest input the scheduler accepts. One job, three operations in sequence, a dedicated machine for each — so the makespan is exactly the sum of the setup and process times, and any other answer is a bug. |
 | `002-competing-jobs.json` | Three jobs contending for one lathe. The machine is the constraint, so every dispatching rule produces the same makespan; what changes is *which* job finishes late. Run it twice with `--rule SPT` and `--rule EDD` and compare the per-job tardiness in the output, not the makespan. |
 | `003-equipment-and-worker.json` | An operation needing a machine *and* an operator at once, with two of each available. Both jobs should start at time zero: there is idle capacity on both sides. If they run one after the other, the scheduler reused one operator instead of taking the free one. |
+| `004-machines-with-their-own-times.json` | One operation two machines can run, in different times (`resourceTimes`): the scheduler puts it on the faster one, so the makespan is that machine's time — 5 minutes, not 10. A second job of the same kind then takes the other machine rather than waiting, finishing at 10 minutes. |
 
 Times are in milliseconds. `dueDateMs` is measured from the epoch, and
 `options.startTimeMs` sets where the schedule begins — both are zero-based here,
@@ -34,6 +35,9 @@ so a due date of `3600000` means "one hour after the schedule starts".
       "setupMs": 300000,
       "processMs": 600000,
       "waitMs": 0,
+      "resourceTimes": {          // optional: the time on a particular resource
+        "CUT-1": { "processMs": 450000 }   // fields left out keep the operation's own
+      },
       "requiredResources": [
         { "resourceType": "Equipment", "quantity": 1, "candidates": ["CUT-1"] }
       ]
@@ -47,4 +51,6 @@ so a due date of `3600000` means "one hour after the schedule starts".
 ```
 
 `resourceType` and `type` are `Equipment` or `Worker`. An empty or absent
-`candidates` list means any resource of that type will do.
+`candidates` list means any resource of that type will do. `resourceTimes` states
+the operation's time on a resource outright — that resource's `efficiency` is not
+applied on top.

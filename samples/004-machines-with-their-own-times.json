@@ -1,0 +1,30 @@
+{
+  "// ": "Two machines can run the same operation, MILL-NEW in 5 minutes and MILL-OLD in 10. The first job goes to MILL-NEW and ends at 5 minutes; the second, rather than wait for it (ending at 10), takes MILL-OLD and also ends at 10 minutes.",
+  "jobs": [
+    {
+      "id": "JOB-A", "priority": 100, "quantity": 1,
+      "operations": [
+        { "id": "OP-A-1", "sequence": 1, "setupMs": 0, "processMs": 600000, "waitMs": 0,
+          "resourceTimes": { "MILL-NEW": { "processMs": 300000 } },
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["MILL-NEW", "MILL-OLD"] }
+          ] }
+      ]
+    },
+    {
+      "id": "JOB-B", "priority": 100, "quantity": 1,
+      "operations": [
+        { "id": "OP-B-1", "sequence": 1, "setupMs": 0, "processMs": 600000, "waitMs": 0,
+          "resourceTimes": { "MILL-NEW": { "processMs": 300000 } },
+          "requiredResources": [
+            { "resourceType": "Equipment", "quantity": 1, "candidates": ["MILL-NEW", "MILL-OLD"] }
+          ] }
+      ]
+    }
+  ],
+  "resources": [
+    { "id": "MILL-NEW", "type": "Equipment", "capability": "milling", "efficiency": 1.0 },
+    { "id": "MILL-OLD", "type": "Equipment", "capability": "milling", "efficiency": 1.0 }
+  ],
+  "options": { "startTimeMs": 0 }
+}

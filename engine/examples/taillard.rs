@@ -16,9 +16,9 @@
 //! `SPT,LPT,LWKR,MWKR,FIFO,WINQ,LPUL,EDD,PRIORITY` (default `MWKR,SPT,FIFO`),
 //! `GA@<ms>` runs the genetic search over dispatching orders with that time
 //! limit, and `CP@<ms>` the exact search (`CpSat`).
-//! A flexible job shop (`.fjs`, Brandimarte's format) whose operations take
-//! the same time on each of their machines is read too: an operation's
-//! machines are its requirement's candidates.
+//! A flexible job shop (`.fjs`, Brandimarte's format) is read too: an
+//! operation's machines are its requirement's candidates, and its time on
+//! each machine is its `resource_times` entry for that machine.
 //! One machine is one equipment resource, one operation one equipment
 //! requirement; no worker, calendar or set-up is involved, so the numbers are
 //! the dispatching alone.
@@ -28,7 +28,7 @@ use std::time::Instant;
 
 use uaps_engine::{
     CpSatConfig, CpSatScheduler, DispatchingRuleName, GaParams, Job, Operation, Resource,
-    ScheduleRequest, SimpleScheduler,
+    ScheduleRequest, SimpleScheduler, TimeOverrideEntry,
 };
 
 /// Reads one instance: jobs whose operations each need one machine -- in a
@@ -48,15 +48,15 @@ fn read(path: &std::path::Path) -> (Vec<Job>, Vec<Resource>) {
             (0..steps).fold(Job::new(&id), |job, k| {
                 let choices = if flexible { next() as usize } else { 1 };
                 let options: Vec<(i64, i64)> = (0..choices).map(|_| (next(), next())).collect();
-                let time = options[0].1;
-                assert!(
-                    options.iter().all(|&(_, t)| t == time),
-                    "{}: an operation's machines differ in time, which an operation states once",
-                    path.display()
+                let time = options.iter().map(|&(_, t)| t).max().expect("a machine");
+                let operation = options.iter().filter(|&&(_, t)| t != time).fold(
+                    Operation::new(format!("{id}-O{k}"), &id, k as i32 + 1).with_time(0, time, 0),
+                    |op, &(m, t)| {
+                        op.with_time_on(format!("M{m}"), TimeOverrideEntry::new().with_process(t))
+                    },
                 );
                 job.with_operation(
-                    Operation::new(format!("{id}-O{k}"), &id, k as i32 + 1)
-                        .with_time(0, time, 0)
+                    operation
                         .with_equipment(options.iter().map(|&(m, _)| format!("M{m}")).collect()),
                 )
             })

@@ -51,6 +51,13 @@ public class Operation
     /// </summary>
     public string? OperationType { get; set; }
     public OperationTime Time { get; set; } = new(0, 0, 0);
+    /// <summary>
+    /// 자원별 작업 시간 — 자원 id 마다 그 자원에서 걸리는 시간(<c>null</c> 인 항목은 <see cref="Time"/>).
+    /// 그 자원에서의 시간을 그대로 말하므로 설비 효율 · 작업자 숙련도 · <c>WorkerTimeOverride</c> 를
+    /// 그 위에 다시 적용하지 않는다. 기계마다 가공 시간이 다른 유연 공장을 적는 자리. 키는 이 공정의
+    /// 자원 요구가 받을 수 있는 자원이어야 한다(엔진 검증).
+    /// </summary>
+    public Dictionary<string, TimeOverrideEntry> ResourceTimes { get; set; } = [];
     public List<ResourceRequirement> RequiredResources { get; set; } = [];
     /// <summary>
     /// 로트 분할 허용 (<c>SplitConfig</c>와 함께 — 공정을 나눠 여러 설비에서). 근무 시간 밖에서 멈췄다
@@ -122,6 +129,16 @@ public class Operation
     public Operation WithTime(long setupMs, long processMs, long waitMs)
     {
         Time = new OperationTime(setupMs, processMs, waitMs);
+        return this;
+    }
+
+    /// <summary>
+    /// 이 공정이 <paramref name="resourceId"/> 에서 걸리는 시간(<see cref="ResourceTimes"/>). 효율 · 숙련도를
+    /// 다시 적용하지 않는다.
+    /// </summary>
+    public Operation WithTimeOn(string resourceId, TimeOverrideEntry time)
+    {
+        ResourceTimes[resourceId] = time;
         return this;
     }
 
@@ -352,6 +369,9 @@ public class Operation
             ProcessMs = Time.ProcessMs,
             WaitMs = Time.WaitMs
         },
+        ResourceTimes = ResourceTimes.Count == 0 ? null : ResourceTimes.ToDictionary(
+            kv => kv.Key,
+            kv => new ResourceTimeDto { SetupMs = kv.Value.SetupMs, ProcessMs = kv.Value.ProcessMs, WaitMs = kv.Value.WaitMs }),
         RequiredResources = RequiredResources.Select(r => new ResourceRequirementDto
         {
             ResourceType = r.ResourceType.ToString(),
@@ -391,6 +411,9 @@ public class Operation
         var clone = (Operation)MemberwiseClone();
         clone.RequiredResources = [.. RequiredResources.Select(r => r with { Candidates = [.. r.Candidates] })];
         clone.Dependencies = [.. Dependencies];
+        clone.ResourceTimes = ResourceTimes.ToDictionary(
+            kv => kv.Key,
+            kv => new TimeOverrideEntry { SetupMs = kv.Value.SetupMs, ProcessMs = kv.Value.ProcessMs, WaitMs = kv.Value.WaitMs });
         clone.MaterialRequirements = [.. MaterialRequirements];
         clone.InspectionItems = [.. InspectionItems];
         clone.DefectTypes = [.. DefectTypes];
@@ -408,6 +431,7 @@ public class OperationDto
     public int Sequence { get; set; }
     public string? OperationType { get; set; }
     public OperationTimeDto Time { get; set; } = new();
+    public Dictionary<string, ResourceTimeDto>? ResourceTimes { get; set; }
     public List<ResourceRequirementDto> RequiredResources { get; set; } = [];
     public List<MaterialRequirementDto> MaterialRequirements { get; set; } = [];
     public bool IsSplittable { get; set; }
@@ -419,6 +443,14 @@ public class OperationDto
     public OperationTimeWindow? TimeWindow { get; set; }
     public PertDuration? PertDuration { get; set; }
     public DailyWorkWindowDto? DailyWorkWindow { get; set; }
+}
+
+/// <summary>An operation's time on one resource: <c>null</c> fields keep the operation's own.</summary>
+public class ResourceTimeDto
+{
+    public long? SetupMs { get; set; }
+    public long? ProcessMs { get; set; }
+    public long? WaitMs { get; set; }
 }
 
 public class OperationTimeDto
