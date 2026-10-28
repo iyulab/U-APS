@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 use u_metaheur::cp::BranchAndBoundSolver;
 
-use crate::cp::{CpModel, CpSolution, CpSolver, SolverConfig, SolverStatus};
+use crate::cp::{CpModel, CpSolution, CpSolver, IntervalSolution, SolverConfig, SolverStatus};
 use crate::models::{Job, Resource};
 use crate::scheduler::Schedule;
 
@@ -78,9 +78,35 @@ impl CpSatScheduler {
         resources: &[Resource],
         start_time_ms: i64,
     ) -> CpSatResult {
+        self.run(jobs, resources, start_time_ms, None)
+    }
+
+    /// As [`schedule`](Self::schedule), starting the search from
+    /// `start_from` -- a schedule of the same request, from another
+    /// algorithm. Its makespan bounds the search from the start, and it is
+    /// the answer unless a shorter one is found: a search that finishes proves
+    /// it `Optimal`. A schedule the model does not admit (another resource
+    /// than an operation's first candidate, a different length) is not used.
+    pub fn schedule_from(
+        &self,
+        jobs: &[Job],
+        resources: &[Resource],
+        start_time_ms: i64,
+        start_from: &Schedule,
+    ) -> CpSatResult {
+        self.run(jobs, resources, start_time_ms, Some(start_from))
+    }
+
+    fn run(
+        &self,
+        jobs: &[Job],
+        resources: &[Resource],
+        start_time_ms: i64,
+        start_from: Option<&Schedule>,
+    ) -> CpSatResult {
         let start_instant = Instant::now();
         let model = self.build_model(jobs, resources, start_time_ms);
-        let solution = self.solve_internal(&model);
+        let solution = self.solve_internal(&model, start_from);
         let schedule = self.solution_to_schedule(&solution, jobs, resources, start_time_ms);
         let elapsed = start_instant.elapsed().as_millis() as i64;
         // The search says how it ended; a solution found is not a proof.
@@ -135,14 +161,30 @@ impl CpSatScheduler {
     }
 
     /// The model's exact solution by u-metaheur's branch and bound, within
-    /// the time limit.
-    fn solve_internal(&self, model: &CpModel) -> CpSolution {
+    /// the time limit, from `start_from` when one is given.
+    fn solve_internal(&self, model: &CpModel, start_from: Option<&Schedule>) -> CpSolution {
         let config = SolverConfig {
             time_limit_ms: self.config.time_limit_ms,
             num_workers: self.config.num_workers,
             stop_after_first: false,
         };
-        BranchAndBoundSolver::new().solve(model, &config)
+        let mut solver = BranchAndBoundSolver::new();
+        if let Some(schedule) = start_from {
+            let mut incumbent = CpSolution::empty(SolverStatus::Feasible);
+            for a in &schedule.assignments {
+                incumbent.intervals.insert(
+                    a.operation_id.clone(),
+                    IntervalSolution {
+                        start: a.start_ms,
+                        end: a.end_ms,
+                        duration: a.end_ms - a.start_ms,
+                        is_present: true,
+                    },
+                );
+            }
+            solver = solver.with_incumbent(incumbent);
+        }
+        solver.solve(model, &config)
     }
 
     fn solution_to_schedule(
@@ -314,5 +356,20 @@ mod tests {
         // Johnson's order J2 J0 J3 J4 J1 gives 24 000.
         assert_eq!(result.status, CpSatStatus::Optimal);
         assert_eq!(result.schedule.makespan_ms, 24_000);
+    }
+
+    #[test]
+    fn test_cpsat_from_a_schedule_proves_it() {
+        let jobs = create_test_jobs();
+        let resources = create_test_resources();
+        let scheduler = CpSatScheduler::new(CpSatConfig {
+            time_limit_ms: 1000,
+            ..Default::default()
+        });
+        let first = scheduler.schedule(&jobs, &resources, 0);
+        let again = scheduler.schedule_from(&jobs, &resources, 0, &first.schedule);
+        assert_eq!(again.status, CpSatStatus::Optimal);
+        assert_eq!(again.schedule.makespan_ms, 60_000);
+        assert!(again.solution.num_nodes <= first.solution.num_nodes);
     }
 }

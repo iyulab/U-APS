@@ -6,7 +6,7 @@
 //! - 성능 메트릭
 //! - 에러 핸들링
 
-use crate::cp::{CpSatConfig, CpSatScheduler};
+use crate::cp::{CpSatConfig, CpSatScheduler, CpSatStatus};
 use crate::error::Result;
 use crate::models::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
@@ -591,10 +591,21 @@ impl SchedulingEngine {
             }
 
             SchedulingAlgorithm::Hybrid => {
-                self.log(LogLevel::Info, "Hybrid scheduling: CP-SAT → GA", None);
+                self.log(LogLevel::Info, "Hybrid scheduling: GA → CP-SAT", None);
 
-                // Phase 1: CP-SAT, when its model states the whole request —
-                // otherwise its schedule breaks the request and is never kept.
+                // Phase 1: the GA.
+                let params = self.effective_ga_params();
+                let ga_schedule = self.run_ga(jobs, resources, start_time_ms, params)?;
+                self.log(
+                    LogLevel::Info,
+                    &format!("GA phase complete: makespan={}ms", ga_schedule.makespan_ms),
+                    None,
+                );
+
+                // Phase 2: CP-SAT from the GA's schedule, when its model
+                // states the whole request — otherwise its schedule breaks
+                // the request and is never kept. It improves on the GA's
+                // schedule or, finishing, proves it optimal.
                 let unstated = cp_unstated(jobs, resources, &self.config);
                 if !unstated.is_empty() {
                     self.log(
@@ -605,35 +616,21 @@ impl SchedulingEngine {
                         ),
                         None,
                     );
-                    let params = self.effective_ga_params();
-                    return self.run_ga(jobs, resources, start_time_ms, params);
+                    return Ok(ga_schedule);
                 }
                 let cpsat_config = self.effective_cpsat_config();
                 let cpsat_scheduler = CpSatScheduler::new(cpsat_config);
-                let cpsat_result = cpsat_scheduler.schedule(jobs, resources, start_time_ms);
-
-                let initial_makespan = cpsat_result.schedule.makespan_ms;
-                self.log(
-                    LogLevel::Info,
-                    &format!("CP-SAT phase complete: makespan={}ms", initial_makespan),
-                    None,
-                );
-
-                // Phase 2: the GA
-                let params = self.effective_ga_params();
-                let ga_schedule = self.run_ga(jobs, resources, start_time_ms, params)?;
-
-                let final_makespan = ga_schedule.makespan_ms;
+                let cpsat_result =
+                    cpsat_scheduler.schedule_from(jobs, resources, start_time_ms, &ga_schedule);
                 self.log(
                     LogLevel::Info,
                     &format!(
-                        "GA phase complete: makespan={}ms (improvement: {}%)",
-                        final_makespan,
-                        if initial_makespan > 0 {
-                            ((initial_makespan - final_makespan) as f64 / initial_makespan as f64
-                                * 100.0) as i32
-                        } else {
-                            0
+                        "CP-SAT phase complete: makespan={}ms ({})",
+                        cpsat_result.schedule.makespan_ms,
+                        match cpsat_result.status {
+                            CpSatStatus::Optimal => "proved optimal",
+                            CpSatStatus::Feasible => "time limit reached",
+                            CpSatStatus::Timeout | CpSatStatus::Infeasible => "no schedule",
                         }
                     ),
                     None,
@@ -1119,7 +1116,17 @@ mod tests {
 
         assert!(result.is_ok());
         let schedule = result.unwrap();
-        assert!(schedule.schedule.makespan_ms > 0);
+        // Two operations on one machine: the GA's 5 000 ms is optimal, and
+        // CP-SAT, starting from it, proves so.
+        assert_eq!(schedule.schedule.makespan_ms, 5_000);
+        assert!(
+            schedule
+                .logs
+                .iter()
+                .any(|l| l.message.contains("proved optimal")),
+            "{:?}",
+            schedule.logs
+        );
     }
 
     // 회귀 가드: `timeout_ms`는 한때 저장만 되고 어디서도 읽히지 않는 죽은 필드였다

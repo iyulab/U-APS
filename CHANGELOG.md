@@ -25,6 +25,11 @@ published to a registry — it ships inside those packages.
   makespans are never longer when the search finishes. `search_strategy`,
   `propagation_strength`, `restart_policy` and `num_workers` of the CP-SAT settings are accepted
   and not read: only the time limit changes the search.
+- Behaviour change: `Hybrid` runs the `GeneticAlgorithm` first and then `CpSat` starting from the
+  GA's schedule, instead of `CpSat` first and the GA after. The exact search begins bounded by the
+  GA's makespan: it returns a shorter schedule, or, when it finishes within its time limit, proves
+  the GA's optimal; on a request `CpSat` cannot state whole it is skipped as before. The choice
+  between the two schedules is unchanged (fewer broken requirements, then the shorter).
 
 ### Fixed
 
