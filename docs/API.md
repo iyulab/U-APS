@@ -69,7 +69,7 @@ let schedule = scheduler.schedule(&request)?;
 ### 디스패칭 탐색 (`algorithm: GeneticAlgorithm`)
 난수 키 유전 탐색이 공정 디스패칭 순서를 찾는다. 후보 하나하나가 `SimpleScheduler` 가 만드는 스케줄이라 요청의 제약(분할 · 겹침 · 선행 · 자원 · 달력)을 모두 지키고, 디스패칭보다 나쁘지 않다. 비용은 완료 시각 + 지각 합의 1/10.
 
-요청이 정확 모형(`CpSat`)이 통째로 적는 부류 — 공정마다 설비 요구 하나(후보 중 선택), 작업 순서 · 선행 · 최조 시작만 있고 작업자 · 달력 · 분할 · 자재 · 외주 · 조 등이 없는 유연 job shop — 이면 엔진의 `GeneticAlgorithm`(과 `Production` · `Dynamic`)은 대신 공정 순서 · 설비 선택을 직접 탐색하는 유전 알고리즘(`SimpleScheduler::sequence_search`, 능동 스케줄 디코딩 + 임계 경로 지역 탐색)을 쓴다. 같은 예산에서 Brandimarte mk01–10 최선값 대비 1.8 %(디스패칭 순서 탐색 13 %), JSPLIB 8 개 1.1 %(5.1 %).
+요청이 정확 모형(`CpSat`)이 통째로 적는 부류 — 공정마다 설비 요구 하나(후보 중 선택), 작업 순서 · 선행 · 최조 시작만 있고 작업자 · 달력 · 분할 · 자재 · 외주 · 조 등이 없는 유연 job shop — 이면 엔진의 `GeneticAlgorithm`(과 `Production` · `Dynamic`)은 대신 공정 순서 · 설비 선택을 직접 탐색하는 유전 알고리즘(`SimpleScheduler::sequence_search`, 능동 스케줄 디코딩 + 임계 경로 지역 탐색)을 쓴다. 5 s 예산에서 Brandimarte mk01–10 최선값 대비 1.1 %(디스패칭 순서 탐색 13 %), JSPLIB 20 개(ta01–05 · ta11–13 · ta21–23 · la21 · la24 · la25 · la27 · la29 · la38 · la40 · abz7 · abz8) 3.5 %.
 
 ```rust
 let params = GaParams {

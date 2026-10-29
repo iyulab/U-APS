@@ -13,6 +13,16 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Changed
+
+- The engine builds on u-schedule 0.35 and u-metaheur 0.19. The operation-sequence search of
+  `GeneticAlgorithm`, `Production` and `Dynamic` also moves an operation of a critical block to
+  the block's front or back, and `CpSat` searches in rounds of limited discrepancy, so a search
+  cut off by its time limit varies its first schedule near the root. Within 5 s the mean gap to
+  the best known makespan falls from 1.5 % to 1.1 % on Brandimarte's mk01–mk10 and from 4.5 % to
+  3.5 % on 20 JSPLIB instances; `CpSat` within 1 s from 21.6 % to 18.2 % on Brandimarte's.
+  Schedules can differ from earlier results.
+
 ## [1.9.0] - 2026-10-29
 
 ### Added
