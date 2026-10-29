@@ -11,12 +11,6 @@ namespace UAPS.SDK.Client;
 /// </summary>
 public class SchedulerClient : IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     private bool _disposed;
 
     /// <summary>
@@ -93,12 +87,12 @@ public class SchedulerClient : IDisposable
                 : null,
         };
 
-        return JsonSerializer.Serialize(requestDto, JsonOptions);
+        return JsonSerializer.Serialize(requestDto, SchedulerJsonContext.Default.ScheduleRequestDto);
     }
 
     private static ScheduleResult ParseScheduleResult(string resultJson)
     {
-        var response = JsonSerializer.Deserialize<ScheduleResponseDto>(resultJson, JsonOptions);
+        var response = JsonSerializer.Deserialize(resultJson, SchedulerJsonContext.Default.ScheduleResponseDto);
         if (response == null)
         {
             return new ScheduleResult
@@ -733,6 +727,17 @@ public class ScheduleTask
 }
 
 // Internal DTOs for JSON serialization
+/// <summary>
+/// The engine's wire format, generated at build time: no reflection, so the SDK
+/// works in trimmed and ahead-of-time compiled hosts.
+/// </summary>
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(ScheduleRequestDto))]
+[JsonSerializable(typeof(ScheduleResponseDto))]
+internal sealed partial class SchedulerJsonContext : JsonSerializerContext;
+
 internal class ScheduleRequestDto
 {
     public List<JobDto> Jobs { get; set; } = [];

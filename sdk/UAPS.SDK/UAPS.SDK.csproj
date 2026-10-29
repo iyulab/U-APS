@@ -7,6 +7,10 @@
     <Description>U-APS Scheduling SDK</Description>
     <PackageId>UAPS.SDK</PackageId>
     <IsPackable>true</IsPackable>
+    <!-- Trim- and AOT-safe: the wire format is source-generated JSON and the engine
+         is reached through P/Invoke. A trim or AOT warning here fails the build. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL2087;IL2091;IL3050;IL3051</WarningsAsErrors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 

@@ -15,6 +15,9 @@ published to a registry — it ships inside those packages.
 
 ### Changed
 
+- `UAPS.SDK` serializes the engine's wire format with a generated `JsonSerializerContext` instead of
+  reflection and declares `IsAotCompatible`: it works in trimmed and ahead-of-time compiled hosts, and a
+  trim or AOT warning in the SDK now fails its build. The JSON on the wire is unchanged.
 - The engine builds on u-schedule 0.35 and u-metaheur 0.19. The operation-sequence search of
   `GeneticAlgorithm`, `Production` and `Dynamic` also moves an operation of a critical block to
   the block's front or back, and `CpSat` searches in rounds of limited discrepancy, so a search
