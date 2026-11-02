@@ -689,6 +689,7 @@ impl SchedulingEngine {
             pegging_engine: self.config.pegging_engine.clone(),
             outsourcing_manager: self.config.outsourcing_manager.clone(),
             site_transitions: Some(self.config.site_transitions.clone()),
+            fixed_assignments: Vec::new(),
         }
     }
 

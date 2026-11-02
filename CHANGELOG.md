@@ -13,6 +13,21 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- Engine: a schedule request can keep assignments as they are. `fixed_assignments` (in the `uaps_schedule` request)
+  pins each assignment: its resource is reserved over its interval, and its operation is not placed again. A
+  resource held with it as a companion is pinned along with it. Parts of a split operation, and operations that hold
+  no resource, are placed again. Only the default (dispatching) path reads pins; a request that also names an
+  `algorithm` is refused rather than having its pins dropped.
+- Engine: `uaps_reschedule` takes an optional `request`, the problem as it stands after the event (the
+  `uaps_schedule` request shape). Given, the strategy keeps assignments as pins and the dispatching scheduler places
+  the rest within the request's calendars, unavailable slots, time windows and uninterruptible operations.
+  `RightShift`, `AOR` and `Partial` keep every assignment of the operations the event does not affect. `Full` and
+  `TotalRegeneration` keep nothing but the time fence's frozen zone. A kept assignment that the new request forbids
+  is released and placed again. Without `request`, the strategies shift the schedule's assignments as before and do
+  not know those constraints.
+
 ## [1.10.0] - 2026-11-02
 
 ### Added

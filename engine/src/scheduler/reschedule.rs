@@ -504,6 +504,106 @@ impl Rescheduler {
         }
     }
 
+    /// Reschedules `request` — the problem as it stands after `event` (the
+    /// caller has applied it: a resource made unavailable, an operation made
+    /// longer, …) — keeping what `strategy` keeps of `schedule`, the plan
+    /// before the event. Placement is the dispatching scheduler's, so the
+    /// result keeps the request's calendars, unavailable slots, time windows
+    /// and uninterruptible operations; what is kept is pinned
+    /// ([`ScheduleRequest::fixed_assignments`]). A kept assignment the request
+    /// now forbids -- its resource unavailable then -- is released and placed
+    /// again with the affected ones.
+    ///
+    /// - `RightShift`, `AOR`, `Partial`: every assignment of an operation the
+    ///   event does not affect is kept, and the affected ones are placed
+    ///   again. The dispatcher may reorder them: `RightShift` here does not
+    ///   keep their sequence.
+    /// - `Full`, `TotalRegeneration`: nothing is kept but the time fence's
+    ///   frozen zone, when one is set.
+    /// - `None`: chosen from how many operations the event affects, as
+    ///   [`auto_reschedule`](Self::auto_reschedule) chooses.
+    ///
+    /// The time fence's frozen zone is kept whatever the strategy.
+    pub fn reschedule_request(
+        &self,
+        schedule: &Schedule,
+        event: &ScheduleEvent,
+        strategy: Option<RescheduleStrategy>,
+        request: &crate::ScheduleRequest,
+    ) -> Result<RescheduleResult, crate::ScheduleError> {
+        let affected: HashSet<String> = self
+            .identify_affected_operations(schedule, event)
+            .into_iter()
+            .collect();
+        let strategy = strategy.unwrap_or_else(|| {
+            let total = schedule
+                .assignments
+                .iter()
+                .map(|a| a.operation_id.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                .max(1);
+            if affected.len() <= 3 {
+                RescheduleStrategy::RightShift
+            } else if affected.len() as f64 / total as f64 <= 0.3 {
+                RescheduleStrategy::AOR
+            } else {
+                RescheduleStrategy::TotalRegeneration
+            }
+        });
+        let local = matches!(
+            strategy,
+            RescheduleStrategy::RightShift | RescheduleStrategy::AOR | RescheduleStrategy::Partial
+        );
+        let frozen = |op: &str| !self.can_reschedule_operation(schedule, op);
+        let kept: Vec<Assignment> = schedule
+            .assignments
+            .iter()
+            .filter(|a| frozen(&a.operation_id) || (local && !affected.contains(&a.operation_id)))
+            .cloned()
+            .collect();
+        // A kept assignment the new request forbids (its resource is now
+        // unavailable there, ...) cannot stay: the operations on a resource a
+        // pin breaks are released and placed again, until the pins hold.
+        let mut kept = kept;
+        let new_schedule = loop {
+            let pinned = request.clone().with_fixed_assignments(kept.clone());
+            match crate::SimpleScheduler::new().schedule(&pinned) {
+                Ok(placed) => break placed,
+                Err(crate::ScheduleError::Broken(violations)) => {
+                    let named: HashSet<&str> =
+                        violations.iter().map(|v| v.entity_id.as_str()).collect();
+                    let released: HashSet<String> = kept
+                        .iter()
+                        .filter(|a| named.contains(a.resource_id.as_str()))
+                        .map(|a| a.operation_id.clone())
+                        .collect();
+                    if released.is_empty() {
+                        return Err(crate::ScheduleError::Broken(violations));
+                    }
+                    kept.retain(|a| !released.contains(&a.operation_id));
+                }
+                Err(other) => return Err(other),
+            }
+        };
+        let kept_ops: HashSet<&str> = kept.iter().map(|a| a.operation_id.as_str()).collect();
+        let mut placed_again: Vec<String> = Vec::new();
+        for a in &schedule.assignments {
+            if !kept_ops.contains(a.operation_id.as_str())
+                && !placed_again.contains(&a.operation_id)
+            {
+                placed_again.push(a.operation_id.clone());
+            }
+        }
+        let stats = self.calculate_stats(schedule, &new_schedule, placed_again.len());
+        Ok(RescheduleResult {
+            schedule: new_schedule,
+            affected_operations: placed_again,
+            strategy_used: strategy,
+            stats,
+        })
+    }
+
     /// 전략 자동 선택
     pub fn auto_reschedule(&self, schedule: &Schedule, event: &ScheduleEvent) -> RescheduleResult {
         // 이벤트 영향도에 따라 전략 선택

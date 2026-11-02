@@ -11,7 +11,7 @@
 //! Reference: Kolisch (1996), parallel schedule generation scheme.
 
 use super::pegging::PeggingEngine;
-use super::{Schedule, Violation};
+use super::{Assignment, Schedule, Violation};
 use crate::{
     Calendar, CertificationMatrix, CrewManager, Job, MaterialManager, OutsourcingManager, Resource,
     SetupMatrixCollection, SiteTransitions, SkillMatrix, WorkerTimeOverride,
@@ -45,6 +45,12 @@ pub struct ScheduleRequest {
     pub outsourcing_manager: Option<OutsourcingManager>,
     /// 사이트 간 이동 시간 (multi-site 스케줄링용)
     pub site_transitions: Option<SiteTransitions>,
+    /// Assignments kept as they are (pins): each is held verbatim — its
+    /// resource reserved over its interval, its operation not placed again —
+    /// and a pin that breaks the request (a resource no longer available
+    /// then, …) is reported as a violation, never moved. A rescheduling
+    /// strategy pins what it keeps. Read by the dispatching path only.
+    pub fixed_assignments: Vec<Assignment>,
 }
 
 impl ScheduleRequest {
@@ -64,7 +70,14 @@ impl ScheduleRequest {
             pegging_engine: None,
             outsourcing_manager: None,
             site_transitions: None,
+            fixed_assignments: Vec::new(),
         }
+    }
+
+    /// Builder: assignments to keep as they are (see [`Self::fixed_assignments`]).
+    pub fn with_fixed_assignments(mut self, fixed: Vec<Assignment>) -> Self {
+        self.fixed_assignments = fixed;
+        self
     }
 
     pub fn with_start_time(mut self, start_time_ms: i64) -> Self {

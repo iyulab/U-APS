@@ -70,6 +70,49 @@ pub(super) fn sequence_search(
     })
 }
 
+/// The request's kept assignments as u-schedule pins. u-schedule pins an
+/// operation whole — every resource it holds — and this engine's schedule
+/// lists a resource held as another's companion on no row of its own, so each
+/// pinned resource brings its companions' pins over the same interval. A part
+/// of a split operation, and an operation that holds no resource (away at a
+/// provider, or with nothing to hold), cannot be pinned: they are placed again.
+fn pins(
+    request: &ScheduleRequest,
+    problem: &u_schedule::Problem,
+) -> Vec<u_schedule::models::Assignment> {
+    use u_schedule::models::Assignment as Pin;
+    let companions: HashMap<&str, &[String]> = problem
+        .resources()
+        .iter()
+        .map(|r| (r.id.as_str(), r.companions.as_slice()))
+        .collect();
+    let split: BTreeSet<&str> = request
+        .fixed_assignments
+        .iter()
+        .filter(|a| a.part.is_some())
+        .map(|a| a.operation_id.as_str())
+        .collect();
+    let mut out: Vec<Pin> = Vec::new();
+    for a in &request.fixed_assignments {
+        let Some(held) = companions.get(a.resource_id.as_str()) else {
+            continue; // not a resource of the problem: OUTSOURCE:*, NONE, a removed one
+        };
+        if split.contains(a.operation_id.as_str()) {
+            continue;
+        }
+        for resource in std::iter::once(&a.resource_id).chain(held.iter()) {
+            let pin = Pin::new(&a.operation_id, &a.job_id, resource, a.start_ms, a.end_ms);
+            if !out
+                .iter()
+                .any(|p| p.activity_id == pin.activity_id && p.resource_id == pin.resource_id)
+            {
+                out.push(pin);
+            }
+        }
+    }
+    out
+}
+
 /// Schedules `request` exactly: u-schedule's `ScheduleCpBuilder` model of the
 /// problem the dispatching scheduler places (an operation choosing among the
 /// machines that may run it), solved by u-metaheur's `BranchAndBoundSolver`
@@ -227,7 +270,9 @@ fn place(
 ) -> Result<Schedule, ScheduleError> {
     let adapted = to_problem(request);
     let problem = adapted.problem.map_err(ScheduleError::Refused)?;
-    let mut scheduler = USScheduler::new().with_transition_matrices(adapted.transition_matrices);
+    let mut scheduler = USScheduler::new()
+        .with_transition_matrices(adapted.transition_matrices)
+        .with_fixed_assignments(pins(request, &problem));
     if let Some(engine) = adapted.rule_engine {
         scheduler = scheduler.with_rule_engine(engine);
     }

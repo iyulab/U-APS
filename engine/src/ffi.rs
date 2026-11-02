@@ -16,12 +16,12 @@ use crate::scheduler::reschedule::{
 };
 use crate::validation::Validator;
 use crate::GaParams;
+use crate::{Assignment, Job, Resource, Schedule, ScheduleRequest, SimpleScheduler};
 use crate::{
     Calendar, MaterialManager, SetupMatrixCollection, SiteTransitions, SkillMatrix,
     WorkerTimeOverride,
 };
 use crate::{CertificationMatrix, CrewManager, OutsourcingManager};
-use crate::{Job, Resource, Schedule, ScheduleRequest, SimpleScheduler};
 
 /// 스케줄링 요청 (JSON)
 #[derive(serde::Deserialize)]
@@ -61,6 +61,9 @@ struct FfiScheduleRequest {
     outsourcing_manager: Option<OutsourcingManager>,
     #[serde(default)]
     site_transitions: Option<SiteTransitions>,
+    /// Assignments to keep as they are (pins) — read by the default path only.
+    #[serde(default)]
+    fixed_assignments: Option<Vec<Assignment>>,
 }
 
 /// The [`ScheduleRequest`] a `uaps_schedule` request without `algorithm`
@@ -82,6 +85,7 @@ pub fn schedule_request_from_json(json: &str) -> Result<ScheduleRequest, serde_j
         pegging_engine: r.pegging_engine,
         outsourcing_manager: r.outsourcing_manager,
         site_transitions: r.site_transitions,
+        fixed_assignments: r.fixed_assignments.unwrap_or_default(),
     })
 }
 
@@ -172,6 +176,22 @@ pub unsafe extern "C" fn uaps_schedule(
 
     // algorithm 필드 유무에 따라 분기
     match ffi_request.algorithm {
+        // Pins are kept by the dispatching path; the other algorithms would
+        // take them and drop them, so they are refused instead.
+        Some(algorithm) if ffi_request.fixed_assignments.is_some() => {
+            let response = FfiScheduleResponse {
+                success: false,
+                schedule: None,
+                kpi: None,
+                metrics: None,
+                warnings: None,
+                error: Some(format!(
+                    "fixed_assignments is read by the default (dispatching) path only -- leave `algorithm` out to keep assignments, or leave fixed_assignments out to run {algorithm:?}"
+                )),
+            };
+            *result_ptr = response_to_ptr(&response);
+            -1
+        }
         Some(algorithm) => {
             // SchedulingEngine 경로: algorithm, KPI, metrics, validation 모두 지원
             let config = EngineConfig {
@@ -247,6 +267,7 @@ pub unsafe extern "C" fn uaps_schedule(
                 pegging_engine: ffi_request.pegging_engine,
                 outsourcing_manager: ffi_request.outsourcing_manager,
                 site_transitions: ffi_request.site_transitions,
+                fixed_assignments: ffi_request.fixed_assignments.unwrap_or_default(),
             };
 
             match SimpleScheduler::new().schedule(&request) {
@@ -357,6 +378,13 @@ struct FfiRescheduleRequest {
     /// 전략 (None이면 auto_reschedule)
     #[serde(default)]
     strategy: Option<RescheduleStrategy>,
+    /// The problem as it stands after the event (the `uaps_schedule` request
+    /// shape). Given, the strategy keeps assignments as pins and the
+    /// dispatching scheduler places the rest, with every calendar, unavailable
+    /// slot and time window of the request; absent, the strategy shifts the
+    /// schedule's assignments without knowing them.
+    #[serde(default)]
+    request: Option<serde_json::Value>,
 }
 
 /// 리스케줄링 응답 (JSON)
@@ -415,6 +443,41 @@ pub unsafe extern "C" fn uaps_reschedule(
     };
 
     let rescheduler = Rescheduler::new();
+    if let Some(request) = &ffi_request.request {
+        let parsed = serde_json::to_string(request)
+            .map_err(|e| e.to_string())
+            .and_then(|json| schedule_request_from_json(&json).map_err(|e| e.to_string()));
+        let outcome = parsed.and_then(|request| {
+            rescheduler
+                .reschedule_request(
+                    &ffi_request.schedule,
+                    &ffi_request.event,
+                    ffi_request.strategy,
+                    &request,
+                )
+                .map_err(|e| e.to_string())
+        });
+        let (status, response) = match outcome {
+            Ok(result) => (
+                0,
+                FfiRescheduleResponse {
+                    success: true,
+                    result: Some(result),
+                    error: None,
+                },
+            ),
+            Err(error) => (
+                -2,
+                FfiRescheduleResponse {
+                    success: false,
+                    result: None,
+                    error: Some(format!("request: {error}")),
+                },
+            ),
+        };
+        *result_ptr = serialize_to_ptr(&response);
+        return status;
+    }
     let reschedule_result = match ffi_request.strategy {
         Some(RescheduleStrategy::RightShift) => {
             rescheduler.right_shift(&ffi_request.schedule, &ffi_request.event)
@@ -869,6 +932,91 @@ mod tests {
             uaps_free_string(result_ptr);
             uaps_free_string(reschedule_ptr);
         };
+    }
+
+    /// With `request`, the strategy keeps assignments as pins and the
+    /// dispatcher places the rest within the request: a slot the request
+    /// makes unavailable is kept clear. Pins on another algorithm's path are
+    /// refused, not dropped.
+    #[test]
+    fn test_ffi_reschedule_with_the_request_keeps_its_unavailable_slots() {
+        let job = |id: &str, eqp: &str| {
+            format!(
+                r#"{{"id":"{id}","operations":[{{"id":"{id}-1","job_id":"{id}","sequence":1,"time":{{"setup_ms":0,"process_ms":7200000,"wait_ms":0}},"required_resources":[{{"resource_type":"Equipment","quantity":1,"candidates":["{eqp}"]}}],"is_splittable":false,"allow_parallel":false}}],"priority":1,"quantity":1}}"#
+            )
+        };
+        let eqp = |id: &str, unavailable: &str| {
+            format!(
+                r#"{{"id":"{id}","kind":"Equipment","capabilities":[],"capacity":1,"efficiency":1.0,"availability":[],"unavailable":[{unavailable}]}}"#
+            )
+        };
+        let jobs = format!("[{},{},{}]", job("A", "M1"), job("B", "M1"), job("C", "M2"));
+        let before = format!(
+            r#"{{"jobs":{jobs},"resources":[{},{}],"start_time_ms":0}}"#,
+            eqp("M1", ""),
+            eqp("M2", "")
+        );
+        let call = |f: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> i32, body: &str| {
+            let c = CString::new(body).unwrap();
+            let mut out: *mut c_char = ptr::null_mut();
+            let code = unsafe { f(c.as_ptr(), &mut out) };
+            let text = unsafe { CStr::from_ptr(out).to_str().unwrap().to_string() };
+            unsafe { uaps_free_string(out) };
+            (
+                code,
+                serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            )
+        };
+        let (code, planned) = call(uaps_schedule, &before);
+        assert_eq!(code, 0);
+        let schedule = planned["schedule"].clone();
+        // M1 down for 5 h from 1 h in; the request now says so.
+        let after = format!(
+            r#"{{"jobs":{jobs},"resources":[{},{}],"start_time_ms":0}}"#,
+            eqp("M1", r#"{"start_ms":3600000,"end_ms":21600000}"#),
+            eqp("M2", "")
+        );
+        let body = format!(
+            r#"{{"schedule":{schedule},"event":{{"MachineBreakdown":{{"resource_id":"M1","start_ms":3600000,"duration_ms":18000000}}}},"strategy":"AOR","request":{after}}}"#
+        );
+        let (code, out) = call(uaps_reschedule, &body);
+        assert_eq!(code, 0, "{out}");
+        let rows = out["result"]["schedule"]["assignments"].as_array().unwrap();
+        // The work (tasks), not the assignment's envelope: an interruptible
+        // operation pauses over the slot.
+        let tasks = out["result"]["schedule"]["tasks"].as_array().unwrap();
+        for t in tasks
+            .iter()
+            .filter(|t| t["operation_id"] == "A-1" || t["operation_id"] == "B-1")
+        {
+            let (begin, end) = (
+                t["plan_begin_ms"].as_i64().unwrap(),
+                t["plan_end_ms"].as_i64().unwrap(),
+            );
+            assert!(end <= 3_600_000 || begin >= 21_600_000, "{t}");
+        }
+        let c_before: Vec<&serde_json::Value> = schedule["assignments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["operation_id"] == "C-1")
+            .collect();
+        let c_after: Vec<&serde_json::Value> =
+            rows.iter().filter(|a| a["operation_id"] == "C-1").collect();
+        assert_eq!(c_before, c_after, "C on M2 is kept as it was");
+
+        // Pins on the GA path are refused.
+        let pinned = format!(
+            r#"{{"jobs":{jobs},"resources":[{},{}],"start_time_ms":0,"algorithm":"GeneticAlgorithm","fixed_assignments":[]}}"#,
+            eqp("M1", ""),
+            eqp("M2", "")
+        );
+        let (code, out) = call(uaps_schedule, &pinned);
+        assert_ne!(code, 0);
+        assert!(
+            out["error"].as_str().unwrap().contains("fixed_assignments"),
+            "{out}"
+        );
     }
 
     #[test]
