@@ -510,7 +510,7 @@ impl Rescheduler {
     /// before the event. Placement is the dispatching scheduler's, so the
     /// result keeps the request's calendars, unavailable slots, time windows
     /// and uninterruptible operations; what is kept is pinned
-    /// ([`ScheduleRequest::fixed_assignments`]). A kept assignment the request
+    /// ([`ScheduleRequest::fixed_assignments`](crate::ScheduleRequest::fixed_assignments)). A kept assignment the request
     /// now forbids -- its resource unavailable then -- is released and placed
     /// again with the affected ones.
     ///
