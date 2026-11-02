@@ -46,6 +46,14 @@ internal static partial class NativeInterop
         out IntPtr resultPtr);
 
     /// <summary>
+    /// Event-driven rescheduling: <c>{schedule, event, strategy?, request?}</c> → <c>{success, result?, error?}</c>.
+    /// </summary>
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int uaps_reschedule(
+        string requestJson,
+        out IntPtr resultPtr);
+
+    /// <summary>
     /// 문자열 메모리 해제
     /// </summary>
     [LibraryImport(DllName)]

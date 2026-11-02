@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using UAPS.SDK.Interop;
 using UAPS.SDK.Models;
@@ -60,6 +61,77 @@ public class SchedulerClient : IDisposable
             {
                 NativeInterop.uaps_free_string(resultPtr);
             }
+        }
+    }
+
+    /// <summary>
+    /// Reschedules <paramref name="request"/> — the problem as it stands after
+    /// <paramref name="scheduleEvent"/> — keeping what <paramref name="strategy"/> keeps of
+    /// <paramref name="previous"/>, the plan before the event. The engine pins the kept assignments
+    /// and places the rest within the request's calendars, unavailable slots and time windows:
+    /// <see cref="RescheduleStrategy.RightShift"/>, <see cref="RescheduleStrategy.AOR"/> and
+    /// <see cref="RescheduleStrategy.Partial"/> keep every assignment of the operations the event
+    /// does not affect; <see cref="RescheduleStrategy.Full"/> and
+    /// <see cref="RescheduleStrategy.TotalRegeneration"/> keep none.
+    /// </summary>
+    /// <exception cref="ArgumentException">The engine does not know this kind of event.</exception>
+    public ScheduleResult Reschedule(
+        Schedule previous, ScheduleEvent scheduleEvent, RescheduleStrategy strategy, ScheduleRequest request)
+    {
+        var engineEvent = EngineEvents.ToEngine(scheduleEvent)
+            ?? throw new ArgumentException(
+                $"The engine does not reschedule a {scheduleEvent.GetType().Name}.", nameof(scheduleEvent));
+        var jobOf = request.Jobs
+            .SelectMany(j => j.Operations.Select(o => (Operation: o.Id, Job: j.Id)))
+            .GroupBy(x => x.Operation)
+            .ToDictionary(g => g.Key, g => g.First().Job);
+        var assignments = new JsonArray();
+        foreach (var a in previous.Assignments)
+        {
+            var row = new JsonObject
+            {
+                ["operation_id"] = a.OperationId,
+                ["job_id"] = jobOf.GetValueOrDefault(a.OperationId, string.Empty),
+                ["resource_id"] = a.ResourceId,
+                ["start_ms"] = a.StartMs,
+                ["end_ms"] = a.EndMs,
+                ["setup_ms"] = 0,
+            };
+            if (a.Part is { } part)
+                row["part"] = new JsonObject { ["index"] = part.Index, ["work_ms"] = part.WorkMs };
+            assignments.Add((JsonNode)row);
+        }
+        var body = new JsonObject
+        {
+            ["schedule"] = new JsonObject
+            {
+                ["assignments"] = assignments,
+                ["makespan_ms"] = previous.MakespanMs,
+                ["violations"] = new JsonArray(),
+            },
+            ["event"] = engineEvent,
+            ["strategy"] = strategy.ToString(),
+            ["request"] = JsonNode.Parse(SerializeRequest(request)),
+        };
+
+        NativeInterop.uaps_reschedule(body.ToJsonString(), out var resultPtr);
+        try
+        {
+            var resultJson = resultPtr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(resultPtr);
+            if (string.IsNullOrEmpty(resultJson))
+                return new ScheduleResult { Success = false, Error = "Empty result from engine" };
+            var response = JsonSerializer.Deserialize(resultJson, SchedulerJsonContext.Default.RescheduleResponseDto);
+            return new ScheduleResult
+            {
+                Success = response?.Success == true,
+                Schedule = response?.Result?.Schedule is { } s ? MapSchedule(s) : null,
+                Error = response is null ? "Failed to deserialize response" : response.Error,
+            };
+        }
+        finally
+        {
+            if (resultPtr != IntPtr.Zero)
+                NativeInterop.uaps_free_string(resultPtr);
         }
     }
 
@@ -748,6 +820,7 @@ public class ScheduleTask
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ScheduleRequestDto))]
 [JsonSerializable(typeof(ScheduleResponseDto))]
+[JsonSerializable(typeof(RescheduleResponseDto))]
 internal sealed partial class SchedulerJsonContext : JsonSerializerContext;
 
 internal class ScheduleRequestDto
@@ -806,6 +879,18 @@ internal class ScheduleResponseDto
     public bool Success { get; set; }
     public ScheduleDto? Schedule { get; set; }
     public string? Error { get; set; }
+}
+
+internal class RescheduleResponseDto
+{
+    public bool Success { get; set; }
+    public RescheduleResultDto? Result { get; set; }
+    public string? Error { get; set; }
+}
+
+internal class RescheduleResultDto
+{
+    public ScheduleDto? Schedule { get; set; }
 }
 
 internal class ScheduleDto

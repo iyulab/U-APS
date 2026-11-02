@@ -94,6 +94,36 @@ public class SessionAvailabilityTests
         session.Resources.Single().Unavailable.Should().Equal(new TimeSlot(8 * Hour, 16 * Hour));
     }
 
+    /// <summary>
+    /// A local strategy keeps what the event does not touch: a maintenance on the oven leaves the
+    /// press's lot exactly where it was, and the oven's lots move out of the maintenance.
+    /// </summary>
+    [Theory]
+    [InlineData(RescheduleStrategy.AOR)]
+    [InlineData(RescheduleStrategy.Partial)]
+    [InlineData(RescheduleStrategy.RightShift)]
+    public void A_local_strategy_keeps_the_unaffected_lot_and_moves_the_rest_out_of_the_slot(RescheduleStrategy strategy)
+    {
+        var press = Job.Create("LOT-C").WithPriority(1).WithDueDate(Day.AddHours(30));
+        press.Operations.Add(Operation.Create("LOT-C-O1", "LOT-C", 1).WithTime(0, 5 * Hour, 0).WithEquipment("PRESS").WithEarliestStart(7 * Hour));
+        var request = new ScheduleRequest
+        {
+            Jobs = [Lot("LOT-A", 6, 6, 14), Lot("LOT-B", 12, 8, 22), press],
+            Resources = [Resource.Equipment("OVEN"), Resource.Equipment("PRESS")],
+            StartTimeMs = 0,
+        };
+        var session = SimulationSession.Create(request);
+        var before = session.CurrentSchedule!;
+
+        var after = session.ApplyEvent(MaintenanceScheduledEvent.Create("OVEN", 8 * Hour, 8 * Hour), strategy);
+
+        Of(after, "LOT-C-O1").Should().BeEquivalentTo(Of(before, "LOT-C-O1"));
+        foreach (var t in after.Tasks.Where(t => t.OperationId != "LOT-C-O1"))
+            (t.PlanEndMs <= 8 * Hour || t.PlanBeginMs >= 16 * Hour).Should().BeTrue($"{t.OperationId} works {t.PlanBeginMs / Hour}..{t.PlanEndMs / Hour} h");
+        // The maintenance makes the oven's lots late; nothing else breaks.
+        after.Violations.Where(v => v.ConstraintType != "DueDate").Should().BeEmpty();
+    }
+
     [Fact]
     public void An_uninterruptible_lot_runs_whole_outside_the_break()
     {

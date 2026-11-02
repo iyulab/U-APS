@@ -20,6 +20,12 @@ published to a registry — it ships inside those packages.
   resource held with it as a companion is pinned along with it. Parts of a split operation, and operations that hold
   no resource, are placed again. Only the default (dispatching) path reads pins; a request that also names an
   `algorithm` is refused rather than having its pins dropped.
+- SDK: `SimulationSession.ApplyEvent(event, strategy)` now honours the strategy. With `RightShift`, `AOR` or
+  `Partial` (given, or the event's recommended one), the assignments of the operations the event does not affect stay
+  exactly as they were, and the engine places the rest within the session's calendars, unavailable slots and time
+  windows. The affected operations may change order. `Full` and `TotalRegeneration`, and a session without a
+  schedule yet, reschedule everything, as before. `SchedulerClient.Reschedule(previous, event, strategy, request)`
+  is the same call outside a session.
 - Engine: `uaps_reschedule` takes an optional `request`, the problem as it stands after the event (the
   `uaps_schedule` request shape). Given, the strategy keeps assignments as pins and the dispatching scheduler places
   the rest within the request's calendars, unavailable slots, time windows and uninterruptible operations.

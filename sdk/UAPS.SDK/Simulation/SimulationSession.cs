@@ -266,13 +266,17 @@ public class SimulationSession
     /// 이벤트 적용 및 자동 재스케줄링
     /// </summary>
     /// <remarks>
-    /// 지금은 <paramref name="strategy"/> 와 무관하게 언제나 전체를 다시 스케줄한다 — 전략별 재스케줄
-    /// (RightShift · Partial …)은 엔진에 있으나 SDK 에 아직 연결되지 않았다.
-    /// TODO: 전략을 엔진의 재스케줄(`uaps_reschedule`)에 연결한다.
+    /// 이벤트를 세션 상태(요청)에 반영한 뒤, <paramref name="strategy"/>(없으면 이벤트의 권고 전략)가
+    /// <see cref="RescheduleStrategy.RightShift"/> · <see cref="RescheduleStrategy.AOR"/> ·
+    /// <see cref="RescheduleStrategy.Partial"/> 이면 직전 스케줄에서 이벤트가 닿지 않는 공정의 배정을 그대로 두고
+    /// 나머지만 다시 놓는다(엔진이 유지 배정을 핀으로 걸고 달력 · 불가용 구간 · 시간창 안에서 배치 — 영향 공정의 순서는
+    /// 바뀔 수 있다). <see cref="RescheduleStrategy.Full"/> · <see cref="RescheduleStrategy.TotalRegeneration"/> 이거나
+    /// 직전 스케줄이 없으면 전체를 다시 스케줄한다.
     /// </remarks>
     public Schedule ApplyEvent(ScheduleEvent scheduleEvent, RescheduleStrategy? strategy = null)
     {
         var effectiveStrategy = strategy ?? scheduleEvent.RecommendedStrategy;
+        var previous = _currentSchedule;
 
         // 이벤트 유형에 따른 상태 변경
         ApplyEventToState(scheduleEvent);
@@ -288,8 +292,34 @@ public class SimulationSession
             });
         }
 
-        // 재스케줄링 실행
+        // 재스케줄링 실행 — 국소 전략은 직전 스케줄의 영향 밖 배정을 지킨다
+        if (previous != null
+            && effectiveStrategy is RescheduleStrategy.RightShift or RescheduleStrategy.AOR or RescheduleStrategy.Partial
+            && EngineEvents.ToEngine(scheduleEvent) != null)
+        {
+            return RescheduleKeeping(previous, scheduleEvent, effectiveStrategy);
+        }
         return Reschedule();
+    }
+
+    private Schedule RescheduleKeeping(Schedule previous, ScheduleEvent scheduleEvent, RescheduleStrategy strategy)
+    {
+        var effectiveJobs = ApplyResourceConstraints(_workingJobs);
+        var effectiveResources = _workingResources
+            .Where(r => !_disabledResources.Contains(r.Id))
+            .ToList();
+        var request = _settings.WithWork(effectiveJobs, effectiveResources);
+
+        var result = _client.Reschedule(previous, scheduleEvent, strategy, request);
+        if (!result.Success || result.Schedule == null)
+        {
+            throw new InvalidOperationException(
+                $"Rescheduling failed: {result.Error ?? "Unknown error"}");
+        }
+
+        _currentSchedule = result.Schedule;
+        HasChanges = false;
+        return _currentSchedule;
     }
 
     /// <summary>
