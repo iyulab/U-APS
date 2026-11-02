@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-02
+
 ### Added
 
 - An operation can be uninterruptible: `Operation.interruptible` (engine, default `true`) /
