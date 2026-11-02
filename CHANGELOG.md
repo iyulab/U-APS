@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-11-02
+
 ### Added
 
 - Engine: a schedule request can keep assignments as they are. `fixed_assignments` (in the `uaps_schedule` request)
