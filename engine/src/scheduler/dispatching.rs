@@ -756,6 +756,7 @@ mod tests {
                 required_resources: vec![],
                 material_requirements: vec![],
                 is_splittable: false,
+                interruptible: true,
                 allow_parallel: false,
                 split_config: None,
                 overlap_config: None,

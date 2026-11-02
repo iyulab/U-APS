@@ -37,6 +37,7 @@
             }
           ],
           "is_splittable": false,
+          "interruptible": true,
           "allow_parallel": false,
           "dependencies": [],
           "requires_operator": true
@@ -62,6 +63,7 @@
           ],
           "material_requirements": [],
           "is_splittable": false,
+          "interruptible": true,
           "allow_parallel": false,
           "dependencies": [],
           "requires_operator": true,
@@ -111,6 +113,7 @@
           ],
           "material_requirements": [],
           "is_splittable": false,
+          "interruptible": true,
           "allow_parallel": false,
           "dependencies": [
             "J1-2"
@@ -130,6 +133,7 @@
           "required_resources": [],
           "material_requirements": [],
           "is_splittable": false,
+          "interruptible": true,
           "allow_parallel": false,
           "dependencies": [],
           "requires_operator": true,

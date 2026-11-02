@@ -59,6 +59,12 @@ public class Job
         return this;
     }
 
+    /// <summary>
+    /// 납기. 엔진에는 UTC 로 넘어간다(<see cref="DateTime.ToUniversalTime"/>) — <see cref="DateTimeKind.Utc"/>
+    /// 는 그대로, <see cref="DateTimeKind.Local"/> 은 이 기계의 시간대로 바뀌며, <see cref="DateTimeKind.Unspecified"/>
+    /// 는 <b>로컬 시각으로 읽힌다</b>(UTC+9 에서는 9시간 앞당겨진다). 시간대와 무관한 값을 주려면
+    /// <c>DateTime.SpecifyKind(value, DateTimeKind.Utc)</c> 또는 <c>new DateTime(..., DateTimeKind.Utc)</c>.
+    /// </summary>
     public Job WithDueDate(DateTime dueDate)
     {
         DueDate = dueDate;

@@ -329,8 +329,13 @@ pub struct Operation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub material_requirements: Vec<MaterialRequirement>,
     /// 로트 분할 허용 (`split_config` 와 함께 — 공정을 나눠 여러 설비에서). 근무 시간 밖에서
-    /// 멈췄다 잇는 것은 이 값과 무관하게 모든 공정이 한다(작업 조각은 실제로 일한 구간마다).
+    /// 멈췄다 잇는 것은 [`interruptible`](Self::interruptible) 이 정한다.
     pub is_splittable: bool,
+    /// 근무 시간 밖(휴식 · 불가용 구간)에서 멈췄다 이어 갈 수 있는가(기본 `true`). `false` 면
+    /// 한 번 시작하면 끝날 때까지 쉬지 않는 공정(경화 · 열처리 배치)이라 휴식이나 불가용 구간에
+    /// 걸리지 않게 그 앞이나 뒤에 통째로 놓인다 — 한 근무 구간 안에 들어가야 한다.
+    #[serde(default = "default_interruptible")]
+    pub interruptible: bool,
     /// 병렬 처리 가능 여부
     pub allow_parallel: bool,
     /// 분할 설정
@@ -365,6 +370,10 @@ fn default_requires_operator() -> bool {
     true
 }
 
+fn default_interruptible() -> bool {
+    true
+}
+
 impl Operation {
     pub fn new(id: impl Into<String>, job_id: impl Into<String>, sequence: i32) -> Self {
         Self {
@@ -377,6 +386,7 @@ impl Operation {
             required_resources: Vec::new(),
             material_requirements: Vec::new(),
             is_splittable: false,
+            interruptible: true,
             allow_parallel: false,
             split_config: None,
             overlap_config: None,
@@ -526,6 +536,12 @@ impl Operation {
     pub fn with_overlapping(mut self, config: OverlapConfig) -> Self {
         self.allow_parallel = true;
         self.overlap_config = Some(config);
+        self
+    }
+
+    /// 한 번 시작하면 끝날 때까지 멈추지 않는 공정으로 둔다([`interruptible`](Self::interruptible) = `false`).
+    pub fn uninterruptible(mut self) -> Self {
+        self.interruptible = false;
         self
     }
 

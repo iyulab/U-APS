@@ -61,9 +61,15 @@ public class Operation
     public List<ResourceRequirement> RequiredResources { get; set; } = [];
     /// <summary>
     /// 로트 분할 허용 (<c>SplitConfig</c>와 함께 — 공정을 나눠 여러 설비에서). 근무 시간 밖에서 멈췄다
-    /// 잇는 것은 이 값과 무관하게 모든 공정이 한다.
+    /// 잇는 것은 <see cref="IsInterruptible"/> 이 정한다.
     /// </summary>
     public bool IsSplittable { get; set; }
+    /// <summary>
+    /// 근무 시간 밖(휴식 · 자원의 불가용 구간)에서 멈췄다 이어 갈 수 있는가(기본 <c>true</c>).
+    /// <c>false</c> 면 한 번 시작하면 끝날 때까지 쉬지 않는 공정(경화 · 열처리 배치)이라, 휴식이나
+    /// 불가용 구간에 걸리지 않도록 그 앞이나 뒤에 통째로 놓인다 — 한 근무 구간 안에 들어가야 한다.
+    /// </summary>
+    public bool IsInterruptible { get; set; } = true;
     public bool AllowParallel { get; set; }
     public DateTime? EarliestStart { get; set; }
     public long TransitTimeMs { get; set; }
@@ -288,6 +294,15 @@ public class Operation
     /// <summary>
     /// 최소 시작 시간 설정 (Phase 11)
     /// </summary>
+    /// <summary>
+    /// 한 번 시작하면 끝날 때까지 멈추지 않는 공정으로 둔다(<see cref="IsInterruptible"/> = <c>false</c>).
+    /// </summary>
+    public Operation Uninterruptible()
+    {
+        IsInterruptible = false;
+        return this;
+    }
+
     public Operation WithEarliestStart(long earliestStartMs)
     {
         TimeWindow = OperationTimeWindow.WithEarliestStart(earliestStartMs);
@@ -381,6 +396,7 @@ public class Operation
         }).ToList(),
         MaterialRequirements = MaterialRequirements.Select(m => m.ToDto()).ToList(),
         IsSplittable = IsSplittable,
+        Interruptible = IsInterruptible,
         AllowParallel = AllowParallel,
         Dependencies = Dependencies,
         RequiresOperator = RequiresOperator,
@@ -435,6 +451,7 @@ public class OperationDto
     public List<ResourceRequirementDto> RequiredResources { get; set; } = [];
     public List<MaterialRequirementDto> MaterialRequirements { get; set; } = [];
     public bool IsSplittable { get; set; }
+    public bool Interruptible { get; set; } = true;
     public bool AllowParallel { get; set; }
     public List<string> Dependencies { get; set; } = [];
     public bool RequiresOperator { get; set; } = true;

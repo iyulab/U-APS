@@ -13,6 +13,27 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Added
+
+- An operation can be uninterruptible: `Operation.interruptible` (engine, default `true`) /
+  `Operation.IsInterruptible` and `Uninterruptible()` (SDK). One that is not interruptible never pauses
+  at a break or an unavailable slot — it runs whole inside one working stretch, before or after it
+  (a curing or heat-treatment batch). Until now every operation paused at its calendar's breaks.
+- `SimulationSession.Create(ScheduleRequest)` and `SimulationSession.FromSchedule(ScheduleRequest, Schedule)`:
+  a session from a whole request keeps its calendars, start time, matrices and managers in every
+  reschedule. The overloads that take jobs and resources reschedule without them, as before.
+
+### Fixed
+
+- A resource's unavailable slots (`Resource.unavailable`, SDK `WithUnavailable`) were accepted and
+  ignored: the scheduler placed work inside them with no violation. They now block the resource —
+  its calendar's working time minus the slots, or always working outside them when it has none.
+- `SimulationSession` rebuilt jobs and operations from a few of their fields, so a reschedule lost each
+  operation's time window (`WithEarliestStart`, deadlines), resource times and materials; it now copies
+  them whole. A `MaintenanceScheduledEvent` now adds its slot to the resource's unavailable time
+  instead of only marking the session changed.
+- `Job.WithDueDate` documents how a `DateTime` is read: an `Unspecified` kind is taken as local time.
+
 ### Changed
 
 - `UAPS.SDK` serializes the engine's wire format with a generated `JsonSerializerContext` instead of

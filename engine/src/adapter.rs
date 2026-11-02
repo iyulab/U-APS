@@ -78,6 +78,18 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
             if let Some(calendar) = r.calendar_id.as_deref().and_then(|id| calendars.get(id)) {
                 out = out.with_calendar(windows(calendar, request.start_time_ms));
             }
+            // Its own unavailable slots (maintenance, a breakdown) block its
+            // calendar — or make one, always working outside them.
+            if !r.unavailable.is_empty() {
+                let mut calendar = out
+                    .calendar
+                    .take()
+                    .unwrap_or_else(|| USCalendar::new(format!("{}:unavailable", r.id)));
+                for slot in &r.unavailable {
+                    calendar = calendar.with_blocked(slot.start_ms, slot.end_ms);
+                }
+                out = out.with_calendar(calendar);
+            }
             if r.kind == ResourceKind::Worker {
                 for skill in worker_skills(request, &r.id) {
                     out = out.with_skill(skill);
@@ -185,8 +197,13 @@ pub fn to_problem(request: &ScheduleRequest) -> Adapted {
                             op.time.wait_ms,
                         ),
                     )
-                    // u-aps splits every operation at its calendar's breaks.
-                    .resumable();
+                    ;
+                // An interruptible operation pauses at its calendar's breaks
+                // and resumes after; one that is not runs whole inside a
+                // single working window.
+                if op.interruptible {
+                    activity = activity.resumable();
+                }
                 if let Some(at) = op_release {
                     activity = activity.with_release_time(at);
                 }

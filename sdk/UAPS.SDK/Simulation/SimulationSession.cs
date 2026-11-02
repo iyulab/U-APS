@@ -11,6 +11,9 @@ public class SimulationSession
 {
     private readonly SchedulerClient _client;
 
+    // 작업 · 자원 밖의 요청 설정(달력 · 시작 시각 · 행렬 …) — 재스케줄마다 그대로 쓴다
+    private readonly ScheduleRequest _settings;
+
     // Baseline (원본 - 불변)
     private readonly List<Job> _baselineJobs;
     private readonly List<Resource> _baselineResources;
@@ -56,13 +59,15 @@ public class SimulationSession
     public bool HasChanges { get; private set; }
 
     private SimulationSession(
-        List<Job> jobs,
-        List<Resource> resources,
+        ScheduleRequest request,
         Schedule? baselineSchedule,
         SchedulerClient? client = null)
     {
         _client = client ?? new SchedulerClient();
 
+        _settings = request.WithWork([], []);
+        var jobs = request.Jobs;
+        var resources = request.Resources;
         _baselineJobs = jobs;
         _baselineResources = resources;
         _baselineSchedule = baselineSchedule;
@@ -76,23 +81,34 @@ public class SimulationSession
     /// <summary>
     /// 새 시뮬레이션 세션 생성 (Jobs/Resources로부터)
     /// </summary>
-    public static SimulationSession Create(List<Job> jobs, List<Resource> resources)
+    public static SimulationSession Create(List<Job> jobs, List<Resource> resources) =>
+        Create(new ScheduleRequest { Jobs = jobs, Resources = resources });
+
+    /// <summary>
+    /// 요청 전체로부터 새 시뮬레이션 세션 생성 — 달력 · 시작 시각 · 행렬 등 요청의 설정을 모든 재스케줄에 쓴다.
+    /// </summary>
+    public static SimulationSession Create(ScheduleRequest request)
     {
-        var session = new SimulationSession(jobs, resources, null);
+        var session = new SimulationSession(request, null);
         session.RunInitialSchedule();
         return session;
     }
 
     /// <summary>
-    /// 기존 스케줄로부터 시뮬레이션 세션 생성
+    /// 기존 스케줄로부터 시뮬레이션 세션 생성. 달력 · 시작 시각이 있는 계획이면
+    /// <see cref="FromSchedule(ScheduleRequest, Schedule)"/> 로 그 요청을 준다 — 이 오버로드는 둘 다 없이 재스케줄한다.
     /// </summary>
     public static SimulationSession FromSchedule(
         List<Job> jobs,
         List<Resource> resources,
-        Schedule existingSchedule)
-    {
-        return new SimulationSession(jobs, resources, existingSchedule);
-    }
+        Schedule existingSchedule) =>
+        FromSchedule(new ScheduleRequest { Jobs = jobs, Resources = resources }, existingSchedule);
+
+    /// <summary>
+    /// 그 계획을 낸 요청과 계획으로부터 시뮬레이션 세션 생성 — 요청의 달력 · 시작 시각 · 행렬 등을 모든 재스케줄에 쓴다.
+    /// </summary>
+    public static SimulationSession FromSchedule(ScheduleRequest request, Schedule existingSchedule) =>
+        new(request, existingSchedule);
 
     // ===== Job 조작 =====
 
@@ -114,7 +130,7 @@ public class SimulationSession
     /// </summary>
     public SimulationSession AddJob(Job job)
     {
-        _workingJobs.Add(CloneJob(job));
+        _workingJobs.Add(job.DeepClone());
         HasChanges = true;
         return this;
     }
@@ -249,6 +265,11 @@ public class SimulationSession
     /// <summary>
     /// 이벤트 적용 및 자동 재스케줄링
     /// </summary>
+    /// <remarks>
+    /// 지금은 <paramref name="strategy"/> 와 무관하게 언제나 전체를 다시 스케줄한다 — 전략별 재스케줄
+    /// (RightShift · Partial …)은 엔진에 있으나 SDK 에 아직 연결되지 않았다.
+    /// TODO: 전략을 엔진의 재스케줄(`uaps_reschedule`)에 연결한다.
+    /// </remarks>
     public Schedule ApplyEvent(ScheduleEvent scheduleEvent, RescheduleStrategy? strategy = null)
     {
         var effectiveStrategy = strategy ?? scheduleEvent.RecommendedStrategy;
@@ -394,12 +415,19 @@ public class SimulationSession
                 });
                 break;
 
+            // Maintenance: the resource cannot work in that slot.
+            case MaintenanceScheduledEvent maintenance:
+                var maintained = _workingResources.FirstOrDefault(r => r.Id == maintenance.ResourceId)
+                    ?? throw new ArgumentException($"Resource not found: {maintenance.ResourceId}");
+                maintained.Unavailable.Add(new TimeSlot(maintenance.StartMs, maintenance.StartMs + maintenance.DurationMs));
+                HasChanges = true;
+                break;
+
             // Material events - mark as HasChanges but don't modify state directly
             // (material constraints are handled by MaterialManager in ScheduleRequest)
             case MaterialShortageEvent:
             case MaterialDelayEvent:
             case MaterialArrivalEvent:
-            case MaintenanceScheduledEvent:
             case WorkerSkillChangeEvent:
                 HasChanges = true;
                 break;
@@ -430,11 +458,7 @@ public class SimulationSession
             .Where(r => !_disabledResources.Contains(r.Id))
             .ToList();
 
-        var request = new ScheduleRequest
-        {
-            Jobs = effectiveJobs,
-            Resources = effectiveResources
-        };
+        var request = _settings.WithWork(effectiveJobs, effectiveResources);
 
         var result = _client.Schedule(request);
 
@@ -452,11 +476,7 @@ public class SimulationSession
 
     private void RunInitialSchedule()
     {
-        var request = new ScheduleRequest
-        {
-            Jobs = _workingJobs,
-            Resources = _workingResources
-        };
+        var request = _settings.WithWork(_workingJobs, _workingResources);
 
         var result = _client.Schedule(request);
         if (result.Success && result.Schedule != null)
@@ -603,64 +623,12 @@ public class SimulationSession
 
     // ===== Deep Clone Helpers =====
 
-    private static List<Job> CloneJobs(List<Job> jobs)
-    {
-        return jobs.Select(CloneJob).ToList();
-    }
+    // 모델 자신의 사본(Job · Operation · Resource.DeepClone)을 쓴다 — 필드를 골라 다시 짓던 사본이
+    // 공정의 시간창(EarliestStart) · 자원 시간 · 자재 등을 시나리오에서 지우고 있었다.
+    private static List<Job> CloneJobs(List<Job> jobs) => [.. jobs.Select(j => j.DeepClone())];
 
-    private static Job CloneJob(Job job)
-    {
-        return new Job
-        {
-            Id = job.Id,
-            Priority = job.Priority,
-            DueDate = job.DueDate,
-            EarliestStart = job.EarliestStart,
-            Quantity = job.Quantity,
-            IsSplittable = job.IsSplittable,
-            OrderNumber = job.OrderNumber,
-            ProductCode = job.ProductCode,
-            ProductName = job.ProductName,
-            Operations = job.Operations.Select(CloneOperation).ToList()
-        };
-    }
-
-    private static Operation CloneOperation(Operation op)
-    {
-        return new Operation
-        {
-            Id = op.Id,
-            JobId = op.JobId,
-            Sequence = op.Sequence,
-            Time = new OperationTime(op.Time.SetupMs, op.Time.ProcessMs, op.Time.WaitMs),
-            RequiredResources = op.RequiredResources.Select(r => new ResourceRequirement
-            {
-                ResourceType = r.ResourceType,
-                Quantity = r.Quantity,
-                Candidates = [.. r.Candidates]
-            }).ToList(),
-            IsSplittable = op.IsSplittable,
-            AllowParallel = op.AllowParallel,
-            Dependencies = [.. op.Dependencies],
-            Name = op.Name,
-            ProcessCode = op.ProcessCode
-        };
-    }
-
-    private static List<Resource> CloneResources(List<Resource> resources)
-    {
-        return resources.Select(r => new Resource
-        {
-            Id = r.Id,
-            Name = r.Name,
-            Kind = r.Kind,
-            Capabilities = [.. r.Capabilities],
-            Capacity = r.Capacity,
-            Efficiency = r.Efficiency,
-            CalendarId = r.CalendarId,
-            Unavailable = r.Unavailable.Select(s => new TimeSlot(s.StartMs, s.EndMs)).ToList()
-        }).ToList();
-    }
+    private static List<Resource> CloneResources(List<Resource> resources) =>
+        [.. resources.Select(r => r.DeepClone())];
 }
 
 /// <summary>

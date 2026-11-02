@@ -226,6 +226,18 @@ public class SchedulerClient : IDisposable
 /// </summary>
 public class ScheduleRequest
 {
+    /// <summary>
+    /// 이 요청의 설정(달력 · 시작 시각 · 행렬 · 관리자 · 디스패칭)을 그대로 두고 작업과 자원만 바꾼 사본.
+    /// 설정 객체는 공유된다 — 사본이 그것을 고치지 않는다.
+    /// </summary>
+    internal ScheduleRequest WithWork(List<Job> jobs, List<Resource> resources)
+    {
+        var copy = (ScheduleRequest)MemberwiseClone();
+        copy.Jobs = jobs;
+        copy.Resources = resources;
+        return copy;
+    }
+
     public List<Job> Jobs { get; set; } = [];
     public List<Resource> Resources { get; set; } = [];
     public long StartTimeMs { get; set; }
