@@ -91,3 +91,50 @@ fn interruptible_is_the_default_and_round_trips() {
     let read: Operation = serde_json::from_value(older).expect("reads");
     assert!(read.interruptible);
 }
+
+#[test]
+fn an_uninterruptible_operation_waits_for_the_first_stretch_long_enough() {
+    // 10 h of work; for 40 days the oven is free only 08:00–14:00 (6 h), so
+    // the first stretch that holds it whole is the one after the slots end.
+    let mut oven = Resource::equipment("OVEN");
+    for day in 0..40 {
+        let d = day * 24 * HOUR;
+        oven = oven
+            .with_unavailable(TimeSlot::new(d, d + 8 * HOUR))
+            .with_unavailable(TimeSlot::new(d + 14 * HOUR, d + 24 * HOUR));
+    }
+    let request = ScheduleRequest::new(
+        vec![Job::new("A").with_operation(lot_op("A", 0, 10).uninterruptible())],
+        vec![oven],
+    )
+    .with_start_time(0);
+    let schedule = SimpleScheduler::new()
+        .schedule(&request)
+        .expect("schedules");
+    assert_eq!(
+        worked_spans(&schedule, "A-1"),
+        [(40 * 24 * HOUR, 40 * 24 * HOUR + 10 * HOUR)],
+        "one stretch, at the first gap long enough"
+    );
+
+    // Interruptible, the same work is done in the 6 h stretches of days 0 and 1.
+    let mut oven = Resource::equipment("OVEN");
+    for day in 0..40 {
+        let d = day * 24 * HOUR;
+        oven = oven
+            .with_unavailable(TimeSlot::new(d, d + 8 * HOUR))
+            .with_unavailable(TimeSlot::new(d + 14 * HOUR, d + 24 * HOUR));
+    }
+    let request = ScheduleRequest::new(
+        vec![Job::new("A").with_operation(lot_op("A", 0, 10))],
+        vec![oven],
+    )
+    .with_start_time(0);
+    let schedule = SimpleScheduler::new()
+        .schedule(&request)
+        .expect("schedules");
+    assert_eq!(
+        worked_spans(&schedule, "A-1"),
+        [(8 * HOUR, 14 * HOUR), (32 * HOUR, 36 * HOUR)]
+    );
+}
