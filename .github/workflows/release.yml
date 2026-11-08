@@ -215,7 +215,10 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nuget-packages
-          path: artifacts/nuget/*.nupkg
+          path: |
+            artifacts/nuget/*.nupkg
+            artifacts/nuget/*.snupkg
+          if-no-files-found: error
           retention-days: 1
 
   # Build CLI bundles for each platform
@@ -329,7 +332,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(needs.extract-version.outputs.version, '-') }}
 
-  # Publish to NuGet and GitHub Packages
+  # Publish to GitHub Packages (nuget.org goes through the central publisher below)
   publish-nuget:
     needs: [extract-version, build-dotnet, create-release]
     runs-on: ubuntu-latest
@@ -350,15 +353,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Publish to NuGet.org
-        run: |
-          for package in packages/*.nupkg; do
-            dotnet nuget push "$package" \
-              --api-key ${{ secrets.NUGET_API_KEY }} \
-              --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
-          done
-
       - name: Publish to GitHub Packages
         run: |
           for package in packages/*.nupkg; do
@@ -368,11 +362,22 @@ jobs:
               --skip-duplicate
           done
 
+  # Ask the central publisher (iyulab/nuget-publish) to push the packages uploaded
+  # as `nuget-packages` to nuget.org; this repository holds no NuGet key. The
+  # call must not run for a pull request.
+  publish-nuget-org:
+    name: Publish to NuGet.org (central)
+    needs: [extract-version, build-dotnet, create-release]
+    if: needs.extract-version.outputs.should_release == 'true'
+    uses: iyulab/nuget-publish/.github/workflows/request.yml@de1e58c8bcefaf88f497fcb58899a1c6e84f4e29 # main
+    permissions: {}
+    secrets: inherit
+
   # The build artifacts only carry files to the release and the NuGet push.
   # Once both are done they are storage nobody reads.
   cleanup-artifacts:
     name: Delete intermediate artifacts
-    needs: [create-release, publish-nuget]
+    needs: [create-release, publish-nuget, publish-nuget-org]
     runs-on: ubuntu-latest
     permissions:
       actions: write
