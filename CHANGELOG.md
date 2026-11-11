@@ -13,6 +13,14 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- Engine: rescheduling with a request (`reschedule_request`, and the SDK's `Reschedule` / `ApplyEvent` with a
+  strategy that keeps assignments) no longer fails with "the schedule breaks the request" when an event delays an
+  early step of an order but does not touch its later steps. The steps that follow an affected operation — those
+  that name it (or something after it) in `dependencies`, and the later steps of the same job — are now placed
+  again with it, instead of staying pinned where they were, before their predecessor's new end.
+
 ## [1.11.0] - 2026-11-02
 
 ### Added

@@ -555,6 +555,14 @@ impl Rescheduler {
             strategy,
             RescheduleStrategy::RightShift | RescheduleStrategy::AOR | RescheduleStrategy::Partial
         );
+        // What follows an affected operation moves with it: keeping a later step where
+        // it was while its predecessor is pushed back would put it before the end of
+        // that predecessor, and the plan would break the request's own precedence.
+        let mut affected = affected;
+        if local {
+            let following = Self::operations_following(request, &affected);
+            affected.extend(following);
+        }
         let frozen = |op: &str| !self.can_reschedule_operation(schedule, op);
         let kept: Vec<Assignment> = schedule
             .assignments
@@ -602,6 +610,45 @@ impl Rescheduler {
             strategy_used: strategy,
             stats,
         })
+    }
+
+    /// The operations of `request` that must start after one of `seed` ends: the ones
+    /// that name it (or something that follows it) in `dependencies`, and the later
+    /// steps (`sequence`) of the same job — the order inside a job holds without being
+    /// written down. Followed transitively; `seed` itself is not in the result.
+    fn operations_following(
+        request: &crate::ScheduleRequest,
+        seed: &HashSet<String>,
+    ) -> HashSet<String> {
+        let operations: Vec<&crate::Operation> = request
+            .jobs
+            .iter()
+            .flat_map(|job| job.operations.iter())
+            .collect();
+        let mut reached: HashSet<&str> = seed.iter().map(String::as_str).collect();
+        let mut following: HashSet<String> = HashSet::new();
+        loop {
+            let before = following.len();
+            for op in &operations {
+                if reached.contains(op.id.as_str()) {
+                    continue;
+                }
+                let after_dependency = op.dependencies.iter().any(|d| reached.contains(d.as_str()));
+                let after_earlier_step = operations.iter().any(|earlier| {
+                    earlier.job_id == op.job_id
+                        && earlier.sequence < op.sequence
+                        && reached.contains(earlier.id.as_str())
+                });
+                if after_dependency || after_earlier_step {
+                    following.insert(op.id.clone());
+                    reached.insert(op.id.as_str());
+                }
+            }
+            if following.len() == before {
+                break;
+            }
+        }
+        following
     }
 
     /// 전략 자동 선택
