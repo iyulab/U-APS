@@ -13,6 +13,8 @@ published to a registry — it ships inside those packages.
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-11-12
+
 ### Fixed
 
 - Engine: rescheduling with a request (`reschedule_request`, and the SDK's `Reschedule` / `ApplyEvent` with a
